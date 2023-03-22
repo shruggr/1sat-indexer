@@ -1,2 +1,4 @@
 1sat-indexer
 .env
+app.yaml
+.gcloudignore

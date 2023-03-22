@@ -109,7 +109,7 @@ type InscriptionMeta struct {
 	Txid    ByteString `json:"txid"`
 	Vout    uint32     `json:"vout"`
 	File    File       `json:"file"`
-	Origin  ByteString `json:"origin"`
+	Origin  Origin     `json:"origin"`
 	Ordinal uint32     `json:"ordinal"`
 	Height  uint32     `json:"height"`
 	Idx     uint32     `json:"idx"`
@@ -176,43 +176,6 @@ func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err er
 	return
 }
 
-// func GetInsMetaByOrigin(origin []byte) (ins []*InscriptionMeta, err error) {
-// 	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
-// 		FROM inscriptions
-// 		WHERE origin=$1
-// 		ORDER BY height DESC, idx DESC`,
-// 		origin,
-// 	)
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		im := &InscriptionMeta{}
-// 		err = rows.Scan(
-// 			&im.Txid,
-// 			&im.Vout,
-// 			&im.File.Hash,
-// 			&im.File.Size,
-// 			&im.File.Type,
-// 			&im.Id,
-// 			&im.Origin,
-// 			&im.Ordinal,
-// 			&im.Height,
-// 			&im.Idx,
-// 			&im.Lock,
-// 		)
-// 		if err != nil {
-// 			log.Panic(err)
-// 			return
-// 		}
-
-// 		ins = append(ins, im)
-// 	}
-// 	return
-// }
-
 func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 	rows, err := GetInsciption.Query(origin)
 	if err != nil {
@@ -241,6 +204,35 @@ func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 	)
 	if err != nil {
 		return
+	}
+
+	return
+}
+
+func LoadInscriptions(origin Origin) (ims []*InscriptionMeta, err error) {
+	rows, err := GetInsciptions.Query(origin)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		im := &InscriptionMeta{}
+		err = rows.Scan(
+			&im.Txid,
+			&im.Vout,
+			&im.Height,
+			&im.Idx,
+			&im.File.Hash,
+			&im.File.Size,
+			&im.File.Type,
+			&im.Origin,
+			&im.Lock,
+		)
+		if err != nil {
+			return
+		}
+		ims = append(ims, im)
 	}
 
 	return
