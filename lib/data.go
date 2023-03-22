@@ -7,13 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
 )
@@ -25,14 +23,8 @@ var Db *sql.DB
 var JBClient *junglebus.JungleBusClient
 var GetInsNumber *sql.Stmt
 
-func init() {
-	godotenv.Load("../.env")
-	var err error
-	Db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
+func Initialize(db *sql.DB) (err error) {
+	Db := db
 	jb := os.Getenv("JUNGLEBUS")
 	if jb == "" {
 		jb = "https://junglebus.gorillapool.io"
@@ -41,7 +33,7 @@ func init() {
 		junglebus.WithHTTP(jb),
 	)
 	if err != nil {
-		log.Fatalln(err.Error())
+		return
 	}
 
 	GetInsNumber, err = Db.Prepare(`
@@ -51,13 +43,11 @@ func init() {
 		WHERE l.txid=$1 AND l.vout=$2
 	`)
 	if err != nil {
-		log.Panic(err)
+		return
 	}
 
 	txCache, err = lru.NewARC[string, *models.Transaction](2 ^ 30)
-	if err != nil {
-		log.Panic(err)
-	}
+	return
 }
 
 func LoadTx(txid []byte) (tx *bt.Tx, err error) {

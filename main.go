@@ -12,7 +12,7 @@ import (
 	jbModels "github.com/GorillaPool/go-junglebus/models"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
-	bsvord "github.com/shruggr/bsv-ord-indexer"
+	"github.com/shruggr/1sat-indexer/lib"
 )
 
 const INDEXER = "1sat"
@@ -24,10 +24,15 @@ var processedIdx = map[uint64]bool{}
 var m sync.Mutex
 
 func init() {
-	godotenv.Load("../.env")
+	godotenv.Load()
 
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = lib.Initialize(db)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,8 +60,8 @@ func main() {
 			WHERE indexer='1sat'`,
 	)
 	row.Scan(&fromBlock)
-	if fromBlock < bsvord.TRIGGER {
-		fromBlock = bsvord.TRIGGER
+	if fromBlock < lib.TRIGGER {
+		fromBlock = lib.TRIGGER
 	}
 
 	var wg2 sync.WaitGroup
@@ -134,7 +139,7 @@ func onOneSatHandler(txResp *jbModels.TransactionResponse) {
 	height := txResp.BlockHeight
 	idx := txResp.BlockIndex
 	go func(height uint32, idx uint64) {
-		err = bsvord.IndexTxos(tx, height, uint32(idx))
+		err = lib.IndexTxos(tx, height, uint32(idx))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -154,7 +159,7 @@ func processOrigins() {
 		wg.Add(1)
 		threadsChan <- struct{}{}
 		go func(txid []byte) {
-			err := bsvord.IndexOrigins(txid)
+			err := lib.IndexOrigins(txid)
 			if err != nil {
 				log.Fatal(err)
 			}
