@@ -30,11 +30,14 @@ var GetTxo *sql.Stmt
 var GetTxos *sql.Stmt
 var GetInput *sql.Stmt
 var GetInsciption *sql.Stmt
+var GetMaxInscriptionId *sql.Stmt
+var GetUnnumberedIns *sql.Stmt
 var InsSpend *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
 var SetTxoOrigin *sql.Stmt
 var SetInscriptionOrigin *sql.Stmt
+var SetInscriptionId *sql.Stmt
 var GetUtxos *sql.Stmt
 
 func Initialize(db *sql.DB) (err error) {
@@ -104,6 +107,20 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
+	GetMaxInscriptionId, err = Db.Prepare(`SELECT MAX(id) FROM inscriptions`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	GetUnnumberedIns, err = Db.Prepare(`SELECT txid, vout 
+		FROM inscriptions
+		WHERE id IS NULL AND height <= $1
+		ORDER BY height, idx`,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock)
 		VALUES($1, $2, $3, $4, $5)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
@@ -124,6 +141,14 @@ func Initialize(db *sql.DB) (err error) {
 
 	SetInscriptionOrigin, err = Db.Prepare(`UPDATE inscriptions
 		SET origin=$3
+		WHERE txid=$1 AND vout=$2
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	SetInscriptionId, err = Db.Prepare(`UPDATE inscriptions
+		SET id=$3
 		WHERE txid=$1 AND vout=$2
 	`)
 	if err != nil {

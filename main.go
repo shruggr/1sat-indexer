@@ -100,6 +100,7 @@ func subscribe() {
 					processedIdx = map[uint64]bool{}
 					m.Unlock()
 					txids = [][]byte{}
+					processInscriptionIds(fromBlock - 6)
 					subscribe()
 				}
 			},
@@ -166,5 +167,12 @@ func processOrigins() {
 			wg.Done()
 			<-threadsChan
 		}(txid)
+	}
+}
+
+func processInscriptionIds(height uint32) {
+	err := lib.SetInscriptionIds(height)
+	if err != nil {
+		log.Println("Error processing inscription ids:", err)
 	}
 }

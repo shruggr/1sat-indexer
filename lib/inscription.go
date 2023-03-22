@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -256,5 +257,52 @@ func LoadInscriptionFile(origin Origin) (ins *Inscription, err error) {
 	}
 
 	ins, _ = InscriptionFromScript(*tx.Outputs[im.Vout].LockingScript)
+	return
+}
+
+func SetInscriptionIds(height uint32) (err error) {
+	rows, err := GetMaxInscriptionId.Query()
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+	defer rows.Close()
+	var id uint64
+	if rows.Next() {
+		var dbId sql.NullInt64
+		err = rows.Scan(&dbId)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		if dbId.Valid {
+			id = uint64(dbId.Int64 + 1)
+		}
+	} else {
+		return
+	}
+
+	rows, err = GetUnnumberedIns.Query(height)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var txid []byte
+		var vout uint32
+		err = rows.Scan(&txid, &vout)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		fmt.Printf("Inscription ID %d %x %d\n", id, txid, vout)
+		_, err = SetInscriptionId.Exec(txid, vout, id)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		id++
+	}
 	return
 }
