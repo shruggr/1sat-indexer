@@ -199,6 +199,7 @@ func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 		&im.File.Hash,
 		&im.File.Size,
 		&im.File.Type,
+		&im.Id,
 		&im.Origin,
 		&im.Lock,
 	)
@@ -226,6 +227,7 @@ func LoadInscriptions(origin Origin) (ims []*InscriptionMeta, err error) {
 			&im.File.Hash,
 			&im.File.Size,
 			&im.File.Type,
+			&im.Id,
 			&im.Origin,
 			&im.Lock,
 		)
