@@ -2,60 +2,12 @@ package lib
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/binary"
 	"fmt"
 	"log"
 
 	"github.com/libsv/go-bt/v2"
 )
-
-var getInput *sql.Stmt
-var insSpend *sql.Stmt
-var insTxo *sql.Stmt
-var setTxoOrigin *sql.Stmt
-
-func init() {
-	var err error
-
-	getInput, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
-		FROM txos
-		WHERE spend=$1 AND acc_sats>=$2 AND satoshis=1
-		ORDER BY acc_sats ASC
-		LIMIT 1
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	insTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock)
-		VALUES($1, $2, $3, $4, $5)
-		ON CONFLICT(txid, vout) DO UPDATE SET 
-			lock=EXCLUDED.lock, 
-			satoshis=EXCLUDED.satoshis
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	setTxoOrigin, err = Db.Prepare(`UPDATE txos
-		SET origin=$3
-		WHERE txid=$1 AND vout=$2
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	insSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
-		VALUES($1, $2, $3, $4)
-		ON CONFLICT(txid, vout) DO UPDATE 
-			SET spend=EXCLUDED.spend, vin=EXCLUDED.vin
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-}
 
 func IndexTxos(tx *bt.Tx, height uint32, idx uint32) (err error) {
 	txid := tx.TxIDBytes()
@@ -90,7 +42,7 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32) (err error) {
 			lock = hash[:]
 		}
 
-		_, err = insTxo.Exec(
+		_, err = InsTxo.Exec(
 			txid,
 			uint32(vout),
 			txout.Satoshis,
@@ -104,7 +56,7 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32) (err error) {
 	}
 
 	for vin, txin := range tx.Inputs {
-		_, err = insSpend.Exec(
+		_, err = InsSpend.Exec(
 			txin.PreviousTxID(),
 			txin.PreviousTxOutIndex,
 			txid,
@@ -154,7 +106,7 @@ func ProcessInsOutput(txout *bt.Output) (im *InscriptionMeta, err error) {
 
 func LoadOrigin(txo *Txo) (origin []byte, err error) {
 	fmt.Printf("Indexing Origin %x %d\n", txo.Txid, txo.Vout)
-	rows, err := getInput.Query(txo.Txid, txo.AccSats)
+	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
 	if err != nil {
 		return
 	}
@@ -188,7 +140,7 @@ func LoadOrigin(txo *Txo) (origin []byte, err error) {
 	}
 
 	if len(origin) > 0 {
-		_, err = setTxoOrigin.Exec(
+		_, err = SetTxoOrigin.Exec(
 			txo.Txid,
 			txo.Vout,
 			origin,

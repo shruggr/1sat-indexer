@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -12,7 +11,6 @@ import (
 )
 
 var PATTERN []byte
-var insInscription *sql.Stmt
 
 func init() {
 	val, err := hex.DecodeString("0063036f7264")
@@ -20,16 +18,6 @@ func init() {
 		log.Panic(err)
 	}
 	PATTERN = val
-
-	insInscription, err = Db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-			ON CONFLICT(txid, vout) DO UPDATE
-				SET height=EXCLUDED.height, idx=EXCLUDED.idx
-	`)
-	if err != nil {
-		log.Panic(err)
-	}
 }
 
 type Inscription struct {
@@ -124,7 +112,7 @@ type InscriptionMeta struct {
 
 func (im *InscriptionMeta) Save() (err error) {
 	// log.Printf("Saving %x %d %d\n", im.Txid, im.Height, im.Idx)
-	_, err = insInscription.Exec(
+	_, err = InsInscription.Exec(
 		im.Txid,
 		im.Vout,
 		im.Height,

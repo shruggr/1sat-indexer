@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/GorillaPool/go-junglebus"
@@ -22,6 +23,14 @@ var txCache *lru.ARCCache[string, *models.Transaction]
 var Db *sql.DB
 var JBClient *junglebus.JungleBusClient
 var GetInsNumber *sql.Stmt
+
+var GetTxo *sql.Stmt
+var GetTxos *sql.Stmt
+var GetInput *sql.Stmt
+var InsSpend *sql.Stmt
+var InsTxo *sql.Stmt
+var InsInscription *sql.Stmt
+var SetTxoOrigin *sql.Stmt
 
 func Initialize(db *sql.DB) (err error) {
 	Db := db
@@ -44,6 +53,69 @@ func Initialize(db *sql.DB) (err error) {
 	`)
 	if err != nil {
 		return
+	}
+
+	GetTxo, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+		FROM txos
+		WHERE txid=$1 AND vout=$2 AND acc_sats IS NOT NULL
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	GetTxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+		FROM txos
+		WHERE txid=$1 AND satoshis=1 AND acc_sats IS NOT NULL
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	GetInput, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+		FROM txos
+		WHERE spend=$1 AND acc_sats>=$2 AND satoshis=1
+		ORDER BY acc_sats ASC
+		LIMIT 1
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock)
+		VALUES($1, $2, $3, $4, $5)
+		ON CONFLICT(txid, vout) DO UPDATE SET 
+			lock=EXCLUDED.lock, 
+			satoshis=EXCLUDED.satoshis
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	SetTxoOrigin, err = Db.Prepare(`UPDATE txos
+		SET origin=$3
+		WHERE txid=$1 AND vout=$2
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
+		VALUES($1, $2, $3, $4)
+		ON CONFLICT(txid, vout) DO UPDATE 
+			SET spend=EXCLUDED.spend, vin=EXCLUDED.vin
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsInscription, err = Db.Prepare(`
+		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT(txid, vout) DO UPDATE
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx
+	`)
+	if err != nil {
+		log.Panic(err)
 	}
 
 	txCache, err = lru.NewARC[string, *models.Transaction](2 ^ 30)
