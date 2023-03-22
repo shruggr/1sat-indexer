@@ -69,22 +69,14 @@ func LoadUtxos(lock []byte) (utxos []*Txo, err error) {
 
 func bindTxo(rows *sql.Rows) (txo *Txo, err error) {
 	txo = &Txo{}
-	var spend *ByteString
-	var origin *Origin
 	err = rows.Scan(
 		&txo.Txid,
 		&txo.Vout,
 		&txo.Satoshis,
 		&txo.AccSats,
 		&txo.Lock,
-		&spend,
-		&origin,
+		&txo.Spend,
+		&txo.Origin,
 	)
-	if spend != nil {
-		txo.Spend = *spend
-	}
-	if origin != nil {
-		txo.Origin = *origin
-	}
 	return
 }

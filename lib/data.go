@@ -58,7 +58,7 @@ func Initialize(db *sql.DB) (err error) {
 		return
 	}
 
-	GetTxo, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+	GetTxo, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 		FROM txos
 		WHERE txid=$1 AND vout=$2 AND acc_sats IS NOT NULL
 	`)
@@ -66,7 +66,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetTxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+	GetTxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 		FROM txos
 		WHERE txid=$1 AND satoshis=1 AND acc_sats IS NOT NULL
 	`)
@@ -74,7 +74,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetUtxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+	GetUtxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 		FROM txos
 		WHERE lock=$1 AND spend IS NULL
 	`)
@@ -82,7 +82,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInput, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+	GetInput, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 		FROM txos
 		WHERE spend=$1 AND acc_sats>=$2 AND satoshis=1
 		ORDER BY acc_sats ASC
@@ -158,7 +158,7 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 type Origin []byte
 
 func (o Origin) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(fmt.Sprintf("%x:%d", o[:32], binary.LittleEndian.Uint32(o[32:])))
+	bytes, err := json.Marshal(fmt.Sprintf("%x:%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 	return bytes, err
 }
 
