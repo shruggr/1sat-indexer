@@ -158,7 +158,7 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 type Origin []byte
 
 func (o Origin) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(fmt.Sprintf("%x:%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+	bytes, err := json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 	return bytes, err
 }
 
