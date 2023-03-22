@@ -175,51 +175,45 @@ func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err er
 	return
 }
 
-func GetInsMetaByOrigin(origin []byte) (ins []*InscriptionMeta, err error) {
-	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
-		FROM inscriptions
-		WHERE origin=$1
-		ORDER BY height DESC, idx DESC`,
-		origin,
-	)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
+// func GetInsMetaByOrigin(origin []byte) (ins []*InscriptionMeta, err error) {
+// 	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
+// 		FROM inscriptions
+// 		WHERE origin=$1
+// 		ORDER BY height DESC, idx DESC`,
+// 		origin,
+// 	)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer rows.Close()
 
-	for rows.Next() {
-		im := &InscriptionMeta{}
-		err = rows.Scan(
-			&im.Txid,
-			&im.Vout,
-			&im.File.Hash,
-			&im.File.Size,
-			&im.File.Type,
-			&im.Id,
-			&im.Origin,
-			&im.Ordinal,
-			&im.Height,
-			&im.Idx,
-			&im.Lock,
-		)
-		if err != nil {
-			log.Panic(err)
-			return
-		}
+// 	for rows.Next() {
+// 		im := &InscriptionMeta{}
+// 		err = rows.Scan(
+// 			&im.Txid,
+// 			&im.Vout,
+// 			&im.File.Hash,
+// 			&im.File.Size,
+// 			&im.File.Type,
+// 			&im.Id,
+// 			&im.Origin,
+// 			&im.Ordinal,
+// 			&im.Height,
+// 			&im.Idx,
+// 			&im.Lock,
+// 		)
+// 		if err != nil {
+// 			log.Panic(err)
+// 			return
+// 		}
 
-		ins = append(ins, im)
-	}
-	return
-}
+// 		ins = append(ins, im)
+// 	}
+// 	return
+// }
 
-func LoadInsByOrigin(origin Origin) (ins *Inscription, err error) {
-	rows, err := Db.Query(`SELECT txid, vout, filetype
-		FROM inscriptions
-		WHERE origin=$1
-		ORDER BY height DESC, idx DESC
-		LIMIT 1`,
-		origin,
-	)
+func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
+	rows, err := GetInsciption.Query(origin)
 	if err != nil {
 		return
 	}
@@ -232,19 +226,35 @@ func LoadInsByOrigin(origin Origin) (ins *Inscription, err error) {
 		}
 		return
 	}
-	var txid []byte
-	var vout uint32
-	var filetype string
-	err = rows.Scan(&txid, &vout, &filetype)
+	im = &InscriptionMeta{}
+	err = rows.Scan(
+		&im.Txid,
+		&im.Vout,
+		&im.Height,
+		&im.Idx,
+		&im.File.Hash,
+		&im.File.Size,
+		&im.File.Type,
+		&im.Origin,
+		&im.Lock,
+	)
 	if err != nil {
 		return
 	}
 
-	tx, err := LoadTx(txid)
+	return
+}
+
+func LoadInscriptionFile(origin Origin) (ins *Inscription, err error) {
+	im, err := LoadInscription(origin)
+	if err != nil {
+		return
+	}
+	tx, err := LoadTx(im.Txid)
 	if err != nil {
 		return
 	}
 
-	ins, _ = InscriptionFromScript(*tx.Outputs[vout].LockingScript)
+	ins, _ = InscriptionFromScript(*tx.Outputs[im.Vout].LockingScript)
 	return
 }
