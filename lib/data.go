@@ -112,10 +112,11 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetUnnumberedIns, err = Db.Prepare(`SELECT txid, vout 
+	GetUnnumberedIns, err = Db.Prepare(`
+		SELECT txid, vout 
 		FROM inscriptions
 		WHERE id IS NULL AND height <= $1
-		ORDER BY height, idx`,
+		ORDER BY height, idx, vout`,
 	)
 	if err != nil {
 		log.Fatal(err)

@@ -1,6 +1,12 @@
 CREATE INDEX idx_inscriptions_origin ON inscriptions(origin);
 
-CREATE INDEX idx_inscriptions_id_height_idx ON inscriptions(id, height, idx);
+CREATE INDEX idx_inscriptions_id
+ON inscriptions(id);
+
+CREATE INDEX idx_inscriptions_height_idx_vout
+ON inscriptions(height, idx, vout)
+WHERE id IS NULL;
+
 
 -- CREATE INDEX idx_inscriptions_height_idx ON inscriptions(height);
 
