@@ -32,14 +32,14 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32) (err error) {
 			im.Vout = uint32(vout)
 			im.Height = height
 			im.Idx = idx
-			lock = im.Lock[:]
+			lock = im.Lock
 			err = im.Save()
 			if err != nil {
 				return
 			}
 		} else {
 			hash := sha256.Sum256(*txout.LockingScript)
-			lock = hash[:]
+			lock = bt.ReverseBytes(hash[:])
 		}
 
 		_, err = InsTxo.Exec(

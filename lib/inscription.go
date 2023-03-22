@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
 )
 
@@ -25,7 +26,7 @@ type Inscription struct {
 	Type string
 }
 
-func InscriptionFromScript(script bscript.Script) (ins *Inscription, lock [32]byte) {
+func InscriptionFromScript(script bscript.Script) (ins *Inscription, lock []byte) {
 	parts, err := bscript.DecodeParts(script)
 	if err != nil {
 		// log.Panic(err)
@@ -35,33 +36,37 @@ func InscriptionFromScript(script bscript.Script) (ins *Inscription, lock [32]by
 	var opfalse int
 	var opif int
 	var opord int
-
+	lockScript := bscript.Script{}
 	for i, op := range parts {
 		if len(op) == 1 {
 			opcode := op[0]
 			if opcode == bscript.Op0 {
 				opfalse = i
-				continue
 			}
 			if opcode == bscript.OpIF {
 				opif = i
-				continue
 			}
+			lockScript.AppendOpcodes(opcode)
+			continue
 		}
 		if bytes.Equal(op, []byte("ord")) {
 			if opif == i-1 && opfalse == i-2 {
 				opord = i
+				lockScript = lockScript[:len(lockScript)-2]
 				break
 			}
 		}
+		lockScript.AppendPushData(op)
 	}
 
 	if opord == 0 {
-		lock = sha256.Sum256(script)
+		hash := sha256.Sum256(script)
+		lock = bt.ReverseBytes(hash[:])
 		return
 	}
+	hash := sha256.Sum256(lockScript)
+	lock = bt.ReverseBytes(hash[:])
 	parts = parts[opord+1:]
-	lock = sha256.Sum256(script[:opif])
 
 	ins = &Inscription{}
 	for i := 0; i < len(parts); i++ {
