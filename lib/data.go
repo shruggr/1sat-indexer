@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -151,6 +153,33 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 	}
 	txCache.Add(key, txData)
 	return txData, nil
+}
+
+type Origin []byte
+
+func (o Origin) MarshalJSON() ([]byte, error) {
+	bytes, err := json.Marshal(fmt.Sprintf("%x:%d", o[:32], binary.LittleEndian.Uint32(o[32:])))
+	return bytes, err
+}
+
+// UnmarshalJSON deserializes Origin to string
+func (o *Origin) UnmarshalJSON(data []byte) error {
+	var x string
+	err := json.Unmarshal(data, &x)
+	if err == nil {
+		txid, err := hex.DecodeString(x[:64])
+		if err != nil {
+			return err
+		}
+		vout, err := strconv.ParseUint(x[65:], 10, 32)
+		if err != nil {
+			return err
+		}
+
+		*o = Origin(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	}
+
+	return err
 }
 
 // ByteString is a byte array that serializes to hex

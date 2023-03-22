@@ -6,14 +6,14 @@ import (
 )
 
 type Txo struct {
-	Txid     []byte
-	Vout     uint32
-	Satoshis uint64
-	AccSats  uint64
-	Lock     []byte
-	Spend    []byte
-	Origin   []byte
-	Ordinal  uint64
+	Txid     ByteString `json:"txid"`
+	Vout     uint32     `json:"vout"`
+	Satoshis uint64     `json:"satoshis"`
+	AccSats  uint64     `json:"acc_sats"`
+	Lock     ByteString `json:"lock"`
+	Spend    ByteString `json:"spend,omitempty"`
+	Origin   Origin     `json:"origin,omitempty"`
+	Ordinal  uint64     `json:"ordinal"`
 }
 
 func LoadTxo(txid []byte, vout uint32) (txo *Txo, err error) {
@@ -50,7 +50,7 @@ func LoadTxos(txid []byte) (txos []*Txo, err error) {
 	return
 }
 
-func LoadUtxos(lock []byte) (txos []*Txo, err error) {
+func LoadUtxos(lock []byte) (utxos []*Txo, err error) {
 	rows, err := GetUtxos.Query(lock)
 	if err != nil {
 		return
@@ -62,21 +62,29 @@ func LoadUtxos(lock []byte) (txos []*Txo, err error) {
 		if err != nil {
 			return nil, err
 		}
-		txos = append(txos, txo)
+		utxos = append(utxos, txo)
 	}
 	return
 }
 
 func bindTxo(rows *sql.Rows) (txo *Txo, err error) {
 	txo = &Txo{}
+	var spend *ByteString
+	var origin *Origin
 	err = rows.Scan(
 		&txo.Txid,
 		&txo.Vout,
 		&txo.Satoshis,
 		&txo.AccSats,
 		&txo.Lock,
-		&txo.Spend,
-		&txo.Origin,
+		&spend,
+		&origin,
 	)
+	if spend != nil {
+		txo.Spend = *spend
+	}
+	if origin != nil {
+		txo.Origin = *origin
+	}
 	return
 }
