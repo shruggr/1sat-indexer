@@ -31,6 +31,7 @@ var InsSpend *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
 var SetTxoOrigin *sql.Stmt
+var GetUtxos *sql.Stmt
 
 func Initialize(db *sql.DB) (err error) {
 	Db := db
@@ -66,6 +67,14 @@ func Initialize(db *sql.DB) (err error) {
 	GetTxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
 		FROM txos
 		WHERE txid=$1 AND satoshis=1 AND acc_sats IS NOT NULL
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	GetUtxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
+		FROM txos
+		WHERE scripthash=$1 AND spend IS NULL
 	`)
 	if err != nil {
 		log.Fatal(err)
