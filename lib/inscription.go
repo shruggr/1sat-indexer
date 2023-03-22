@@ -126,7 +126,7 @@ func (im *InscriptionMeta) Save() (err error) {
 		im.File.Size,
 		im.File.Type,
 		im.Origin,
-		im.Lock[:],
+		im.Lock,
 	)
 	if err != nil {
 		log.Panicf("Save Error: %x %d %x %+v\n", im.Txid, im.File.Size, im.File.Type, err)
@@ -134,52 +134,6 @@ func (im *InscriptionMeta) Save() (err error) {
 	}
 	return
 }
-
-// func ProcessInsTx(tx *bt.Tx, height uint32, idx uint32) (inscriptions []*InscriptionMeta, err error) {
-// 	txid := tx.TxIDBytes()
-// 	for vout, txout := range tx.Outputs {
-// 		var im *InscriptionMeta
-// 		im, err = ProcessInsOutput(txid, uint32(vout), txout, height, idx)
-// 		if err != nil {
-// 			return
-// 		}
-// 		if im != nil {
-// 			inscriptions = append(inscriptions, im)
-// 		}
-// 	}
-
-// 	return
-// }
-
-// func ProcessInsOutput(txid []byte, vout uint32, txout *bt.Output, height uint32, idx uint32) (ins *InscriptionMeta, err error) {
-// 	inscription, lock := InscriptionFromScript(*txout.LockingScript)
-// 	if inscription == nil {
-// 		fmt.Printf("Not an inscription: %x %d\n", txid, vout)
-// 		return
-// 	}
-
-// 	hash := sha256.Sum256(inscription.Body)
-
-// 	im := &InscriptionMeta{
-// 		Txid: txid,
-// 		Vout: uint32(vout),
-// 		File: File{
-// 			Hash: hash[:],
-// 			Size: uint32(len(inscription.Body)),
-// 			Type: inscription.Type,
-// 		},
-// 		Height: height,
-// 		Idx:    idx,
-// 		Lock:   lock,
-// 	}
-
-// 	err = im.Save()
-// 	if err != nil {
-// 		log.Panic(err)
-// 		return
-// 	}
-// 	return
-// }
 
 func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err error) {
 	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
@@ -258,7 +212,7 @@ func GetInsMetaByOrigin(origin []byte) (ins []*InscriptionMeta, err error) {
 	return
 }
 
-func LoadInsByOrigin(origin []byte) (ins *Inscription, err error) {
+func LoadInsByOrigin(origin Origin) (ins *Inscription, err error) {
 	rows, err := Db.Query(`SELECT txid, vout, filetype
 		FROM inscriptions
 		WHERE origin=$1

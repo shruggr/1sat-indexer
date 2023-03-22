@@ -24,15 +24,17 @@ var TRIGGER = uint32(783968)
 var txCache *lru.ARCCache[string, *models.Transaction]
 var Db *sql.DB
 var JBClient *junglebus.JungleBusClient
-var GetInsNumber *sql.Stmt
 
+var GetInsNumber *sql.Stmt
 var GetTxo *sql.Stmt
 var GetTxos *sql.Stmt
 var GetInput *sql.Stmt
+var GetInsciption *sql.Stmt
 var InsSpend *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
 var SetTxoOrigin *sql.Stmt
+var SetInscriptionOrigin *sql.Stmt
 var GetUtxos *sql.Stmt
 
 func Initialize(db *sql.DB) (err error) {
@@ -92,6 +94,16 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
+	GetInsciption, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(origin, '\x'::BYTEA), lock
+		FROM inscriptions
+		WHERE origin=$1
+		ORDER BY height DESC, idx DESC
+		LIMIT 1`,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock)
 		VALUES($1, $2, $3, $4, $5)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
@@ -103,6 +115,14 @@ func Initialize(db *sql.DB) (err error) {
 	}
 
 	SetTxoOrigin, err = Db.Prepare(`UPDATE txos
+		SET origin=$3
+		WHERE txid=$1 AND vout=$2
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	SetInscriptionOrigin, err = Db.Prepare(`UPDATE inscriptions
 		SET origin=$3
 		WHERE txid=$1 AND vout=$2
 	`)

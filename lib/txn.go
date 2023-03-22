@@ -105,7 +105,6 @@ func ProcessInsOutput(txout *bt.Output) (im *InscriptionMeta, err error) {
 }
 
 func LoadOrigin(txo *Txo) (origin []byte, err error) {
-	fmt.Printf("Indexing Origin %x %d\n", txo.Txid, txo.Vout)
 	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
 	if err != nil {
 		return
@@ -145,7 +144,15 @@ func LoadOrigin(txo *Txo) (origin []byte, err error) {
 			txo.Vout,
 			origin,
 		)
+		if err != nil {
+			return nil, err
+		}
 
+		_, err = SetInscriptionOrigin.Exec(
+			txo.Txid,
+			txo.Vout,
+			origin,
+		)
 		if err != nil {
 			return nil, err
 		}
