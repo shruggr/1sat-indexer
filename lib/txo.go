@@ -50,8 +50,8 @@ func LoadTxos(txid []byte) (txos []*Txo, err error) {
 	return
 }
 
-func LoadUtxos(scripthash []byte) (txos []*Txo, err error) {
-	rows, err := GetUtxos.Query(scripthash)
+func LoadUtxos(lock []byte) (txos []*Txo, err error) {
+	rows, err := GetUtxos.Query(lock)
 	if err != nil {
 		return
 	}

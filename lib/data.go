@@ -74,7 +74,7 @@ func Initialize(db *sql.DB) (err error) {
 
 	GetUtxos, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, spend, origin
 		FROM txos
-		WHERE scripthash=$1 AND spend IS NULL
+		WHERE lock=$1 AND spend IS NULL
 	`)
 	if err != nil {
 		log.Fatal(err)
