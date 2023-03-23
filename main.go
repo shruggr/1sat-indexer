@@ -16,11 +16,12 @@ import (
 )
 
 const INDEXER = "1sat"
-const THREADS = 16
+const THREADS = 10
 
 var db *sql.DB
-var threadsChan = make(chan struct{}, THREADS)
-var processedIdx = map[uint64]bool{}
+var threadLimiter = make(chan struct{}, THREADS)
+
+// var processedIdx = map[uint64]bool{}
 var m sync.Mutex
 
 func init() {
@@ -42,9 +43,26 @@ var wg sync.WaitGroup
 
 // var txids = make(chan []byte, 2^32)
 var junglebusClient *junglebus.JungleBusClient
-var txids = [][]byte{}
+
+// var txids = [][]byte{}
 var sub *junglebus.Subscription
 var fromBlock uint32
+var settledHeight uint32
+
+// var blockWg sync.WaitGroup
+
+type TxnStatus struct {
+	ID       string
+	Tx       *bt.Tx
+	Height   uint32
+	Idx      uint32
+	Parents  map[string]*TxnStatus
+	Children map[string]*TxnStatus
+}
+
+var txns = map[string]*TxnStatus{}
+var queue = make(chan *TxnStatus, 10000)
+var settled = make(chan uint32)
 
 func main() {
 	var err error
@@ -55,7 +73,7 @@ func main() {
 		log.Fatalln(err.Error())
 	}
 
-	row := db.QueryRow(`SELECT height+1
+	row := db.QueryRow(`SELECT height
 			FROM progress
 			WHERE indexer='1sat'`,
 	)
@@ -66,9 +84,13 @@ func main() {
 
 	var wg2 sync.WaitGroup
 	wg2.Add(1)
+	go processInscriptionIds()
 	subscribe()
+	processTxns()
 	wg2.Wait()
 }
+
+// var statusCode uint32
 
 func subscribe() {
 	var err error
@@ -77,31 +99,47 @@ func subscribe() {
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
-			OnTransaction: onOneSatHandler,
+			OnTransaction: onTransactionHandler,
 			// OnMempool:     onOneSatHandler,
 			OnStatus: func(status *jbModels.ControlResponse) {
-				log.Printf("[STATUS]: %v\n", status)
-				if status.StatusCode == 200 {
+				switch status.StatusCode {
+				case 1:
+				case 2:
+				case 10:
+				case 11:
+					log.Printf("[STATUS]: %v\n", status)
+				case 200:
+					log.Printf("[STATUS]: %v\n", status)
 					sub.Unsubscribe()
 					wg.Wait()
-					processOrigins()
-					wg.Wait()
+					settledHeight = status.Block - 6
+
 					if _, err := db.Exec(`INSERT INTO progress(indexer, height)
 						VALUES($1, $2)
 						ON CONFLICT(indexer) DO UPDATE
 							SET height=$2`,
 						INDEXER,
-						status.Block,
+						settledHeight,
 					); err != nil {
 						log.Print(err)
 					}
-					fromBlock++
-					m.Lock()
-					processedIdx = map[uint64]bool{}
-					m.Unlock()
-					txids = [][]byte{}
-					processInscriptionIds(fromBlock - 6)
+					fromBlock = status.Block + 1
+					// m.Lock()
+					// processedIdx = map[uint64]bool{}
+					// m.Unlock()
+					// txids = [][]byte{}
+					// go processInscriptionIds(settledHeight)
+					fmt.Printf("Completed: %d\n", status.Block)
+					settled <- settledHeight
 					subscribe()
+				case 300:
+					log.Printf("[STATUS]: %v\n", status)
+					sub.Unsubscribe()
+					wg.Wait()
+					fromBlock = status.Block
+					subscribe()
+				default:
+					log.Panicf("[STATUS]: %v\n", status)
 				}
 			},
 			OnError: func(err error) {
@@ -116,63 +154,99 @@ func subscribe() {
 		log.Panic(err)
 	}
 }
-func onOneSatHandler(txResp *jbModels.TransactionResponse) {
-	fmt.Printf("[TX]: %d: %v\n", txResp.BlockHeight, txResp.Id)
 
-	m.Lock()
-	if _, ok := processedIdx[txResp.BlockIndex]; txResp.BlockHeight > 0 && ok {
-		fmt.Println("Already Processed:", txResp.Id)
-		m.Unlock()
-		return
-	}
-	m.Unlock()
-
+func onTransactionHandler(txResp *jbModels.TransactionResponse) {
+	fmt.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+	// if txResp.BlockHeight <= settledHeight {
+	// 	fmt.Printf("Skipping: %s\n", txResp.Id)
+	// 	return
+	// }
 	tx, err := bt.NewTxFromBytes(txResp.Transaction)
 	if err != nil {
-		log.Printf("OnTransaction Parse Error: %s %+v\n", txResp.Id, err)
-	}
-	if txResp.BlockHeight > 0 {
-		txids = append(txids, tx.TxIDBytes())
+		log.Panicf("OnTransaction Parse Error: %s %+v\n", txResp.Id, err)
 	}
 
+	txn := &TxnStatus{
+		ID:       txResp.Id,
+		Tx:       tx,
+		Height:   txResp.BlockHeight,
+		Idx:      uint32(txResp.BlockIndex),
+		Parents:  map[string]*TxnStatus{},
+		Children: map[string]*TxnStatus{},
+	}
+
+	for _, input := range tx.Inputs {
+		m.Lock()
+		if parent, ok := txns[input.PreviousTxIDStr()]; ok {
+			parent.Children[txResp.Id] = txn
+			txn.Parents[parent.ID] = parent
+		}
+		m.Unlock()
+	}
 	wg.Add(1)
-	threadsChan <- struct{}{}
-	height := txResp.BlockHeight
-	idx := txResp.BlockIndex
-	go func(height uint32, idx uint64) {
-		err = lib.IndexTxos(tx, height, uint32(idx))
-		if err != nil {
-			log.Fatal(err)
-		}
+	m.Lock()
+	txns[txResp.Id] = txn
+	m.Unlock()
 
-		wg.Done()
-		if txResp.BlockHeight > 0 {
-			m.Lock()
-			processedIdx[idx] = true
-			m.Unlock()
-		}
-		<-threadsChan
-	}(height, idx)
-}
-
-func processOrigins() {
-	for _, txid := range txids {
-		wg.Add(1)
-		threadsChan <- struct{}{}
-		go func(txid []byte) {
-			err := lib.IndexOrigins(txid)
-			if err != nil {
-				log.Fatal(err)
-			}
-			wg.Done()
-			<-threadsChan
-		}(txid)
+	if len(txn.Parents) == 0 {
+		queue <- txn
 	}
 }
 
-func processInscriptionIds(height uint32) {
-	err := lib.SetInscriptionIds(height)
+func processTxns() {
+	for {
+		txn := <-queue
+		threadLimiter <- struct{}{}
+		go func(txn *TxnStatus) {
+			processTxn(txn)
+			<-threadLimiter
+		}(txn)
+	}
+}
+
+func processTxn(txn *TxnStatus) {
+	err := lib.IndexTxos(txn.Tx, txn.Height, txn.Idx)
 	if err != nil {
-		log.Println("Error processing inscription ids:", err)
+		log.Fatal(err)
+	}
+
+	for _, child := range txn.Children {
+		m.Lock()
+		delete(child.Parents, txn.ID)
+		orphan := len(child.Parents) == 0
+		m.Unlock()
+		if orphan {
+			queue <- child
+		}
+	}
+	m.Lock()
+	delete(txns, txn.ID)
+	m.Unlock()
+	wg.Done()
+}
+
+// func processOrigins() {
+// 	for _, txid := range txids {
+// 		wg.Add(1)
+// 		threadsChan <- struct{}{}
+// 		go func(txid []byte) {
+// 			err := lib.IndexOrigins(txid)
+// 			if err != nil {
+// 				log.Fatal(err)
+// 			}
+// 			wg.Done()
+// 			<-threadsChan
+// 		}(txid)
+// 	}
+// }
+
+func processInscriptionIds() {
+	for {
+		height := <-settled
+		fmt.Println("Processing inscription ids for height", height)
+		err := lib.SetInscriptionIds(height)
+		if err != nil {
+			log.Panicln("Error processing inscription ids:", err)
+		}
 	}
 }

@@ -14,6 +14,8 @@ type Txo struct {
 	Spend    ByteString `json:"spend,omitempty"`
 	Origin   Origin     `json:"origin,omitempty"`
 	Ordinal  uint64     `json:"ordinal"`
+	Height   uint32     `json:"height"`
+	Idx      uint32     `json:"idx"`
 }
 
 func LoadTxo(txid []byte, vout uint32) (txo *Txo, err error) {

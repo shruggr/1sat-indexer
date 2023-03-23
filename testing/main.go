@@ -2,11 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2/bscript"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -23,32 +25,15 @@ func main() {
 		log.Panic(err)
 	}
 
-	o, err := lib.NewOriginFromString("13899501db55c2c0d9a79b6fe0a84eac9d68a8e1b9971b05bfab8511608bd009_0")
+	b, _ := hex.DecodeString("2be2cf7cff0b954cdd919f3bb22155cdb128005b7e639918e26cd61a5672e976")
+	script := bscript.NewFromBytes(b)
+	pkh, err := script.PublicKeyHash()
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Printf("Origin: %s\n", o.String())
-
-	// lock, err := hex.DecodeString("dab3a9eecb41663021b01755fa924332a922e026b3669823b40e05e8689a7005")
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Printf("Lock: %x\n", lock)
-	// utxos, err := lib.LoadUtxos(lock)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Printf("UTXOs: %v\n", utxos)
-	// for _, utxo := range utxos {
-	// 	// o, err := lib.NewOriginFromString(utxo.Origin)
-	// 	// if err != nil {
-	// 	// 	log.Panic(err)
-	// 	// }
-	// 	fmt.Printf("Origin: %s\n", utxo.Origin.String())
-	// }
-	// str, err := json.Marshal(utxos)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Println(string(str))
+	add, err := bscript.NewAddressFromPublicKeyHash(pkh, true)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(add.AddressString)
 }
