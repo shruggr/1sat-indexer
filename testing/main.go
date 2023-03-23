@@ -3,12 +3,12 @@ package main
 import (
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/libsv/go-bt/v2/bscript"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -24,16 +24,19 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	txid, _ := hex.DecodeString("a72cc94b8f6276f73e617b3954087bdad11982bfd913e3061975e5300d773681")
+	tx, err := lib.LoadTx(txid)
+	if err != nil {
+		log.Panic(err)
+	}
 
-	b, _ := hex.DecodeString("2be2cf7cff0b954cdd919f3bb22155cdb128005b7e639918e26cd61a5672e976")
-	script := bscript.NewFromBytes(b)
-	pkh, err := script.PublicKeyHash()
+	result, err := lib.IndexTxos(tx, 0, 0)
 	if err != nil {
 		log.Panic(err)
 	}
-	add, err := bscript.NewAddressFromPublicKeyHash(pkh, true)
+	out, err := json.Marshal(result)
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Println(add.AddressString)
+	fmt.Println(string(out))
 }

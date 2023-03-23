@@ -21,7 +21,6 @@ const THREADS = 10
 var db *sql.DB
 var threadLimiter = make(chan struct{}, THREADS)
 
-// var processedIdx = map[uint64]bool{}
 var m sync.Mutex
 
 func init() {
@@ -41,15 +40,11 @@ func init() {
 
 var wg sync.WaitGroup
 
-// var txids = make(chan []byte, 2^32)
 var junglebusClient *junglebus.JungleBusClient
 
-// var txids = [][]byte{}
 var sub *junglebus.Subscription
 var fromBlock uint32
 var settledHeight uint32
-
-// var blockWg sync.WaitGroup
 
 type TxnStatus struct {
 	ID       string
@@ -124,11 +119,6 @@ func subscribe() {
 						log.Print(err)
 					}
 					fromBlock = status.Block + 1
-					// m.Lock()
-					// processedIdx = map[uint64]bool{}
-					// m.Unlock()
-					// txids = [][]byte{}
-					// go processInscriptionIds(settledHeight)
 					fmt.Printf("Completed: %d\n", status.Block)
 					settled <- settledHeight
 					subscribe()
@@ -205,7 +195,13 @@ func processTxns() {
 }
 
 func processTxn(txn *TxnStatus) {
-	err := lib.IndexTxos(txn.Tx, txn.Height, txn.Idx)
+	fmt.Printf("Processing: %s\n", txn.Tx.TxID())
+	_, err := lib.IndexSpends(txn.Tx, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = lib.IndexTxos(txn.Tx, txn.Height, txn.Idx, true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -224,21 +220,6 @@ func processTxn(txn *TxnStatus) {
 	m.Unlock()
 	wg.Done()
 }
-
-// func processOrigins() {
-// 	for _, txid := range txids {
-// 		wg.Add(1)
-// 		threadsChan <- struct{}{}
-// 		go func(txid []byte) {
-// 			err := lib.IndexOrigins(txid)
-// 			if err != nil {
-// 				log.Fatal(err)
-// 			}
-// 			wg.Done()
-// 			<-threadsChan
-// 		}(txid)
-// 	}
-// }
 
 func processInscriptionIds() {
 	for {
