@@ -29,12 +29,12 @@ func init() {
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	err = lib.Initialize(db)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 }
 
@@ -65,7 +65,7 @@ func main() {
 		junglebus.WithHTTP("https://junglebus.gorillapool.io"),
 	)
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.Panicln(err.Error())
 	}
 
 	row := db.QueryRow(`SELECT height
@@ -97,14 +97,9 @@ func subscribe() {
 			OnTransaction: onTransactionHandler,
 			// OnMempool:     onOneSatHandler,
 			OnStatus: func(status *jbModels.ControlResponse) {
+				log.Printf("[STATUS]: %v\n", status)
 				switch status.StatusCode {
-				case 1:
-				case 2:
-				case 10:
-				case 11:
-					log.Printf("[STATUS]: %v\n", status)
 				case 200:
-					log.Printf("[STATUS]: %v\n", status)
 					sub.Unsubscribe()
 					wg.Wait()
 					settledHeight = status.Block - 6
@@ -116,20 +111,17 @@ func subscribe() {
 						INDEXER,
 						settledHeight,
 					); err != nil {
-						log.Print(err)
+						log.Panic(err)
 					}
 					fromBlock = status.Block + 1
 					fmt.Printf("Completed: %d\n", status.Block)
 					settled <- settledHeight
 					subscribe()
 				case 300:
-					log.Printf("[STATUS]: %v\n", status)
 					sub.Unsubscribe()
 					wg.Wait()
 					fromBlock = status.Block
 					subscribe()
-				default:
-					log.Panicf("[STATUS]: %v\n", status)
 				}
 			},
 			OnError: func(err error) {
@@ -138,9 +130,6 @@ func subscribe() {
 		},
 	)
 	if err != nil {
-		// log.Printf("ERROR: failed getting subscription %s", err.Error())
-
-		// wg2.Done()
 		log.Panic(err)
 	}
 }
@@ -198,12 +187,12 @@ func processTxn(txn *TxnStatus) {
 	fmt.Printf("Processing: %s\n", txn.Tx.TxID())
 	_, err := lib.IndexSpends(txn.Tx, true)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	_, err = lib.IndexTxos(txn.Tx, txn.Height, txn.Idx, true)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	for _, child := range txn.Children {
