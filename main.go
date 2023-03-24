@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -16,12 +18,38 @@ import (
 )
 
 const INDEXER = "1sat"
-const THREADS = 10
+
+var THREADS uint64 = 15
 
 var db *sql.DB
+var junglebusClient *junglebus.JungleBusClient
+var sub *junglebus.Subscription
 var threadLimiter = make(chan struct{}, THREADS)
-
 var m sync.Mutex
+var wg sync.WaitGroup
+var txns = map[string]*TxnStatus{}
+var msgQueue = make(chan *Msg, 100000)
+var txnQueue = make(chan *TxnStatus, 100000)
+var settled = make(chan uint32, 100)
+var fromBlock uint32
+var connected bool
+
+type Msg struct {
+	Id          string
+	Height      uint32
+	Status      uint32
+	Idx         uint32
+	Transaction []byte
+}
+
+type TxnStatus struct {
+	ID       string
+	Tx       *bt.Tx
+	Height   uint32
+	Idx      uint32
+	Parents  map[string]*TxnStatus
+	Children map[string]*TxnStatus
+}
 
 func init() {
 	godotenv.Load()
@@ -36,28 +64,13 @@ func init() {
 	if err != nil {
 		log.Panic(err)
 	}
+	if os.Getenv("THREADS") != "" {
+		THREADS, err = strconv.ParseUint(os.Getenv("THREADS"), 10, 64)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
 }
-
-var wg sync.WaitGroup
-
-var junglebusClient *junglebus.JungleBusClient
-
-var sub *junglebus.Subscription
-var fromBlock uint32
-var settledHeight uint32
-
-type TxnStatus struct {
-	ID       string
-	Tx       *bt.Tx
-	Height   uint32
-	Idx      uint32
-	Parents  map[string]*TxnStatus
-	Children map[string]*TxnStatus
-}
-
-var txns = map[string]*TxnStatus{}
-var queue = make(chan *TxnStatus, 10000)
-var settled = make(chan uint32)
 
 func main() {
 	var err error
@@ -77,15 +90,12 @@ func main() {
 		fromBlock = lib.TRIGGER
 	}
 
+	go processQueue()
+	subscribe()
 	var wg2 sync.WaitGroup
 	wg2.Add(1)
-	go processInscriptionIds()
-	subscribe()
-	processTxns()
 	wg2.Wait()
 }
-
-// var statusCode uint32
 
 func subscribe() {
 	var err error
@@ -94,34 +104,34 @@ func subscribe() {
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
-			OnTransaction: onTransactionHandler,
+			OnTransaction: func(txResp *jbModels.TransactionResponse) {
+				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+				msgQueue <- &Msg{
+					Id:          txResp.Id,
+					Height:      txResp.BlockHeight,
+					Idx:         uint32(txResp.BlockIndex),
+					Transaction: txResp.Transaction,
+				}
+			},
 			// OnMempool:     onOneSatHandler,
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
 				switch status.StatusCode {
-				case 200:
-					sub.Unsubscribe()
-					wg.Wait()
-					settledHeight = status.Block - 6
-
-					if _, err := db.Exec(`INSERT INTO progress(indexer, height)
-						VALUES($1, $2)
-						ON CONFLICT(indexer) DO UPDATE
-							SET height=$2`,
-						INDEXER,
-						settledHeight,
-					); err != nil {
-						log.Panic(err)
+				case 1:
+					if connected {
+						log.Printf("Cooling the Jets")
+						sub.Unsubscribe()
+						connected = false
+						time.Sleep(30 * time.Second)
+						fromBlock--
+						subscribe()
+					} else {
+						connected = true
 					}
-					fromBlock = status.Block + 1
-					fmt.Printf("Completed: %d\n", status.Block)
-					settled <- settledHeight
-					subscribe()
-				case 300:
-					sub.Unsubscribe()
-					wg.Wait()
-					fromBlock = status.Block
-					subscribe()
+				}
+				msgQueue <- &Msg{
+					Height: status.Block,
+					Status: status.StatusCode,
 				}
 			},
 			OnError: func(err error) {
@@ -134,57 +144,87 @@ func subscribe() {
 	}
 }
 
-func onTransactionHandler(txResp *jbModels.TransactionResponse) {
-	fmt.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
-	// if txResp.BlockHeight <= settledHeight {
-	// 	fmt.Printf("Skipping: %s\n", txResp.Id)
-	// 	return
-	// }
-	tx, err := bt.NewTxFromBytes(txResp.Transaction)
-	if err != nil {
-		log.Panicf("OnTransaction Parse Error: %s %+v\n", txResp.Id, err)
-	}
+func processQueue() {
+	var settledHeight uint32
+	go processInscriptionIds()
+	go processTxns()
+	for {
+		msg := <-msgQueue
 
-	txn := &TxnStatus{
-		ID:       txResp.Id,
-		Tx:       tx,
-		Height:   txResp.BlockHeight,
-		Idx:      uint32(txResp.BlockIndex),
-		Parents:  map[string]*TxnStatus{},
-		Children: map[string]*TxnStatus{},
-	}
+		switch msg.Status {
+		case 0:
+			tx, err := bt.NewTxFromBytes(msg.Transaction)
+			if err != nil {
+				log.Panicf("OnTransaction Parse Error: %s %+v\n", msg.Id, err)
+			}
 
-	for _, input := range tx.Inputs {
-		m.Lock()
-		if parent, ok := txns[input.PreviousTxIDStr()]; ok {
-			parent.Children[txResp.Id] = txn
-			txn.Parents[parent.ID] = parent
+			txn := &TxnStatus{
+				ID:       msg.Id,
+				Tx:       tx,
+				Height:   msg.Height,
+				Idx:      msg.Idx,
+				Parents:  map[string]*TxnStatus{},
+				Children: map[string]*TxnStatus{},
+			}
+
+			for _, input := range tx.Inputs {
+				m.Lock()
+				if parent, ok := txns[input.PreviousTxIDStr()]; ok {
+					parent.Children[msg.Id] = txn
+					txn.Parents[parent.ID] = parent
+				}
+				m.Unlock()
+			}
+			m.Lock()
+			txns[msg.Id] = txn
+			m.Unlock()
+			wg.Add(1)
+			if len(txn.Parents) == 0 {
+				txnQueue <- txn
+			}
+		// On Connected, if already connected, unsubscribe and cool down
+
+		case 200:
+			wg.Wait()
+			// log.Panicf("Status: %d\n", msg.Status)
+			settledHeight = msg.Height - 6
+
+			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
+				VALUES($1, $2)
+				ON CONFLICT(indexer) DO UPDATE
+					SET height=$2`,
+				INDEXER,
+				settledHeight,
+			); err != nil {
+				log.Panic(err)
+			}
+			fromBlock = msg.Height + 1
+			fmt.Printf("Completed: %d\n", msg.Height)
+			settled <- settledHeight
+
+		default:
+			log.Printf("Status: %d\n", msg.Status)
 		}
-		m.Unlock()
-	}
-	wg.Add(1)
-	m.Lock()
-	txns[txResp.Id] = txn
-	m.Unlock()
-
-	if len(txn.Parents) == 0 {
-		queue <- txn
 	}
 }
 
 func processTxns() {
 	for {
-		txn := <-queue
+		txn := <-txnQueue
+		// fmt.Println("Limiter", txn.ID)
 		threadLimiter <- struct{}{}
+		// fmt.Println("Limiter Done", txn.ID)
 		go func(txn *TxnStatus) {
 			processTxn(txn)
+			// inFlight--
+			// fmt.Println("InFlight:", inFlight)
 			<-threadLimiter
 		}(txn)
 	}
 }
 
 func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %s\n", txn.Tx.TxID())
+	fmt.Printf("Processing: %d %d %s\n", txn.Height, txn.Idx, txn.Tx.TxID())
 	_, err := lib.IndexSpends(txn.Tx, true)
 	if err != nil {
 		log.Panic(err)
@@ -201,7 +241,8 @@ func processTxn(txn *TxnStatus) {
 		orphan := len(child.Parents) == 0
 		m.Unlock()
 		if orphan {
-			queue <- child
+			// inFlight++
+			txnQueue <- child
 		}
 	}
 	m.Lock()

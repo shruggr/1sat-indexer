@@ -36,7 +36,6 @@ func IndexSpends(tx *bt.Tx, save bool) (spends []*Spend, err error) {
 
 func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexResult, err error) {
 	txid := tx.TxIDBytes()
-	// fmt.Printf("Indexing Txos %x\n", txid)
 	result = &IndexResult{
 		Txos: []*Txo{},
 		Ims:  []*InscriptionMeta{},
@@ -95,8 +94,6 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			}
 		}
 	}
-
-	// fmt.Print(".")
 	return
 }
 
@@ -119,7 +116,6 @@ func ParseOutput(txout *bt.Output) (im *InscriptionMeta, err error) {
 }
 
 func LoadOrigin(txo *Txo) (origin Origin, err error) {
-	// fmt.Printf("Loading Origin %x:%d\n", txo.Txid, txo.AccSats)
 	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
 	if err != nil {
 		return
@@ -145,10 +141,6 @@ func LoadOrigin(txo *Txo) (origin Origin, err error) {
 			origin = inTxo.Origin
 			return
 		}
-		// origin, err = LoadOrigin(inTxo)
-		// if err != nil {
-		// 	return
-		// }
 	} else {
 		origin = binary.BigEndian.AppendUint32(txo.Txid, txo.Vout)
 		rows.Close()
