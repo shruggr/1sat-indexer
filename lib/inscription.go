@@ -222,7 +222,7 @@ func GetInscriptionCount() (count uint64, err error) {
 	return
 }
 
-func LoadInscriptionById(id uint) (im *InscriptionMeta, err error) {
+func LoadInscriptionById(id uint64) (im *InscriptionMeta, err error) {
 	row := GetInsciptionByID.QueryRow(id)
 	im = &InscriptionMeta{}
 	err = row.Scan(
