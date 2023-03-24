@@ -122,7 +122,7 @@ func subscribe() {
 						log.Printf("Cooling the Jets")
 						sub.Unsubscribe()
 						connected = false
-						time.Sleep(30 * time.Second)
+						time.Sleep(time.Minute)
 						fromBlock--
 						subscribe()
 					} else {
