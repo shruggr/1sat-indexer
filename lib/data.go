@@ -121,7 +121,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInsciptionsByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+	GetInsciptionByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
 		WHERE id=$1`,
 	)
