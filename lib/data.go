@@ -23,7 +23,7 @@ var TRIGGER = uint32(783968)
 
 var txCache *lru.ARCCache[string, *models.Transaction]
 var Db *sql.DB
-var JBClient *junglebus.JungleBusClient
+var JBClient *junglebus.Client
 
 var GetInsNumber *sql.Stmt
 var GetTxo *sql.Stmt

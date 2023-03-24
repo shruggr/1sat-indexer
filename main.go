@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -22,7 +21,7 @@ const INDEXER = "1sat"
 var THREADS uint64 = 15
 
 var db *sql.DB
-var junglebusClient *junglebus.JungleBusClient
+var junglebusClient *junglebus.Client
 var sub *junglebus.Subscription
 var threadLimiter = make(chan struct{}, THREADS)
 var m sync.Mutex
@@ -116,19 +115,19 @@ func subscribe() {
 			// OnMempool:     onOneSatHandler,
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
-				switch status.StatusCode {
-				case 1:
-					if connected {
-						log.Printf("Cooling the Jets")
-						sub.Unsubscribe()
-						connected = false
-						time.Sleep(time.Minute)
-						fromBlock--
-						subscribe()
-					} else {
-						connected = true
-					}
-				}
+				// switch status.StatusCode {
+				// case 1:
+				// 	if connected {
+				// 		log.Printf("Cooling the Jets")
+				// 		sub.Unsubscribe()
+				// 		connected = false
+				// 		time.Sleep(time.Minute)
+				// 		fromBlock--
+				// 		subscribe()
+				// 	} else {
+				// 		connected = true
+				// 	}
+				// }
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -176,6 +175,11 @@ func processQueue() {
 				m.Unlock()
 			}
 			m.Lock()
+			if t, ok := txns[msg.Id]; ok {
+				t.Height = msg.Height
+				t.Idx = msg.Idx
+				continue
+			}
 			txns[msg.Id] = txn
 			m.Unlock()
 			wg.Add(1)
@@ -211,13 +215,9 @@ func processQueue() {
 func processTxns() {
 	for {
 		txn := <-txnQueue
-		// fmt.Println("Limiter", txn.ID)
 		threadLimiter <- struct{}{}
-		// fmt.Println("Limiter Done", txn.ID)
 		go func(txn *TxnStatus) {
 			processTxn(txn)
-			// inFlight--
-			// fmt.Println("InFlight:", inFlight)
 			<-threadLimiter
 		}(txn)
 	}
