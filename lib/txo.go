@@ -3,6 +3,7 @@ package lib
 import (
 	"database/sql"
 	"fmt"
+	"log"
 )
 
 type Txo struct {
@@ -14,6 +15,27 @@ type Txo struct {
 	Spend    ByteString `json:"spend,omitempty"`
 	Origin   Origin     `json:"origin,omitempty"`
 	Ordinal  uint64     `json:"ordinal"`
+	Height   uint32     `json:"height"`
+	Idx      uint32     `json:"idx"`
+}
+
+func (t *Txo) Save() (err error) {
+	_, err = InsTxo.Exec(
+		t.Txid,
+		t.Vout,
+		t.Satoshis,
+		t.AccSats,
+		t.Lock,
+		t.Origin,
+		t.Height,
+		t.Idx,
+	)
+	if err != nil {
+		log.Println("insTxo Err:", err)
+		return
+	}
+
+	return
 }
 
 func LoadTxo(txid []byte, vout uint32) (txo *Txo, err error) {

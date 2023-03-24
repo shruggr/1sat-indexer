@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -22,33 +24,19 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-
-	o, err := lib.NewOriginFromString("13899501db55c2c0d9a79b6fe0a84eac9d68a8e1b9971b05bfab8511608bd009_0")
+	txid, _ := hex.DecodeString("a72cc94b8f6276f73e617b3954087bdad11982bfd913e3061975e5300d773681")
+	tx, err := lib.LoadTx(txid)
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Printf("Origin: %s\n", o.String())
 
-	// lock, err := hex.DecodeString("dab3a9eecb41663021b01755fa924332a922e026b3669823b40e05e8689a7005")
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Printf("Lock: %x\n", lock)
-	// utxos, err := lib.LoadUtxos(lock)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Printf("UTXOs: %v\n", utxos)
-	// for _, utxo := range utxos {
-	// 	// o, err := lib.NewOriginFromString(utxo.Origin)
-	// 	// if err != nil {
-	// 	// 	log.Panic(err)
-	// 	// }
-	// 	fmt.Printf("Origin: %s\n", utxo.Origin.String())
-	// }
-	// str, err := json.Marshal(utxos)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Println(string(str))
+	result, err := lib.IndexTxos(tx, 0, 0)
+	if err != nil {
+		log.Panic(err)
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(string(out))
 }

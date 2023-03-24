@@ -34,9 +34,11 @@ var GetInsciptions *sql.Stmt
 var GetInsciptionsByTxID *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
 var GetUnnumberedIns *sql.Stmt
-var InsSpend *sql.Stmt
+
+// var InsSpend *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
+var SetSpend *sql.Stmt
 var SetTxoOrigin *sql.Stmt
 var SetInscriptionOrigin *sql.Stmt
 var SetInscriptionId *sql.Stmt
@@ -142,11 +144,13 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock)
-		VALUES($1, $2, $3, $4, $5)
+	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
 			lock=EXCLUDED.lock, 
-			satoshis=EXCLUDED.satoshis
+			satoshis=EXCLUDED.satoshis,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -176,14 +180,22 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	InsSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
-		VALUES($1, $2, $3, $4)
-		ON CONFLICT(txid, vout) DO UPDATE 
-			SET spend=EXCLUDED.spend, vin=EXCLUDED.vin
+	SetSpend, err = Db.Prepare(`UPDATE txos
+		SET spend=$3, vin=$4
+		WHERE txid=$1 AND vout=$2
 	`)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// InsSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
+	// 	VALUES($1, $2, $3, $4)
+	// 	ON CONFLICT(txid, vout) DO UPDATE
+	// 		SET spend=EXCLUDED.spend, vin=EXCLUDED.vin
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	InsInscription, err = Db.Prepare(`
 		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
