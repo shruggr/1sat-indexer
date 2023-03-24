@@ -222,6 +222,24 @@ func GetInscriptionCount() (count uint64, err error) {
 	return
 }
 
+func LoadInscriptionById(id uint) (im *InscriptionMeta, err error) {
+	row := GetInsciptionByID.QueryRow(id)
+	im = &InscriptionMeta{}
+	err = row.Scan(
+		&im.Txid,
+		&im.Vout,
+		&im.Height,
+		&im.Idx,
+		&im.File.Hash,
+		&im.File.Size,
+		&im.File.Type,
+		&im.Id,
+		&im.Origin,
+		&im.Lock,
+	)
+	return
+}
+
 func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 	rows, err := GetInsciption.Query(origin)
 	if err != nil {

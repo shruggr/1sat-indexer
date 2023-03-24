@@ -31,6 +31,7 @@ var GetTxos *sql.Stmt
 var GetInput *sql.Stmt
 var GetInsciption *sql.Stmt
 var GetInsciptions *sql.Stmt
+var GetInsciptionByID *sql.Stmt
 var GetInsciptionsByTxID *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
 var GetUnnumberedIns *sql.Stmt
@@ -119,6 +120,11 @@ func Initialize(db *sql.DB) (err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	GetInsciptionsByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+		FROM inscriptions
+		WHERE id=$1`,
+	)
 
 	GetInsciptionsByTxID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
