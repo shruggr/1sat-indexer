@@ -136,6 +136,46 @@ func (im *InscriptionMeta) Save() (err error) {
 	return
 }
 
+func GetInsMetaByTxID(txid []byte) (im []*InscriptionMeta, err error) {
+	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
+	FROM inscriptions
+	WHERE txid=$1`,
+		txid,
+	)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		meta := &InscriptionMeta{}
+		err = rows.Scan(
+			&meta.Txid,
+			&meta.Vout,
+			&meta.File.Hash,
+			&meta.File.Size,
+			&meta.File.Type,
+			&meta.Id,
+			&meta.Origin,
+			&meta.Ordinal,
+			&meta.Height,
+			&meta.Idx,
+			&meta.Lock,
+		)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		im = append(im, meta)
+	} else {
+		err = &HttpError{
+			StatusCode: 404,
+			Err:        fmt.Errorf("not-found"),
+		}
+	}
+	return
+}
+
 func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err error) {
 	rows, err := Db.Query(`SELECT txid, vout, filehash, filesize, filetype, id, origin, ordinal, height, idx, lock
 		FROM inscriptions
@@ -207,6 +247,35 @@ func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 		return
 	}
 
+	return
+}
+
+func LoadInscriptionsByTxID(txid []byte) (ims []*InscriptionMeta, err error) {
+	rows, err := GetInsciptionsByTxID.Query(txid)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		im := &InscriptionMeta{}
+		err = rows.Scan(
+			&im.Txid,
+			&im.Vout,
+			&im.Height,
+			&im.Idx,
+			&im.File.Hash,
+			&im.File.Size,
+			&im.File.Type,
+			&im.Id,
+			&im.Origin,
+			&im.Lock,
+		)
+		if err != nil {
+			return
+		}
+		ims = append(ims, im)
+	}
 	return
 }
 
