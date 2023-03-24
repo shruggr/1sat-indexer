@@ -216,6 +216,12 @@ func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err er
 	return
 }
 
+func GetInscriptionCount() (count uint64, err error) {
+	row := Db.QueryRow(`SELECT max(id) FROM inscriptions`)
+	err = row.Scan(&count)
+	return
+}
+
 func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
 	rows, err := GetInsciption.Query(origin)
 	if err != nil {
