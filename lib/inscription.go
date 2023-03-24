@@ -113,7 +113,7 @@ type InscriptionMeta struct {
 	Ordinal uint32     `json:"ordinal"`
 	Height  uint32     `json:"height"`
 	Idx     uint32     `json:"idx"`
-	Lock    []byte     `json:"lock"`
+	Lock    ByteString `json:"lock"`
 }
 
 func (im *InscriptionMeta) Save() (err error) {

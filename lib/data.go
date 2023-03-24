@@ -102,7 +102,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInsciption, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+	GetInsciption, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
 		WHERE origin=$1
 		ORDER BY height DESC, idx DESC
@@ -112,7 +112,7 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInsciptions, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+	GetInsciptions, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
 		WHERE origin=$1
 		ORDER BY height DESC, idx DESC`,
@@ -121,12 +121,12 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInsciptionByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+	GetInsciptionByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
 		WHERE id=$1`,
 	)
 
-	GetInsciptionsByTxID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, id, COALESCE(origin, '\x'::BYTEA), lock
+	GetInsciptionsByTxID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
 		FROM inscriptions
 		WHERE txid=$1
 		ORDER BY vout DESC`,
