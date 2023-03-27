@@ -19,7 +19,7 @@ import (
 
 const INDEXER = "1sat"
 
-var THREADS uint64 = 10
+var THREADS uint64 = 16
 
 var db *sql.DB
 var junglebusClient *junglebus.Client
@@ -116,22 +116,23 @@ func subscribe() {
 					Transaction: txResp.Transaction,
 				}
 			},
-			// OnMempool: func(txResp *jbModels.TransactionResponse) {
-			// 	log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-			// 	msgQueue <- &Msg{
-			// 		Id:          txResp.Id,
-			// 		Height:      txResp.BlockHeight,
-			// 		Idx:         uint32(txResp.BlockIndex),
-			// 		Transaction: txResp.Transaction,
-			// 	}
+			OnMempool: func(txResp *jbModels.TransactionResponse) {
+				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+				msgQueue <- &Msg{
+					Id:          txResp.Id,
+					Height:      txResp.BlockHeight,
+					Idx:         uint32(txResp.BlockIndex),
+					Transaction: txResp.Transaction,
+				}
 
-			// },
+			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
 
 				if status.StatusCode == 1 {
 					if connected {
 						sub.Unsubscribe()
+						connected = false
 						log.Printf("Cooling the Jets:")
 						time.Sleep(30 * time.Second)
 						subscribe()

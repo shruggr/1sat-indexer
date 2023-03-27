@@ -59,12 +59,11 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			Satoshis: txout.Satoshis,
 			AccSats:  accSats,
 		}
-		// if height > 0 {
 		txo.Origin, err = LoadOrigin(txo)
 		if err != nil {
 			return
 		}
-		// }
+
 		var im *InscriptionMeta
 		im, err = ParseOutput(txout)
 		if err != nil {
