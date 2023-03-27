@@ -8,6 +8,13 @@ import (
 	"github.com/libsv/go-bt/v2"
 )
 
+type Status uint
+
+var (
+	Unconfirmed Status = 0
+	Confirmed   Status = 1
+)
+
 type IndexResult struct {
 	Txos   []*Txo             `json:"txos"`
 	Ims    []*InscriptionMeta `json:"ims"`
@@ -55,9 +62,11 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			Satoshis: txout.Satoshis,
 			AccSats:  accSats,
 		}
-		txo.Origin, err = LoadOrigin(txo)
-		if err != nil {
-			return
+		if height > 0 {
+			txo.Origin, err = LoadOrigin(txo)
+			if err != nil {
+				return
+			}
 		}
 		var im *InscriptionMeta
 		im, err = ParseOutput(txout)
@@ -120,7 +129,6 @@ func LoadOrigin(txo *Txo) (origin Origin, err error) {
 	if err != nil {
 		return
 	}
-
 	defer rows.Close()
 	if rows.Next() {
 		inTxo := &Txo{}
@@ -136,14 +144,12 @@ func LoadOrigin(txo *Txo) (origin Origin, err error) {
 		if err != nil {
 			return
 		}
-		rows.Close()
 		if len(inTxo.Origin) > 0 {
 			origin = inTxo.Origin
 			return
 		}
 	} else {
 		origin = binary.BigEndian.AppendUint32(txo.Txid, txo.Vout)
-		rows.Close()
 	}
 
 	return origin, nil

@@ -216,136 +216,136 @@ func GetInsMetaByOutpoint(txid []byte, vout uint32) (im *InscriptionMeta, err er
 	return
 }
 
-func GetInscriptionCount() (count uint64, err error) {
-	row := GetMaxInscriptionId.QueryRow()
-	err = row.Scan(&count)
-	return
-}
+// func GetInscriptionCount() (count uint64, err error) {
+// 	row := GetMaxInscriptionId.QueryRow()
+// 	err = row.Scan(&count)
+// 	return
+// }
 
-func LoadInscriptionById(id uint64) (im *InscriptionMeta, err error) {
-	row := GetInsciptionByID.QueryRow(id)
-	im = &InscriptionMeta{}
-	err = row.Scan(
-		&im.Txid,
-		&im.Vout,
-		&im.Height,
-		&im.Idx,
-		&im.File.Hash,
-		&im.File.Size,
-		&im.File.Type,
-		&im.Id,
-		&im.Origin,
-		&im.Lock,
-	)
-	return
-}
+// func LoadInscriptionById(id uint64) (im *InscriptionMeta, err error) {
+// 	row := GetInsciptionByID.QueryRow(id)
+// 	im = &InscriptionMeta{}
+// 	err = row.Scan(
+// 		&im.Txid,
+// 		&im.Vout,
+// 		&im.Height,
+// 		&im.Idx,
+// 		&im.File.Hash,
+// 		&im.File.Size,
+// 		&im.File.Type,
+// 		&im.Id,
+// 		&im.Origin,
+// 		&im.Lock,
+// 	)
+// 	return
+// }
 
-func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
-	rows, err := GetInsciption.Query(origin)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
+// func LoadInscription(origin Origin) (im *InscriptionMeta, err error) {
+// 	rows, err := GetInsciption.Query(origin)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer rows.Close()
 
-	if !rows.Next() {
-		err = &HttpError{
-			StatusCode: 404,
-			Err:        fmt.Errorf("not-found"),
-		}
-		return
-	}
-	im = &InscriptionMeta{}
-	err = rows.Scan(
-		&im.Txid,
-		&im.Vout,
-		&im.Height,
-		&im.Idx,
-		&im.File.Hash,
-		&im.File.Size,
-		&im.File.Type,
-		&im.Id,
-		&im.Origin,
-		&im.Lock,
-	)
-	if err != nil {
-		return
-	}
+// 	if !rows.Next() {
+// 		err = &HttpError{
+// 			StatusCode: 404,
+// 			Err:        fmt.Errorf("not-found"),
+// 		}
+// 		return
+// 	}
+// 	im = &InscriptionMeta{}
+// 	err = rows.Scan(
+// 		&im.Txid,
+// 		&im.Vout,
+// 		&im.Height,
+// 		&im.Idx,
+// 		&im.File.Hash,
+// 		&im.File.Size,
+// 		&im.File.Type,
+// 		&im.Id,
+// 		&im.Origin,
+// 		&im.Lock,
+// 	)
+// 	if err != nil {
+// 		return
+// 	}
 
-	return
-}
+// 	return
+// }
 
-func LoadInscriptionsByTxID(txid []byte) (ims []*InscriptionMeta, err error) {
-	rows, err := GetInsciptionsByTxID.Query(txid)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
+// func LoadInscriptionsByTxID(txid []byte) (ims []*InscriptionMeta, err error) {
+// 	rows, err := GetInsciptionsByTxID.Query(txid)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer rows.Close()
 
-	for rows.Next() {
-		im := &InscriptionMeta{}
-		err = rows.Scan(
-			&im.Txid,
-			&im.Vout,
-			&im.Height,
-			&im.Idx,
-			&im.File.Hash,
-			&im.File.Size,
-			&im.File.Type,
-			&im.Id,
-			&im.Origin,
-			&im.Lock,
-		)
-		if err != nil {
-			return
-		}
-		ims = append(ims, im)
-	}
-	return
-}
+// 	for rows.Next() {
+// 		im := &InscriptionMeta{}
+// 		err = rows.Scan(
+// 			&im.Txid,
+// 			&im.Vout,
+// 			&im.Height,
+// 			&im.Idx,
+// 			&im.File.Hash,
+// 			&im.File.Size,
+// 			&im.File.Type,
+// 			&im.Id,
+// 			&im.Origin,
+// 			&im.Lock,
+// 		)
+// 		if err != nil {
+// 			return
+// 		}
+// 		ims = append(ims, im)
+// 	}
+// 	return
+// }
 
-func LoadInscriptions(origin Origin) (ims []*InscriptionMeta, err error) {
-	rows, err := GetInsciptions.Query(origin)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
+// func LoadInscriptions(origin Origin) (ims []*InscriptionMeta, err error) {
+// 	rows, err := GetInsciptions.Query(origin)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer rows.Close()
 
-	for rows.Next() {
-		im := &InscriptionMeta{}
-		err = rows.Scan(
-			&im.Txid,
-			&im.Vout,
-			&im.Height,
-			&im.Idx,
-			&im.File.Hash,
-			&im.File.Size,
-			&im.File.Type,
-			&im.Id,
-			&im.Origin,
-			&im.Lock,
-		)
-		if err != nil {
-			return
-		}
-		ims = append(ims, im)
-	}
+// 	for rows.Next() {
+// 		im := &InscriptionMeta{}
+// 		err = rows.Scan(
+// 			&im.Txid,
+// 			&im.Vout,
+// 			&im.Height,
+// 			&im.Idx,
+// 			&im.File.Hash,
+// 			&im.File.Size,
+// 			&im.File.Type,
+// 			&im.Id,
+// 			&im.Origin,
+// 			&im.Lock,
+// 		)
+// 		if err != nil {
+// 			return
+// 		}
+// 		ims = append(ims, im)
+// 	}
 
-	return
-}
+// 	return
+// }
 
-func LoadInscriptionFile(origin Origin) (ins *Inscription, err error) {
-	im, err := LoadInscription(origin)
-	if err != nil {
-		return
-	}
-	tx, err := LoadTx(im.Txid)
-	if err != nil {
-		return
-	}
+// func LoadInscriptionFile(origin Origin) (ins *Inscription, err error) {
+// 	im, err := LoadInscription(origin)
+// 	if err != nil {
+// 		return
+// 	}
+// 	tx, err := LoadTx(im.Txid)
+// 	if err != nil {
+// 		return
+// 	}
 
-	ins, _ = InscriptionFromScript(*tx.Outputs[im.Vout].LockingScript)
-	return
-}
+// 	ins, _ = InscriptionFromScript(*tx.Outputs[im.Vout].LockingScript)
+// 	return
+// }
 
 func SetInscriptionIds(height uint32) (err error) {
 	rows, err := GetMaxInscriptionId.Query()
@@ -369,7 +369,13 @@ func SetInscriptionIds(height uint32) (err error) {
 		return
 	}
 
-	rows, err = GetUnnumberedIns.Query(height)
+	rows, err = Db.Query(`
+		SELECT txid, vout 
+		FROM inscriptions
+		WHERE id IS NULL AND height <= $1
+		ORDER BY height, idx, vout`,
+		height,
+	)
 	if err != nil {
 		log.Panic(err)
 		return

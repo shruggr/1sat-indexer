@@ -22,7 +22,8 @@ var THREADS uint64 = 15
 
 var db *sql.DB
 var junglebusClient *junglebus.Client
-var sub *junglebus.Subscription
+
+// var sub *junglebus.Subscription
 var threadLimiter = make(chan struct{}, THREADS)
 var m sync.Mutex
 var wg sync.WaitGroup
@@ -31,11 +32,13 @@ var msgQueue = make(chan *Msg, 100000)
 var txnQueue = make(chan *TxnStatus, 100000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
-var connected bool
+
+// var connected bool
 
 type Msg struct {
 	Id          string
 	Height      uint32
+	Hash        string
 	Status      uint32
 	Idx         uint32
 	Transaction []byte
@@ -97,8 +100,8 @@ func main() {
 }
 
 func subscribe() {
-	var err error
-	sub, err = junglebusClient.Subscribe(
+	// var err error
+	_, err := junglebusClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
@@ -112,22 +115,19 @@ func subscribe() {
 					Transaction: txResp.Transaction,
 				}
 			},
-			// OnMempool:     onOneSatHandler,
+			OnMempool: func(txResp *jbModels.TransactionResponse) {
+				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+				msgQueue <- &Msg{
+					Id:          txResp.Id,
+					Height:      txResp.BlockHeight,
+					Idx:         uint32(txResp.BlockIndex),
+					Transaction: txResp.Transaction,
+				}
+
+			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
-				// switch status.StatusCode {
-				// case 1:
-				// 	if connected {
-				// 		log.Printf("Cooling the Jets")
-				// 		sub.Unsubscribe()
-				// 		connected = false
-				// 		time.Sleep(time.Minute)
-				// 		fromBlock--
-				// 		subscribe()
-				// 	} else {
-				// 		connected = true
-				// 	}
-				// }
+
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -166,6 +166,16 @@ func processQueue() {
 				Children: map[string]*TxnStatus{},
 			}
 
+			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
+			if err != nil {
+				panic(err)
+			}
+
+			if msg.Height == 0 {
+				txnQueue <- txn
+				continue
+			}
+
 			for _, input := range tx.Inputs {
 				m.Lock()
 				if parent, ok := txns[input.PreviousTxIDStr()]; ok {
@@ -178,6 +188,7 @@ func processQueue() {
 			if t, ok := txns[msg.Id]; ok {
 				t.Height = msg.Height
 				t.Idx = msg.Idx
+				m.Unlock()
 				continue
 			}
 			txns[msg.Id] = txn
@@ -235,20 +246,21 @@ func processTxn(txn *TxnStatus) {
 		log.Panic(err)
 	}
 
-	for _, child := range txn.Children {
-		m.Lock()
-		delete(child.Parents, txn.ID)
-		orphan := len(child.Parents) == 0
-		m.Unlock()
-		if orphan {
-			// inFlight++
-			txnQueue <- child
+	if txn.Height > 0 {
+		for _, child := range txn.Children {
+			m.Lock()
+			delete(child.Parents, txn.ID)
+			orphan := len(child.Parents) == 0
+			m.Unlock()
+			if orphan {
+				txnQueue <- child
+			}
 		}
+		m.Lock()
+		delete(txns, txn.ID)
+		m.Unlock()
+		wg.Done()
 	}
-	m.Lock()
-	delete(txns, txn.ID)
-	m.Unlock()
-	wg.Done()
 }
 
 func processInscriptionIds() {

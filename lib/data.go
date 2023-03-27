@@ -25,24 +25,29 @@ var txCache *lru.ARCCache[string, *models.Transaction]
 var Db *sql.DB
 var JBClient *junglebus.Client
 
-var GetInsNumber *sql.Stmt
+// var GetInsNumber *sql.Stmt
 var GetTxo *sql.Stmt
 var GetTxos *sql.Stmt
 var GetInput *sql.Stmt
-var GetInsciption *sql.Stmt
-var GetInsciptions *sql.Stmt
-var GetInsciptionByID *sql.Stmt
-var GetInsciptionsByTxID *sql.Stmt
+
+// var GetInsciption *sql.Stmt
+// var GetInsciptions *sql.Stmt
+// var GetInsciptionByID *sql.Stmt
+// var GetInsciptionsByTxID *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
-var GetUnnumberedIns *sql.Stmt
 
 // var InsSpend *sql.Stmt
 var InsTxo *sql.Stmt
+
 var InsInscription *sql.Stmt
+
 var SetSpend *sql.Stmt
-var SetTxoOrigin *sql.Stmt
-var SetInscriptionOrigin *sql.Stmt
+
+// var SetTxoOrigin *sql.Stmt
+// var SetInscriptionOrigin *sql.Stmt
 var SetInscriptionId *sql.Stmt
+
+var SetTxn *sql.Stmt
 var GetUtxos *sql.Stmt
 
 func Initialize(db *sql.DB) (err error) {
@@ -58,15 +63,15 @@ func Initialize(db *sql.DB) (err error) {
 		return
 	}
 
-	GetInsNumber, err = Db.Prepare(`
-		SELECT COUNT(i.txid) 
-		FROM inscriptions i
-		JOIN inscriptions l ON i.height < l.height OR (i.height = l.height AND i.idx < l.idx)
-		WHERE l.txid=$1 AND l.vout=$2
-	`)
-	if err != nil {
-		return
-	}
+	// GetInsNumber, err = Db.Prepare(`
+	// 	SELECT COUNT(i.txid)
+	// 	FROM inscriptions i
+	// 	JOIN inscriptions l ON i.height < l.height OR (i.height = l.height AND i.idx < l.idx)
+	// 	WHERE l.txid=$1 AND l.vout=$2
+	// `)
+	// if err != nil {
+	// 	return
+	// }
 
 	GetTxo, err = Db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 		FROM txos
@@ -102,50 +107,43 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	GetInsciption, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
-		FROM inscriptions
-		WHERE origin=$1
-		ORDER BY height DESC, idx DESC
-		LIMIT 1`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetInsciption, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
+	// 	FROM inscriptions
+	// 	WHERE origin=$1
+	// 	ORDER BY height DESC, idx DESC
+	// 	LIMIT 1`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	GetInsciptions, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
-		FROM inscriptions
-		WHERE origin=$1
-		ORDER BY height DESC, idx DESC`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetInsciptions, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
+	// 	FROM inscriptions
+	// 	WHERE origin=$1
+	// 	ORDER BY height DESC, idx DESC`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	GetInsciptionByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
-		FROM inscriptions
-		WHERE id=$1`,
-	)
+	// GetInsciptionByID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
+	// 	FROM inscriptions
+	// 	WHERE id=$1`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	GetInsciptionsByTxID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
-		FROM inscriptions
-		WHERE txid=$1
-		ORDER BY vout DESC`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetInsciptionsByTxID, err = Db.Prepare(`SELECT txid, vout, height, idx, filehash, filesize, filetype, COALESCE(id, 0), COALESCE(origin, '\x'::BYTEA), lock
+	// 	FROM inscriptions
+	// 	WHERE txid=$1
+	// 	ORDER BY vout DESC`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	GetMaxInscriptionId, err = Db.Prepare(`SELECT MAX(id) FROM inscriptions`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	GetUnnumberedIns, err = Db.Prepare(`
-		SELECT txid, vout 
-		FROM inscriptions
-		WHERE id IS NULL AND height <= $1
-		ORDER BY height, idx, vout`,
-	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -153,8 +151,7 @@ func Initialize(db *sql.DB) (err error) {
 	InsTxo, err = Db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
-			lock=EXCLUDED.lock, 
-			satoshis=EXCLUDED.satoshis,
+			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx
 	`)
@@ -162,21 +159,21 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
-	SetTxoOrigin, err = Db.Prepare(`UPDATE txos
-		SET origin=$3
-		WHERE txid=$1 AND vout=$2
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// SetTxoOrigin, err = Db.Prepare(`UPDATE txos
+	// 	SET origin=$3
+	// 	WHERE txid=$1 AND vout=$2
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	SetInscriptionOrigin, err = Db.Prepare(`UPDATE inscriptions
-		SET origin=$3
-		WHERE txid=$1 AND vout=$2
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// SetInscriptionOrigin, err = Db.Prepare(`UPDATE inscriptions
+	// 	SET origin=$3
+	// 	WHERE txid=$1 AND vout=$2
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	SetInscriptionId, err = Db.Prepare(`UPDATE inscriptions
 		SET id=$3
@@ -194,6 +191,16 @@ func Initialize(db *sql.DB) (err error) {
 		log.Fatal(err)
 	}
 
+	SetTxn, err = Db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
+		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
+		ON CONFLICT(txid) DO UPDATE SET
+			blockid=EXCLUDED.blockid,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx`,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 	// InsSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
 	// 	VALUES($1, $2, $3, $4)
 	// 	ON CONFLICT(txid, vout) DO UPDATE
@@ -207,7 +214,7 @@ func Initialize(db *sql.DB) (err error) {
 		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
 	`)
 	if err != nil {
 		log.Panic(err)
