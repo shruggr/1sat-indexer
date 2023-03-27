@@ -369,13 +369,7 @@ func SetInscriptionIds(height uint32) (err error) {
 		return
 	}
 
-	rows, err = Db.Query(`
-		SELECT txid, vout 
-		FROM inscriptions
-		WHERE id IS NULL AND height <= $1
-		ORDER BY height, idx, vout`,
-		height,
-	)
+	rows, err = GetUnnumbered.Query(height)
 	if err != nil {
 		log.Panic(err)
 		return

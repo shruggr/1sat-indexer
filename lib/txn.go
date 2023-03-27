@@ -50,9 +50,6 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 	var accSats uint64
 	for vout, txout := range tx.Outputs {
 		accSats += txout.Satoshis
-		if txout.Satoshis != 1 {
-			continue
-		}
 
 		txo := &Txo{
 			Txid:     txid,
@@ -62,18 +59,19 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			Satoshis: txout.Satoshis,
 			AccSats:  accSats,
 		}
-		if height > 0 {
-			txo.Origin, err = LoadOrigin(txo)
-			if err != nil {
-				return
-			}
+		// if height > 0 {
+		txo.Origin, err = LoadOrigin(txo)
+		if err != nil {
+			return
 		}
+		// }
 		var im *InscriptionMeta
 		im, err = ParseOutput(txout)
 		if err != nil {
 			log.Println("ProcessOutput Err:", err)
 			return
 		}
+
 		if im != nil {
 			im.Txid = txid
 			im.Vout = uint32(vout)
@@ -91,10 +89,15 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			if err != nil {
 				return
 			}
-		} else {
+		}
+		if txout.Satoshis != 1 {
+			continue
+		}
+		if im == nil {
 			hash := sha256.Sum256(*txout.LockingScript)
 			txo.Lock = bt.ReverseBytes(hash[:])
 		}
+
 		result.Txos = append(result.Txos, txo)
 		if save {
 			err = txo.Save()

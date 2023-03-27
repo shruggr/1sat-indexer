@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -18,12 +19,12 @@ import (
 
 const INDEXER = "1sat"
 
-var THREADS uint64 = 15
+var THREADS uint64 = 10
 
 var db *sql.DB
 var junglebusClient *junglebus.Client
 
-// var sub *junglebus.Subscription
+var sub *junglebus.Subscription
 var threadLimiter = make(chan struct{}, THREADS)
 var m sync.Mutex
 var wg sync.WaitGroup
@@ -33,7 +34,7 @@ var txnQueue = make(chan *TxnStatus, 100000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
 
-// var connected bool
+var connected bool
 
 type Msg struct {
 	Id          string
@@ -100,8 +101,8 @@ func main() {
 }
 
 func subscribe() {
-	// var err error
-	_, err := junglebusClient.Subscribe(
+	var err error
+	sub, err = junglebusClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
@@ -115,19 +116,29 @@ func subscribe() {
 					Transaction: txResp.Transaction,
 				}
 			},
-			OnMempool: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
-					Transaction: txResp.Transaction,
-				}
+			// OnMempool: func(txResp *jbModels.TransactionResponse) {
+			// 	log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+			// 	msgQueue <- &Msg{
+			// 		Id:          txResp.Id,
+			// 		Height:      txResp.BlockHeight,
+			// 		Idx:         uint32(txResp.BlockIndex),
+			// 		Transaction: txResp.Transaction,
+			// 	}
 
-			},
+			// },
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
 
+				if status.StatusCode == 1 {
+					if connected {
+						sub.Unsubscribe()
+						log.Printf("Cooling the Jets:")
+						time.Sleep(30 * time.Second)
+						subscribe()
+					} else {
+						connected = true
+					}
+				}
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -154,7 +165,10 @@ func processQueue() {
 		case 0:
 			tx, err := bt.NewTxFromBytes(msg.Transaction)
 			if err != nil {
-				log.Panicf("OnTransaction Parse Error: %s %+v\n", msg.Id, err)
+				if msg.Height == 0 {
+					continue
+				}
+				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
 			}
 
 			txn := &TxnStatus{
