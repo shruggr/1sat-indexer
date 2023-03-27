@@ -1,0 +1,25 @@
+
+b:height:accFees
+    txid
+    fee
+
+t:txid
+    blockHeight uint32
+    blockIndex  uint32
+
+
+t:txid:o:vout
+    satoshis    uint64
+    accSats     uint64
+    spendTxid   [32]byte
+    spendIdx    uint32
+    scripthash  [32]byte
+
+t:inTxid:i:accSats
+    inVin         uint32
+    Txid      [32]byte
+    inVout      uint32
+    satoshis    uint64
+
+s:scripthash:isSpent:txid:vout
+    satoshis

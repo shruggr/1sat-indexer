@@ -4,23 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
+	"github.com/tikv/client-go/v2/txnkv"
 )
 
 var TRIGGER = uint32(783968)
 
+var Tikv *txnkv.Client
 var txCache *lru.ARCCache[string, *models.Transaction]
 var Db *sql.DB
 var JBClient *junglebus.Client
@@ -56,6 +56,11 @@ func Initialize(db *sql.DB) (err error) {
 	)
 	if err != nil {
 		return
+	}
+
+	Tikv, err = txnkv.NewClient([]string{os.Getenv("TIKV")})
+	if err != nil {
+		log.Panicln(err.Error())
 	}
 
 	GetInsNumber, err = Db.Prepare(`
@@ -237,49 +242,6 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 	}
 	txCache.Add(key, txData)
 	return txData, nil
-}
-
-type Origin []byte
-
-func NewOriginFromString(s string) (o Origin, err error) {
-	txid, err := hex.DecodeString(s[:64])
-	if err != nil {
-		return
-	}
-	vout, err := strconv.ParseUint(s[65:], 10, 32)
-	if err != nil {
-		return
-	}
-	o = Origin(binary.BigEndian.AppendUint32(txid, uint32(vout)))
-	return
-}
-
-func (o *Origin) String() string {
-	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint32((*o)[32:]))
-}
-func (o Origin) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
-	return bytes, err
-}
-
-// UnmarshalJSON deserializes Origin to string
-func (o *Origin) UnmarshalJSON(data []byte) error {
-	var x string
-	err := json.Unmarshal(data, &x)
-	if err == nil {
-		txid, err := hex.DecodeString(x[:64])
-		if err != nil {
-			return err
-		}
-		vout, err := strconv.ParseUint(x[65:], 10, 32)
-		if err != nil {
-			return err
-		}
-
-		*o = Origin(binary.BigEndian.AppendUint32(txid, uint32(vout)))
-	}
-
-	return err
 }
 
 // ByteString is a byte array that serializes to hex

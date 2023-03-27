@@ -98,6 +98,24 @@ func InscriptionFromScript(script bscript.Script) (ins *Inscription, lock []byte
 	return
 }
 
+func ParseInscriptionOutput(txout *bt.Output) (im *InscriptionMeta, err error) {
+	inscription, lock := InscriptionFromScript(*txout.LockingScript)
+	if inscription == nil {
+		return
+	}
+
+	hash := sha256.Sum256(inscription.Body)
+	im = &InscriptionMeta{
+		File: File{
+			Hash: hash[:],
+			Size: uint32(len(inscription.Body)),
+			Type: inscription.Type,
+		},
+		Lock: lock[:],
+	}
+	return
+}
+
 type File struct {
 	Hash ByteString `json:"hash"`
 	Size uint32     `json:"size"`

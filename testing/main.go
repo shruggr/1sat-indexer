@@ -30,7 +30,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	result, err := lib.IndexTxos(tx, 0, 0)
+	result, err := lib.IndexInscriptionTxos(tx, 0, 0)
 	if err != nil {
 		log.Panic(err)
 	}

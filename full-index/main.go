@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -11,18 +10,15 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
-	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/tikv/client-go/v2/txnkv"
 )
-
-const INDEXER = "1sat"
 
 var THREADS uint64 = 15
 
-var db *sql.DB
-var junglebusClient *junglebus.Client
-var sub *junglebus.Subscription
+var Tikv *txnkv.Client
+var jbClient *junglebus.Client
 var threadLimiter = make(chan struct{}, THREADS)
 var m sync.Mutex
 var wg sync.WaitGroup
@@ -32,23 +28,28 @@ var txnQueue = make(chan *lib.TxnStatus, 100000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
 
-// var connected bool
-
 func init() {
-	godotenv.Load()
-
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
+	Tikv, err = txnkv.NewClient([]string{os.Getenv("TIKV")})
 	if err != nil {
-		log.Panic(err)
+		log.Panicln(err.Error())
 	}
 
-	err = lib.Initialize(db)
+	jbClient, err = junglebus.New(
+		junglebus.WithHTTP("https://junglebus.gorillapool.io"),
+	)
 	if err != nil {
-		log.Panic(err)
+		log.Panicln(err.Error())
 	}
+
+	buf, err := os.ReadFile("last_block")
+	if err != nil {
+		from, _ := strconv.ParseUint(string(buf), 10, 32)
+		fromBlock = uint32(from)
+	}
+
 	if os.Getenv("THREADS") != "" {
-		THREADS, err = strconv.ParseUint(os.Getenv("THREADS"), 10, 64)
+		THREADS, err = strconv.ParseUint(os.Getenv("THREADS"), 10, 32)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -56,33 +57,12 @@ func init() {
 }
 
 func main() {
-	var err error
-	junglebusClient, err = junglebus.New(
-		junglebus.WithHTTP("https://junglebus.gorillapool.io"),
-	)
-	if err != nil {
-		log.Panicln(err.Error())
-	}
-
-	row := db.QueryRow(`SELECT height
-			FROM progress
-			WHERE indexer='1sat'`,
-	)
-	row.Scan(&fromBlock)
-	if fromBlock < lib.TRIGGER {
-		fromBlock = lib.TRIGGER
-	}
-
-	go processQueue()
 	subscribe()
-	var wg2 sync.WaitGroup
-	wg2.Add(1)
-	wg2.Wait()
+	processQueue()
 }
 
 func subscribe() {
-	var err error
-	sub, err = junglebusClient.Subscribe(
+	_, err := jbClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
@@ -99,19 +79,6 @@ func subscribe() {
 			// OnMempool:     onOneSatHandler,
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
-				// switch status.StatusCode {
-				// case 1:
-				// 	if connected {
-				// 		log.Printf("Cooling the Jets")
-				// 		sub.Unsubscribe()
-				// 		connected = false
-				// 		time.Sleep(time.Minute)
-				// 		fromBlock--
-				// 		subscribe()
-				// 	} else {
-				// 		connected = true
-				// 	}
-				// }
 				msgQueue <- &lib.Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -129,7 +96,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go processInscriptionIds()
+	// go processInscriptionIds()
 	go processTxns()
 	for {
 		msg := <-msgQueue
@@ -175,16 +142,11 @@ func processQueue() {
 			wg.Wait()
 			// log.Panicf("Status: %d\n", msg.Status)
 			settledHeight = msg.Height - 6
-
-			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
-				VALUES($1, $2)
-				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2`,
-				INDEXER,
-				settledHeight,
-			); err != nil {
+			err := os.WriteFile("last_block", []byte(fmt.Sprintf("%d", settledHeight)), 0644)
+			if err != nil {
 				log.Panic(err)
 			}
+
 			fromBlock = msg.Height + 1
 			fmt.Printf("Completed: %d\n", msg.Height)
 			settled <- settledHeight
@@ -232,15 +194,4 @@ func processTxn(txn *lib.TxnStatus) {
 	delete(txns, txn.ID)
 	m.Unlock()
 	wg.Done()
-}
-
-func processInscriptionIds() {
-	for {
-		height := <-settled
-		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
-	}
 }
