@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -23,14 +24,7 @@ var THREADS uint64 = 16
 
 var db *sql.DB
 var junglebusClient *junglebus.Client
-
-var sub *junglebus.Subscription
-var threadLimiter = make(chan struct{}, THREADS)
-var m sync.Mutex
-var wg sync.WaitGroup
-var txns = map[string]*TxnStatus{}
 var msgQueue = make(chan *Msg, 1000000)
-var txnQueue = make(chan *TxnStatus, 1000000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
 
@@ -43,20 +37,11 @@ type Msg struct {
 	Transaction []byte
 }
 
-type TxnStatus struct {
-	ID       string
-	Tx       *bt.Tx
-	Height   uint32
-	Idx      uint32
-	Parents  map[string]*TxnStatus
-	Children map[string]*TxnStatus
-}
-
 // var ctx = context.Background()
 var rdb *redis.Client
 
 func init() {
-	godotenv.Load()
+	godotenv.Load("../.env")
 
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
@@ -110,7 +95,7 @@ func main() {
 
 func subscribe() {
 	var err error
-	sub, err = junglebusClient.Subscribe(
+	_, err = junglebusClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
@@ -123,16 +108,6 @@ func subscribe() {
 					Idx:         uint32(txResp.BlockIndex),
 					Transaction: txResp.Transaction,
 				}
-			},
-			OnMempool: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
-					Transaction: txResp.Transaction,
-				}
-
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
@@ -153,8 +128,8 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go processInscriptionIds()
-	go processTxns()
+	go indexer.ProcessInscriptionIds(settled)
+	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
 
@@ -162,19 +137,16 @@ func processQueue() {
 		case 0:
 			tx, err := bt.NewTxFromBytes(msg.Transaction)
 			if err != nil {
-				if msg.Height == 0 {
-					continue
-				}
 				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
 			}
 
-			txn := &TxnStatus{
+			txn := &indexer.TxnStatus{
 				ID:       msg.Id,
 				Tx:       tx,
 				Height:   msg.Height,
 				Idx:      msg.Idx,
-				Parents:  map[string]*TxnStatus{},
-				Children: map[string]*TxnStatus{},
+				Parents:  map[string]*indexer.TxnStatus{},
+				Children: map[string]*indexer.TxnStatus{},
 			}
 
 			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
@@ -182,37 +154,29 @@ func processQueue() {
 				panic(err)
 			}
 
-			if msg.Height == 0 {
-				txnQueue <- txn
-				continue
-			}
-
+			indexer.M.Lock()
 			for _, input := range tx.Inputs {
-				m.Lock()
-				if parent, ok := txns[input.PreviousTxIDStr()]; ok {
+				if parent, ok := indexer.Txns[input.PreviousTxIDStr()]; ok {
 					parent.Children[msg.Id] = txn
 					txn.Parents[parent.ID] = parent
 				}
-				m.Unlock()
 			}
-			m.Lock()
-			if t, ok := txns[msg.Id]; ok {
+			if t, ok := indexer.Txns[msg.Id]; ok {
 				t.Height = msg.Height
 				t.Idx = msg.Idx
-				m.Unlock()
+				indexer.M.Unlock()
 				continue
 			}
-			txns[msg.Id] = txn
-			m.Unlock()
-			wg.Add(1)
+			indexer.Txns[msg.Id] = txn
+			indexer.M.Unlock()
+			indexer.Wg.Add(1)
 			if len(txn.Parents) == 0 {
-				txnQueue <- txn
+				indexer.TxnQueue <- txn
 			}
 		// On Connected, if already connected, unsubscribe and cool down
 
 		case 200:
-			wg.Wait()
-			// log.Panicf("Status: %d\n", msg.Status)
+			indexer.Wg.Wait()
 			settledHeight = msg.Height - 6
 
 			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
@@ -230,57 +194,6 @@ func processQueue() {
 
 		default:
 			log.Printf("Status: %d\n", msg.Status)
-		}
-	}
-}
-
-func processTxns() {
-	for {
-		txn := <-txnQueue
-		threadLimiter <- struct{}{}
-		go func(txn *TxnStatus) {
-			processTxn(txn)
-			<-threadLimiter
-		}(txn)
-	}
-}
-
-func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %d %d %s\n", txn.Height, txn.Idx, txn.Tx.TxID())
-	_, err := lib.IndexSpends(txn.Tx, true)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	_, err = lib.IndexTxos(txn.Tx, txn.Height, txn.Idx, true)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	if txn.Height > 0 {
-		for _, child := range txn.Children {
-			m.Lock()
-			delete(child.Parents, txn.ID)
-			orphan := len(child.Parents) == 0
-			m.Unlock()
-			if orphan {
-				txnQueue <- child
-			}
-		}
-		m.Lock()
-		delete(txns, txn.ID)
-		m.Unlock()
-		wg.Done()
-	}
-}
-
-func processInscriptionIds() {
-	for {
-		height := <-settled
-		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
 		}
 	}
 }

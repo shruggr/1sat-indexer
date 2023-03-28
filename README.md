@@ -25,6 +25,7 @@ go run .
 ```
 ## Run Inscriptions Indexer
 ```
+cd 1sat
 go build
-./1sat-listener
+./1sat
 ```
