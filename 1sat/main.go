@@ -155,22 +155,26 @@ func processQueue() {
 			}
 
 			indexer.M.Lock()
+			_, ok := indexer.Txns[msg.Id]
+			indexer.M.Unlock()
+			if ok {
+				continue
+			}
 			for _, input := range tx.Inputs {
-				if parent, ok := indexer.Txns[input.PreviousTxIDStr()]; ok {
+				inTxid := input.PreviousTxIDStr()
+				indexer.M.Lock()
+				if parent, ok := indexer.Txns[inTxid]; ok {
 					parent.Children[msg.Id] = txn
 					txn.Parents[parent.ID] = parent
 				}
-			}
-			if t, ok := indexer.Txns[msg.Id]; ok {
-				t.Height = msg.Height
-				t.Idx = msg.Idx
 				indexer.M.Unlock()
-				continue
 			}
+			indexer.M.Lock()
 			indexer.Txns[msg.Id] = txn
 			indexer.M.Unlock()
-			indexer.Wg.Add(1)
 			if len(txn.Parents) == 0 {
+				indexer.Wg.Add(1)
+				indexer.InQueue++
 				indexer.TxnQueue <- txn
 			}
 		// On Connected, if already connected, unsubscribe and cool down

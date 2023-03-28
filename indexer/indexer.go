@@ -13,6 +13,7 @@ var Txns = map[string]*TxnStatus{}
 var TxnQueue = make(chan *TxnStatus, 1000000)
 var M sync.Mutex
 var Wg sync.WaitGroup
+var InQueue uint32
 
 type TxnStatus struct {
 	ID       string
@@ -36,7 +37,7 @@ func ProcessTxns(THREADS uint) {
 }
 
 func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %d %d %s\n", txn.Height, txn.Idx, txn.Tx.TxID())
+	fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	_, err := lib.IndexSpends(txn.Tx, true)
 	if err != nil {
 		log.Panic(err)
@@ -48,18 +49,23 @@ func processTxn(txn *TxnStatus) {
 	}
 
 	if txn.Height > 0 {
-		for _, child := range txn.Children {
-			M.Lock()
-			delete(child.Parents, txn.ID)
-			orphan := len(child.Parents) == 0
-			M.Unlock()
-			if orphan {
-				TxnQueue <- child
-			}
-		}
+		orphans := make([]*TxnStatus, 0)
 		M.Lock()
 		delete(Txns, txn.ID)
+		for _, child := range txn.Children {
+			delete(child.Parents, txn.ID)
+			orphan := len(child.Parents) == 0
+			if orphan {
+				orphans = append(orphans, child)
+			}
+		}
 		M.Unlock()
+		for _, orphan := range orphans {
+			Wg.Add(1)
+			InQueue++
+			TxnQueue <- orphan
+		}
+		InQueue--
 		Wg.Done()
 	}
 }
