@@ -17,12 +17,14 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 var TRIGGER = uint32(783968)
 
 var txCache *lru.ARCCache[string, *models.Transaction]
-var Db *sql.DB
+
+var Rdb *redis.Client
 var JBClient *junglebus.Client
 
 var GetTxo *sql.Stmt
@@ -37,8 +39,9 @@ var SetInscriptionId *sql.Stmt
 var SetTxn *sql.Stmt
 var GetUtxos *sql.Stmt
 
-func Initialize(sdb *sql.DB) (err error) {
-	db := sdb
+func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
+	// db = sdb
+	Rdb = rdb
 	jb := os.Getenv("JUNGLEBUS")
 	if jb == "" {
 		jb = "https://junglebus.gorillapool.io"
@@ -121,6 +124,7 @@ func Initialize(sdb *sql.DB) (err error) {
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, vin=$4
 		WHERE txid=$1 AND vout=$2
+		RETURNING lock, satoshis
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -136,14 +140,6 @@ func Initialize(sdb *sql.DB) (err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// InsSpend, err = Db.Prepare(`INSERT INTO txos(txid, vout, spend, vin)
-	// 	VALUES($1, $2, $3, $4)
-	// 	ON CONFLICT(txid, vout) DO UPDATE
-	// 		SET spend=EXCLUDED.spend, vin=EXCLUDED.vin
-	// `)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 
 	InsInscription, err = db.Prepare(`
 		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
@@ -157,6 +153,10 @@ func Initialize(sdb *sql.DB) (err error) {
 
 	txCache, err = lru.NewARC[string, *models.Transaction](2 ^ 30)
 	return
+}
+
+func Publish(channel string, message string) {
+	Rdb.Publish(context.Background(), channel, message)
 }
 
 func LoadTx(txid []byte) (tx *bt.Tx, err error) {

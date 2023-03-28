@@ -14,11 +14,10 @@ import (
 	jbModels "github.com/GorillaPool/go-junglebus/models"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const INDEXER = "1sat"
+const INDEXER = "ord"
 
 var THREADS uint64 = 16
 
@@ -30,8 +29,8 @@ var threadLimiter = make(chan struct{}, THREADS)
 var m sync.Mutex
 var wg sync.WaitGroup
 var txns = map[string]*TxnStatus{}
-var msgQueue = make(chan *Msg, 1000000)
-var txnQueue = make(chan *TxnStatus, 1000000)
+var msgQueue = make(chan *Msg, 100000)
+var txnQueue = make(chan *TxnStatus, 100000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
 
@@ -55,11 +54,8 @@ type TxnStatus struct {
 	Children map[string]*TxnStatus
 }
 
-// var ctx = context.Background()
-var rdb *redis.Client
-
 func init() {
-	godotenv.Load()
+	godotenv.Load("../.env")
 
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
@@ -67,17 +63,10 @@ func init() {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	err = lib.Initialize(db, rdb)
+	err = lib.Initialize(db)
 	if err != nil {
 		log.Panic(err)
 	}
-
 	if os.Getenv("THREADS") != "" {
 		THREADS, err = strconv.ParseUint(os.Getenv("THREADS"), 10, 64)
 		if err != nil {
@@ -94,6 +83,7 @@ func main() {
 	if err != nil {
 		log.Panicln(err.Error())
 	}
+
 	row := db.QueryRow(`SELECT height
 		FROM progress
 		WHERE indexer=$1`,
@@ -115,7 +105,7 @@ func subscribe() {
 	var err error
 	sub, err = junglebusClient.Subscribe(
 		context.Background(),
-		os.Getenv("ONESAT"),
+		os.Getenv("ORD"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnTransaction: func(txResp *jbModels.TransactionResponse) {
@@ -168,7 +158,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	// go processInscriptionIds()
+	go processInscriptionIds()
 	go processTxns()
 	for {
 		msg := <-msgQueue

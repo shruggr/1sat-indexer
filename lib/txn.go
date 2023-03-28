@@ -1,8 +1,11 @@
 package lib
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"log"
 
 	"github.com/libsv/go-bt/v2"
@@ -18,13 +21,13 @@ var (
 type IndexResult struct {
 	Txos   []*Txo             `json:"txos"`
 	Ims    []*InscriptionMeta `json:"ims"`
-	Spends []*Spend           `json:"spends"`
+	Spends []*Txo             `json:"spends"`
 }
 
-func IndexSpends(tx *bt.Tx, save bool) (spends []*Spend, err error) {
+func IndexSpends(tx *bt.Tx, save bool) (spends []*Txo, err error) {
 	txid := tx.TxIDBytes()
 	for vin, txin := range tx.Inputs {
-		spend := &Spend{
+		spend := &Txo{
 			Txid:  txin.PreviousTxID(),
 			Vout:  txin.PreviousTxOutIndex,
 			Spend: txid,
@@ -32,10 +35,16 @@ func IndexSpends(tx *bt.Tx, save bool) (spends []*Spend, err error) {
 		}
 		spends = append(spends, spend)
 		if save {
-			err = spend.Save()
+			err = spend.SaveSpend()
 			if err != nil {
 				return
 			}
+			var msg []byte
+			msg, err = json.Marshal(spend)
+			if err != nil {
+				return
+			}
+			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
 		}
 	}
 	return
@@ -103,6 +112,12 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			if err != nil {
 				return
 			}
+			var msg []byte
+			msg, err = json.Marshal(txo)
+			if err != nil {
+				return
+			}
+			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
 	}
 	return

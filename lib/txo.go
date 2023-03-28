@@ -9,10 +9,11 @@ import (
 type Txo struct {
 	Txid     ByteString `json:"txid"`
 	Vout     uint32     `json:"vout"`
-	Satoshis uint64     `json:"satoshis"`
-	AccSats  uint64     `json:"acc_sats"`
+	Satoshis uint64     `json:"satoshis,omitempty"`
+	AccSats  uint64     `json:"acc_sats,omitempty"`
 	Lock     ByteString `json:"lock"`
 	Spend    ByteString `json:"spend,omitempty"`
+	Vin      uint32     `json:"vin"`
 	Origin   Origin     `json:"origin,omitempty"`
 	Ordinal  uint64     `json:"ordinal"`
 	Height   uint32     `json:"height"`
@@ -33,6 +34,24 @@ func (t *Txo) Save() (err error) {
 	if err != nil {
 		log.Println("insTxo Err:", err)
 		return
+	}
+
+	return
+}
+
+func (t *Txo) SaveSpend() (err error) {
+	rows, err := SetSpend.Query(
+		t.Txid,
+		t.Vout,
+		t.Spend,
+		t.Vin,
+	)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	if rows.Next() {
+		err = rows.Scan(&t.Lock, &t.Satoshis)
 	}
 
 	return

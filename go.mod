@@ -9,12 +9,15 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.7
 	github.com/libsv/go-bt/v2 v2.1.1
+	github.com/redis/go-redis/v9 v9.0.2
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/centrifugal/centrifuge-go v0.9.4 // indirect
 	github.com/centrifugal/protocol v0.9.1 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/docker v23.0.1+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
