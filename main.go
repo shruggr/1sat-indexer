@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -34,8 +33,6 @@ var msgQueue = make(chan *Msg, 1000000)
 var txnQueue = make(chan *TxnStatus, 1000000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
-
-var connected bool
 
 type Msg struct {
 	Id          string
@@ -139,18 +136,6 @@ func subscribe() {
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
-
-				if status.StatusCode == 1 {
-					if connected {
-						sub.Unsubscribe()
-						connected = false
-						log.Printf("Cooling the Jets:")
-						time.Sleep(30 * time.Second)
-						subscribe()
-					} else {
-						connected = true
-					}
-				}
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -168,7 +153,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	// go processInscriptionIds()
+	go processInscriptionIds()
 	go processTxns()
 	for {
 		msg := <-msgQueue

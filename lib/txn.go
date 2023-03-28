@@ -92,6 +92,12 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 				if err != nil {
 					return
 				}
+				var msg []byte
+				msg, err = json.Marshal(im)
+				if err != nil {
+					return
+				}
+				Rdb.Publish(context.Background(), hex.EncodeToString(im.Lock), msg)
 			}
 			result.Ims = append(result.Ims, im)
 			if err != nil {
@@ -112,12 +118,6 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			if err != nil {
 				return
 			}
-			var msg []byte
-			msg, err = json.Marshal(txo)
-			if err != nil {
-				return
-			}
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
 	}
 	return
