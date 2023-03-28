@@ -17,8 +17,6 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const INDEXER = "1sat"
-
 var THREADS uint64 = 16
 
 var db *sql.DB
@@ -86,7 +84,7 @@ func subscribe() {
 	var err error
 	_, err = junglebusClient.Subscribe(
 		context.Background(),
-		os.Getenv("ONESAT"),
+		os.Getenv("MEMPOOL"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnMempool: func(txResp *jbModels.TransactionResponse) {
