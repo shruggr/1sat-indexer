@@ -34,6 +34,7 @@ var GetMaxInscriptionId *sql.Stmt
 var GetUnnumbered *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
+var InsMetadata *sql.Stmt
 var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
 var SetTxn *sql.Stmt
@@ -142,7 +143,17 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsInscription, err = db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, origin, lock)
+		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(txid, vout) DO UPDATE
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
+	`)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	InsMetadata, err = db.Prepare(`
+		INSERT INTO metadata(txid, vout, height, idx, filehash, filesize, filetype, map, origin)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(txid, vout) DO UPDATE
 			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin

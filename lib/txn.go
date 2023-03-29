@@ -2,11 +2,9 @@ package lib
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"log"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -19,9 +17,9 @@ var (
 )
 
 type IndexResult struct {
-	Txos   []*Txo             `json:"txos"`
-	Ims    []*InscriptionMeta `json:"ims"`
-	Spends []*Txo             `json:"spends"`
+	Txos          []*Txo          `json:"txos"`
+	ParsedScripts []*ParsedScript `json:"parsed"`
+	Spends        []*Txo          `json:"spends"`
 }
 
 func IndexSpends(tx *bt.Tx, save bool) (spends []*Txo, err error) {
@@ -53,8 +51,8 @@ func IndexSpends(tx *bt.Tx, save bool) (spends []*Txo, err error) {
 func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexResult, err error) {
 	txid := tx.TxIDBytes()
 	result = &IndexResult{
-		Txos: []*Txo{},
-		Ims:  []*InscriptionMeta{},
+		Txos:          []*Txo{},
+		ParsedScripts: []*ParsedScript{},
 	}
 	var accSats uint64
 	for vout, txout := range tx.Outputs {
@@ -73,44 +71,25 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			return
 		}
 
-		var im *InscriptionMeta
-		im, err = ParseOutput(txout)
-		if err != nil {
-			log.Println("ProcessOutput Err:", err)
-			return
-		}
-
-		if im != nil {
-			im.Txid = txid
-			im.Vout = uint32(vout)
-			im.Height = height
-			im.Idx = idx
-			im.Origin = txo.Origin
-			txo.Lock = im.Lock
-			if save {
-				err = im.Save()
-				if err != nil {
-					return
-				}
-				var msg []byte
-				msg, err = json.Marshal(im)
-				if err != nil {
-					return
-				}
-				Rdb.Publish(context.Background(), hex.EncodeToString(im.Lock), msg)
-			}
-			result.Ims = append(result.Ims, im)
+		parsed := ParseScript(*txout.LockingScript, true)
+		parsed.Txid = txid
+		parsed.Vout = uint32(vout)
+		parsed.Height = height
+		parsed.Idx = idx
+		parsed.Origin = txo.Origin
+		if save {
+			err = parsed.Save()
 			if err != nil {
 				return
 			}
 		}
+
 		if txout.Satoshis != 1 {
 			continue
 		}
-		if im == nil {
-			hash := sha256.Sum256(*txout.LockingScript)
-			txo.Lock = bt.ReverseBytes(hash[:])
-		}
+
+		txo.Lock = parsed.Lock
+		result.ParsedScripts = append(result.ParsedScripts, parsed)
 
 		result.Txos = append(result.Txos, txo)
 		if save {
@@ -118,25 +97,13 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			if err != nil {
 				return
 			}
+			var msg []byte
+			msg, err = json.Marshal(txo)
+			if err != nil {
+				return
+			}
+			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
-	}
-	return
-}
-
-func ParseOutput(txout *bt.Output) (im *InscriptionMeta, err error) {
-	inscription, lock := InscriptionFromScript(*txout.LockingScript)
-	if inscription == nil {
-		return
-	}
-
-	hash := sha256.Sum256(inscription.Body)
-	im = &InscriptionMeta{
-		File: File{
-			Hash: hash[:],
-			Size: uint32(len(inscription.Body)),
-			Type: inscription.Type,
-		},
-		Lock: lock[:],
 	}
 	return
 }
