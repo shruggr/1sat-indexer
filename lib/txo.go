@@ -18,6 +18,7 @@ type Txo struct {
 	Ordinal  uint64     `json:"ordinal"`
 	Height   uint32     `json:"height"`
 	Idx      uint32     `json:"idx"`
+	Listing  bool       `json:"listing,omitempty"`
 }
 
 func (t *Txo) Save() (err error) {
@@ -51,7 +52,7 @@ func (t *Txo) SaveSpend() (err error) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		err = rows.Scan(&t.Lock, &t.Satoshis)
+		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing)
 	}
 
 	return

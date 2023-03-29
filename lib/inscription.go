@@ -16,7 +16,8 @@ import (
 )
 
 var PATTERN []byte
-var MAP = []byte("1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5")
+var MAP = "1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5"
+var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 
 type Map map[string]string
 
@@ -40,72 +41,69 @@ func init() {
 	PATTERN = val
 }
 
-type Inscription struct {
-	Body []byte
-	Type string
-}
+// type Inscription struct {
+// 	Content []byte
+// 	Type    string
+// }
 
 type File struct {
-	Hash ByteString `json:"hash"`
-	Size uint32     `json:"size"`
-	Type string     `json:"type"`
+	Hash     ByteString `json:"hash"`
+	Size     uint32     `json:"size"`
+	Type     string     `json:"type"`
+	Content  []byte     `json:"content,omitempty"`
+	Encoding string     `json:"encoding,omitempty"`
+	Name     string     `json:"name,omitempty"`
 }
 
 type ParsedScript struct {
-	Id          uint64       `json:"id"`
-	Txid        ByteString   `json:"txid"`
-	Vout        uint32       `json:"vout"`
-	File        File         `json:"file"`
-	Origin      Origin       `json:"origin"`
-	Ordinal     uint32       `json:"ordinal"`
-	Height      uint32       `json:"height"`
-	Idx         uint32       `json:"idx"`
-	Lock        ByteString   `json:"lock"`
-	Map         Map          `json:"MAP"`
-	Inscription *Inscription `json:"-"`
+	Id       uint64     `json:"id"`
+	Txid     ByteString `json:"txid"`
+	Vout     uint32     `json:"vout"`
+	Ord      *File      `json:"file"`
+	Origin   Origin     `json:"origin"`
+	Ordinal  uint32     `json:"ordinal"`
+	Height   uint32     `json:"height"`
+	Idx      uint32     `json:"idx"`
+	Lock     ByteString `json:"lock"`
+	Map      Map        `json:"MAP"`
+	B        *File      `json:"B"`
+	Listings []*Listing `json:"listings"`
+	// Inscription *Inscription `json:"-"`
 }
 
 func (p *ParsedScript) Save() (err error) {
-	// var MAP []byte
-	// if p.Map != nil {
-	// 	MAP, err = json.Marshal(p.Map)
-	// 	if err != nil {
-	// 		return
-	// 	}
-	// }
-	if p.Inscription != nil {
+	if p.Ord != nil {
 		_, err = InsInscription.Exec(
 			p.Txid,
 			p.Vout,
 			p.Height,
 			p.Idx,
-			p.File.Hash,
-			p.File.Size,
-			p.File.Type,
+			p.Ord.Hash,
+			p.Ord.Size,
+			p.Ord.Type,
 			p.Map,
 			p.Origin,
 			p.Lock,
 		)
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.File.Size, p.File.Type, err)
+			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
 			log.Panic(err)
 		}
 	}
 
-	if p.Inscription != nil || p.Map != nil {
+	if p.Ord != nil || p.Map != nil || p.B != nil {
 		_, err = InsMetadata.Exec(
 			p.Txid,
 			p.Vout,
 			p.Height,
 			p.Idx,
-			p.File.Hash,
-			p.File.Size,
-			p.File.Type,
+			p.Ord,
 			p.Map,
+			p.B,
 			p.Origin,
 		)
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.File.Size, p.File.Type, err)
+			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
 			log.Panic(err)
 		}
 	}
@@ -123,11 +121,11 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	var opIf int
 	var opORD int
 	var opMAP int
+	var opB int
 	var endLock int
 	var mapOperator string
 	lockScript := bscript.Script{}
 
-parseLoop:
 	for i, op := range parts {
 		var opcode byte
 		if len(op) == 1 {
@@ -144,18 +142,30 @@ parseLoop:
 				if opORD == 0 {
 					opORD = -1
 				}
-				if len(parts) > i+4 && bytes.Equal(parts[i+1], MAP) {
-					mapOperator = string(parts[i+2])
-					opMAP = i + 3
-					break parseLoop
+				if endLock > 0 {
+					switch ParseBitcom(parts[i:]) {
+					case MAP:
+						fmt.Println("MAP", string(parts[i+1]))
+						mapOperator = string(parts[i+2])
+						opMAP = i + 3
+					case B:
+						fmt.Println("B", string(parts[i+1]))
+						opB = i + 1
+					}
+
 				}
 			case bscript.OpSWAP:
 				if endLock > 0 {
-					if len(parts) > i+4 && bytes.Equal(parts[i+1], MAP) {
+					switch ParseBitcom(parts[i:]) {
+					case MAP:
+						fmt.Println("MAP", string(parts[i+1]))
 						mapOperator = string(parts[i+2])
 						opMAP = i + 3
-						break parseLoop
+					case B:
+						fmt.Println("B", string(parts[i+1]))
+						opB = i + 1
 					}
+
 				}
 			}
 		}
@@ -174,6 +184,7 @@ parseLoop:
 		}
 	}
 
+	fmt.Printf("ORD: %d MAP: %d B: %d\n", opORD, opMAP, opB)
 	var hash [32]byte
 	if endLock == 0 {
 		hash = sha256.Sum256(script)
@@ -184,7 +195,7 @@ parseLoop:
 		Lock: bt.ReverseBytes(hash[:]),
 	}
 	if opORD > 0 {
-		p.Inscription = &Inscription{}
+		p.Ord = &File{}
 		var pos int
 	ordLoop:
 		for pos = opORD + 1; pos < len(parts); pos += 2 {
@@ -199,26 +210,22 @@ parseLoop:
 				if len(value) == 1 && value[0] == bscript.Op0 {
 					value = []byte{}
 				}
-				p.Inscription.Body = value
+				p.Ord.Content = value
 				break ordLoop
 			case bscript.Op1:
 				value := parts[pos+1]
 				if len(value) == 1 && value[0] == bscript.Op0 {
 					value = []byte{}
 				}
-				p.Inscription.Type = string(value)
+				p.Ord.Type = string(value)
 			case bscript.OpENDIF:
 				break ordLoop
 			}
 		}
 		if includeFileMeta {
-			hash := sha256.Sum256(p.Inscription.Body)
-			p.File = File{
-				Hash: hash[:],
-				Size: uint32(len(p.Inscription.Body)),
-				Type: p.Inscription.Type,
-			}
-
+			hash := sha256.Sum256(p.Ord.Content)
+			p.Ord.Size = uint32(len(p.Ord.Content))
+			p.Ord.Hash = hash[:]
 		}
 	}
 	if opMAP > 0 && mapOperator == "SET" {
@@ -237,7 +244,69 @@ parseLoop:
 		}
 	}
 
+	if opB > 0 {
+		p.B = &File{}
+		for pos := opB; pos < opB+5; pos++ {
+			op := parts[pos]
+			var opcode byte
+			if len(op) == 1 {
+				opcode = op[0]
+				if opcode == bscript.OpSWAP || opcode == bscript.OpRETURN {
+					break
+				}
+				if opcode == bscript.Op0 {
+					op = []byte{}
+				}
+			}
+
+			switch pos {
+			case opB + 1:
+				p.B.Content = op
+			case opB + 2:
+				p.B.Type = string(op)
+			case opB + 3:
+				p.B.Encoding = string(op)
+			case opB + 4:
+				p.B.Name = string(op)
+			}
+		}
+		if includeFileMeta {
+			hash := sha256.Sum256(p.B.Content)
+			p.B.Size = uint32(len(p.B.Content))
+			p.B.Hash = hash[:]
+		}
+	}
+	if p.Map != nil && p.B != nil {
+		if value, ok := p.Map["type"]; !ok || value != "listing" {
+			return
+		}
+		if value, ok := p.Map["listingType"]; !ok || value != "1sat-psbt" {
+			return
+		}
+		tx, err := bt.NewTxFromBytes(p.B.Content)
+		if err != nil {
+			return
+		}
+		for vin, txin := range tx.Inputs {
+			if len(tx.Outputs) > vin {
+				p.Listings = append(p.Listings, &Listing{
+					Txid:  txin.PreviousTxID(),
+					Vout:  txin.PreviousTxOutIndex,
+					Price: tx.Outputs[vin].Satoshis,
+					Rawtx: p.B.Content,
+				})
+			}
+		}
+	}
+
 	return
+}
+
+func ParseBitcom(parts [][]byte) (bitcon string) {
+	if len(parts) < 2 {
+		return
+	}
+	return string(parts[1])
 }
 
 func SetInscriptionIds(height uint32) (err error) {

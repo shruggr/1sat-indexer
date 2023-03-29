@@ -43,6 +43,9 @@ func IndexSpends(tx *bt.Tx, save bool) (spends []*Txo, err error) {
 				return
 			}
 			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+			if spend.Listing {
+				Rdb.Publish(context.Background(), "unlist", msg)
+			}
 		}
 	}
 	return
@@ -84,12 +87,38 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			}
 		}
 
+		if save && len(parsed.Listings) > 0 {
+			row := SetSpend.QueryRow(txid, uint32(vout))
+			var origin Origin
+			var lock []byte
+			err = row.Scan(&lock, &origin)
+			if err != nil {
+				return
+			}
+			for seq, listing := range parsed.Listings {
+				listing.ListTxid = txid
+				listing.ListVout = uint32(vout)
+				listing.ListSeq = uint32(seq)
+				listing.Origin = origin
+				err = listing.Save()
+				if err != nil {
+					return
+				}
+				var msg []byte
+				msg, err = json.Marshal(listing)
+				if err != nil {
+					return
+				}
+				Rdb.Publish(context.Background(), hex.EncodeToString(lock), msg)
+				Rdb.Publish(context.Background(), "list", msg)
+			}
+		}
+		result.ParsedScripts = append(result.ParsedScripts, parsed)
 		if txout.Satoshis != 1 {
 			continue
 		}
 
 		txo.Lock = parsed.Lock
-		result.ParsedScripts = append(result.ParsedScripts, parsed)
 
 		result.Txos = append(result.Txos, txo)
 		if save {

@@ -35,8 +35,10 @@ var GetUnnumbered *sql.Stmt
 var InsTxo *sql.Stmt
 var InsInscription *sql.Stmt
 var InsMetadata *sql.Stmt
+var InsListing *sql.Stmt
 var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
+var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 var GetUtxos *sql.Stmt
 
@@ -114,6 +116,36 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
+	InsInscription, err = db.Prepare(`
+		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(txid, vout) DO UPDATE
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
+	`)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	InsMetadata, err = db.Prepare(`
+		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, origin)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT(txid, vout) DO UPDATE
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
+	`)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	InsListing, err = db.Prepare(`
+		INSERT INTO listings(ltxid, lvout, lseq, height, idx, txid, vout, price, rawtx, origin)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(ltxid, lvout, lseq) DO UPDATE
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin`,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	SetInscriptionId, err = db.Prepare(`UPDATE inscriptions
 		SET id=$3
 		WHERE txid=$1 AND vout=$2
@@ -125,7 +157,7 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, vin=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis
+		RETURNING lock, satoshis, listing
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -142,33 +174,34 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	InsInscription, err = db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
+	SetListing, err = db.Prepare(`
+		UPDATE txos
+		SET listing=true
+		WHERE txid=$1 AND vout=$2
+		RETURNING lock, origin
 	`)
 	if err != nil {
-		log.Panic(err)
+		log.Fatal(err)
 	}
 
-	InsMetadata, err = db.Prepare(`
-		INSERT INTO metadata(txid, vout, height, idx, filehash, filesize, filetype, map, origin)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
-	`)
+	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
+		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
+		ON CONFLICT(txid) DO UPDATE SET
+			blockid=EXCLUDED.blockid,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx`,
+	)
 	if err != nil {
-		log.Panic(err)
+		log.Fatal(err)
 	}
 
 	txCache, err = lru.NewARC[string, *models.Transaction](2 ^ 30)
 	return
 }
 
-func Publish(channel string, message string) {
-	Rdb.Publish(context.Background(), channel, message)
-}
+// func Publish(channel string, message string) {
+// 	Rdb.Publish(context.Background(), channel, message)
+// }
 
 func LoadTx(txid []byte) (tx *bt.Tx, err error) {
 	txData, err := LoadTxData(txid)
