@@ -55,6 +55,18 @@ type File struct {
 	Name     string     `json:"name,omitempty"`
 }
 
+func (f File) Value() (driver.Value, error) {
+	return json.Marshal(f)
+}
+
+func (f *File) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	return json.Unmarshal(b, &f)
+}
+
 type ParsedScript struct {
 	Id       uint64     `json:"id"`
 	Txid     ByteString `json:"txid"`
@@ -145,11 +157,9 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 				if endLock > 0 {
 					switch ParseBitcom(parts[i:]) {
 					case MAP:
-						fmt.Println("MAP", string(parts[i+1]))
 						mapOperator = string(parts[i+2])
 						opMAP = i + 3
 					case B:
-						fmt.Println("B", string(parts[i+1]))
 						opB = i + 1
 					}
 
@@ -158,17 +168,15 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 				if endLock > 0 {
 					switch ParseBitcom(parts[i:]) {
 					case MAP:
-						fmt.Println("MAP", string(parts[i+1]))
 						mapOperator = string(parts[i+2])
 						opMAP = i + 3
 					case B:
-						fmt.Println("B", string(parts[i+1]))
 						opB = i + 1
 					}
-
 				}
 			}
 		}
+
 		if opORD == 0 && bytes.Equal(op, []byte("ord")) && opIf == i-1 && opFalse == i-2 {
 			opORD = i
 			endLock = i - 2
@@ -184,7 +192,6 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 		}
 	}
 
-	fmt.Printf("ORD: %d MAP: %d B: %d\n", opORD, opMAP, opB)
 	var hash [32]byte
 	if endLock == 0 {
 		hash = sha256.Sum256(script)
