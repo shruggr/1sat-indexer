@@ -50,7 +50,7 @@ type File struct {
 	Hash     ByteString `json:"hash"`
 	Size     uint32     `json:"size"`
 	Type     string     `json:"type"`
-	Content  []byte     `json:"content,omitempty"`
+	Content  []byte     `json:"-"`
 	Encoding string     `json:"encoding,omitempty"`
 	Name     string     `json:"name,omitempty"`
 }
@@ -211,7 +211,6 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 					value = []byte{}
 				}
 				p.Ord.Content = value
-				break ordLoop
 			case bscript.Op1:
 				value := parts[pos+1]
 				if len(value) == 1 && value[0] == bscript.Op0 {
