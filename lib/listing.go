@@ -10,7 +10,7 @@ type Listing struct {
 	Vout     uint32     `json:"vout"`
 	Price    uint64     `json:"price"`
 	Rawtx    []byte     `json:"rawtx"`
-	Origin   Origin     `json:"origin"`
+	Origin   Outpoint   `json:"origin"`
 }
 
 func (l *Listing) Save() (err error) {

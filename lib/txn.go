@@ -89,7 +89,7 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 
 		if save && len(parsed.Listings) > 0 {
 			row := SetSpend.QueryRow(txid, uint32(vout))
-			var origin Origin
+			var origin Outpoint
 			var lock []byte
 			err = row.Scan(&lock, &origin)
 			if err != nil {
@@ -137,7 +137,10 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 	return
 }
 
-func LoadOrigin(txo *Txo) (origin Origin, err error) {
+func LoadOrigin(txo *Txo) (origin *Outpoint, err error) {
+	if txo.Satoshis != 1 {
+		return
+	}
 	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
 	if err != nil {
 		return
@@ -157,12 +160,13 @@ func LoadOrigin(txo *Txo) (origin Origin, err error) {
 		if err != nil {
 			return
 		}
-		if len(inTxo.Origin) > 0 {
+		if inTxo.Origin != nil {
 			origin = inTxo.Origin
 			return
 		}
 	} else {
-		origin = binary.BigEndian.AppendUint32(txo.Txid, txo.Vout)
+		o := Outpoint(binary.BigEndian.AppendUint32(txo.Txid, txo.Vout))
+		origin = &o
 	}
 
 	return origin, nil

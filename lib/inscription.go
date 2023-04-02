@@ -22,6 +22,9 @@ var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 type Map map[string]string
 
 func (m Map) Value() (driver.Value, error) {
+	if m == nil {
+		return nil, nil
+	}
 	return json.Marshal(m)
 }
 
@@ -72,13 +75,13 @@ type ParsedScript struct {
 	Txid     ByteString `json:"txid"`
 	Vout     uint32     `json:"vout"`
 	Ord      *File      `json:"file"`
-	Origin   Origin     `json:"origin"`
+	Origin   *Outpoint  `json:"origin"`
 	Ordinal  uint32     `json:"ordinal"`
 	Height   uint32     `json:"height"`
 	Idx      uint32     `json:"idx"`
 	Lock     ByteString `json:"lock"`
-	Map      Map        `json:"MAP"`
-	B        *File      `json:"B"`
+	Map      Map        `json:"MAP,omitempty"`
+	B        *File      `json:"B,omitempty"`
 	Listings []*Listing `json:"listings"`
 	// Inscription *Inscription `json:"-"`
 }
@@ -123,9 +126,12 @@ func (p *ParsedScript) Save() (err error) {
 }
 
 func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) {
+	p = &ParsedScript{}
 	parts, err := bscript.DecodeParts(script)
 	if err != nil {
-		// log.Panic(err)
+		hash := sha256.Sum256(script)
+		p.Lock = hash[:]
+		// log.Panicf("Parsing Error: %x %+v\n", script, err)
 		return
 	}
 
@@ -198,9 +204,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	} else {
 		hash = sha256.Sum256(lockScript)
 	}
-	p = &ParsedScript{
-		Lock: bt.ReverseBytes(hash[:]),
-	}
+	p.Lock = hash[:]
 	if opORD > 0 {
 		p.Ord = &File{}
 		var pos int
@@ -286,7 +290,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 		if value, ok := p.Map["type"]; !ok || value != "listing" {
 			return
 		}
-		if value, ok := p.Map["listingType"]; !ok || value != "1sat-psbt" {
+		if value, ok := p.Map["listingType"]; !ok || value != "1Sat-PSBT" {
 			return
 		}
 		tx, err := bt.NewTxFromBytes(p.B.Content)

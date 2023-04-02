@@ -225,9 +225,9 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 	return txData, nil
 }
 
-type Origin []byte
+type Outpoint []byte
 
-func NewOriginFromString(s string) (o Origin, err error) {
+func NewOriginFromString(s string) (o *Outpoint, err error) {
 	txid, err := hex.DecodeString(s[:64])
 	if err != nil {
 		return
@@ -236,20 +236,21 @@ func NewOriginFromString(s string) (o Origin, err error) {
 	if err != nil {
 		return
 	}
-	o = Origin(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	origin := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	o = &origin
 	return
 }
 
-func (o *Origin) String() string {
+func (o *Outpoint) String() string {
 	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint32((*o)[32:]))
 }
-func (o Origin) MarshalJSON() ([]byte, error) {
+func (o Outpoint) MarshalJSON() ([]byte, error) {
 	bytes, err := json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 	return bytes, err
 }
 
 // UnmarshalJSON deserializes Origin to string
-func (o *Origin) UnmarshalJSON(data []byte) error {
+func (o *Outpoint) UnmarshalJSON(data []byte) error {
 	var x string
 	err := json.Unmarshal(data, &x)
 	if err == nil {
@@ -262,7 +263,7 @@ func (o *Origin) UnmarshalJSON(data []byte) error {
 			return err
 		}
 
-		*o = Origin(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+		*o = Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
 	}
 
 	return err

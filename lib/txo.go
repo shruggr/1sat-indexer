@@ -14,7 +14,7 @@ type Txo struct {
 	Lock     ByteString `json:"lock"`
 	Spend    ByteString `json:"spend,omitempty"`
 	Vin      uint32     `json:"vin"`
-	Origin   Origin     `json:"origin,omitempty"`
+	Origin   *Outpoint  `json:"origin,omitempty"`
 	Ordinal  uint64     `json:"ordinal"`
 	Height   uint32     `json:"height"`
 	Idx      uint32     `json:"idx"`
