@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
 )
 
@@ -286,28 +285,29 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 			p.B.Hash = hash[:]
 		}
 	}
-	if p.Map != nil && p.B != nil {
-		if value, ok := p.Map["type"]; !ok || value != "listing" {
-			return
-		}
-		if value, ok := p.Map["listingType"]; !ok || value != "1Sat-PSBT" {
-			return
-		}
-		tx, err := bt.NewTxFromBytes(p.B.Content)
-		if err != nil {
-			return
-		}
-		for vin, txin := range tx.Inputs {
-			if len(tx.Outputs) > vin {
-				p.Listings = append(p.Listings, &Listing{
-					Txid:  txin.PreviousTxID(),
-					Vout:  txin.PreviousTxOutIndex,
-					Price: tx.Outputs[vin].Satoshis,
-					Rawtx: p.B.Content,
-				})
-			}
-		}
-	}
+
+	// if p.Map != nil && p.B != nil {
+	// 	if value, ok := p.Map["type"]; !ok || value != "listing" {
+	// 		return
+	// 	}
+	// 	if value, ok := p.Map["listingType"]; !ok || value != "1Sat-PSBT" {
+	// 		return
+	// 	}
+	// 	tx, err := bt.NewTxFromBytes(p.B.Content)
+	// 	if err != nil {
+	// 		return
+	// 	}
+	// 	for vin, txin := range tx.Inputs {
+	// 		if len(tx.Outputs) > vin {
+	// 			p.Listings = append(p.Listings, &Listing{
+	// 				Txid:  txin.PreviousTxID(),
+	// 				Vout:  txin.PreviousTxOutIndex,
+	// 				Price: tx.Outputs[vin].Satoshis,
+	// 				Rawtx: p.B.Content,
+	// 			})
+	// 		}
+	// 	}
+	// }
 
 	return
 }

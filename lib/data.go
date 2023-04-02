@@ -98,7 +98,7 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	GetUnnumbered, err = db.Prepare(`
 		SELECT txid, vout 
 		FROM inscriptions
-		WHERE id IS NULL AND height <= $1
+		WHERE id IS NULL AND height <= $1 AND height > 0
 		ORDER BY height, idx, vout`,
 	)
 	if err != nil {
