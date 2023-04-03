@@ -7,6 +7,7 @@ CREATE TABLE ordinal_lock_listings(
     height INTEGER,
     idx INTEGER,
     price BIGINT,
+    payout BYTEA,
     origin BYTEA,
     PRIMARY KEY (txid, lvout)
 );

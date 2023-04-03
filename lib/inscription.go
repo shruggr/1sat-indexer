@@ -88,30 +88,31 @@ type ParsedScript struct {
 	Lock     ByteString        `json:"lock"`
 	Map      Map               `json:"MAP,omitempty"`
 	B        *File             `json:"B,omitempty"`
-	Listings []*OrdLockListing `json:"listings"`
+	Listings []*OrdLockListing `json:"listings,omitempty"`
 	// Inscription *Inscription `json:"-"`
 }
 
-func (p *ParsedScript) Save() (err error) {
-	if p.Ord != nil {
-		_, err = InsInscription.Exec(
-			p.Txid,
-			p.Vout,
-			p.Height,
-			p.Idx,
-			p.Ord.Hash,
-			p.Ord.Size,
-			p.Ord.Type,
-			p.Map,
-			p.Origin,
-			p.Lock,
-		)
-		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
-			log.Panic(err)
-		}
+func (p *ParsedScript) SaveInscription() (err error) {
+	_, err = InsInscription.Exec(
+		p.Txid,
+		p.Vout,
+		p.Height,
+		p.Idx,
+		p.Ord.Hash,
+		p.Ord.Size,
+		p.Ord.Type,
+		p.Map,
+		p.Origin,
+		p.Lock,
+	)
+	if err != nil {
+		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+		log.Panic(err)
 	}
+	return
+}
 
+func (p *ParsedScript) Save() (err error) {
 	if p.Ord != nil || p.Map != nil || p.B != nil {
 		_, err = InsMetadata.Exec(
 			p.Txid,
@@ -216,12 +217,12 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 				if owner, err := bscript.NewP2PKHFromPubKeyHash(pkh); err == nil {
 					lockScript = *owner
 					p.Listings = append(p.Listings, &OrdLockListing{
-						Price: payOutput.Satoshis,
+						Price:     payOutput.Satoshis,
+						PayOutput: payOutput.Bytes(),
 					})
 				}
 			}
 		}
-
 	}
 
 	hash := sha256.Sum256(lockScript)

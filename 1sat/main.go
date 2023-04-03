@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -27,6 +29,7 @@ var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
 var settled = make(chan uint32, 100)
 var fromBlock uint32
+var sub *junglebus.Subscription
 
 type Msg struct {
 	Id          string
@@ -88,6 +91,24 @@ func main() {
 
 	go processQueue()
 	subscribe()
+	defer func() {
+		if r := recover(); r != nil {
+			sub.Unsubscribe()
+			fmt.Println("Recovered in f", r)
+			fmt.Println("Unsubscribing and exiting...")
+		}
+	}()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		fmt.Printf("Caught signal")
+		fmt.Println("Unsubscribing and exiting...")
+		sub.Unsubscribe()
+		os.Exit(0)
+	}()
+
 	var wg2 sync.WaitGroup
 	wg2.Add(1)
 	wg2.Wait()
@@ -96,7 +117,7 @@ func main() {
 func subscribe() {
 	var err error
 	fmt.Println("Subscribing to Junglebus from block", fromBlock)
-	_, err = junglebusClient.Subscribe(
+	sub, err = junglebusClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),

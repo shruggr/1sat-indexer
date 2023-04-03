@@ -27,8 +27,6 @@ var txCache *lru.ARCCache[string, *models.Transaction]
 var Rdb *redis.Client
 var JBClient *junglebus.Client
 
-var GetTxo *sql.Stmt
-var GetTxos *sql.Stmt
 var GetInput *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
 var GetUnnumbered *sql.Stmt
@@ -40,7 +38,6 @@ var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
 var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
-var GetUtxos *sql.Stmt
 
 func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	// db = sdb
@@ -54,30 +51,6 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	)
 	if err != nil {
 		return
-	}
-
-	GetTxo, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
-		FROM txos
-		WHERE txid=$1 AND vout=$2 AND acc_sats IS NOT NULL
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	GetTxos, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
-		FROM txos
-		WHERE txid=$1 AND satoshis=1 AND acc_sats IS NOT NULL
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	GetUtxos, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
-		FROM txos
-		WHERE lock=$1 AND spend IS NULL
-	`)
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	GetInput, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
@@ -137,9 +110,9 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsListing, err = db.Prepare(`
-		INSERT INTO listings(ltxid, lvout, lseq, height, idx, txid, vout, price, rawtx, origin)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT(ltxid, lvout, lseq) DO UPDATE
+		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin)
+		VALUES($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT(txid, vout) DO UPDATE
 			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin`,
 	)
 	if err != nil {
@@ -199,10 +172,6 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	return
 }
 
-// func Publish(channel string, message string) {
-// 	Rdb.Publish(context.Background(), channel, message)
-// }
-
 func LoadTx(txid []byte) (tx *bt.Tx, err error) {
 	txData, err := LoadTxData(txid)
 	if err != nil {
@@ -227,7 +196,7 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 
 type Outpoint []byte
 
-func NewOriginFromString(s string) (o *Outpoint, err error) {
+func NewOutpointFromString(s string) (o *Outpoint, err error) {
 	txid, err := hex.DecodeString(s[:64])
 	if err != nil {
 		return
@@ -244,8 +213,19 @@ func NewOriginFromString(s string) (o *Outpoint, err error) {
 func (o *Outpoint) String() string {
 	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint32((*o)[32:]))
 }
-func (o Outpoint) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+
+func (o *Outpoint) Txid() []byte {
+	return (*o)[:32]
+}
+
+func (o *Outpoint) Vout() uint32 {
+	return binary.BigEndian.Uint32((*o)[32:])
+}
+
+func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
+	if len(o) == 36 {
+		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+	}
 	return bytes, err
 }
 
