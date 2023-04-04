@@ -205,15 +205,15 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 		}
 	}
 
-	ordLockPrefixIndex := bytes.Index(lockScript, OrdLockPrefix)
-	ordLockSuffixIndex := bytes.Index(lockScript, OrdLockSuffix)
+	ordLockPrefixIndex := bytes.Index(script, OrdLockPrefix)
+	ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
 	if ordLockPrefixIndex > -1 && ordLockSuffixIndex > len(OrdLockPrefix) {
-		ordLock := lockScript[ordLockPrefixIndex+len(OrdLockPrefix) : ordLockSuffixIndex]
+		ordLock := script[ordLockPrefixIndex+len(OrdLockPrefix) : ordLockSuffixIndex]
 		if ordLockParts, err := bscript.DecodeParts(ordLock); err == nil {
 			pkh := ordLockParts[0]
 			payOutput := &bt.Output{}
 			_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
-			if err != nil {
+			if err == nil {
 				if owner, err := bscript.NewP2PKHFromPubKeyHash(pkh); err == nil {
 					lockScript = *owner
 					p.Listings = append(p.Listings, &OrdLockListing{

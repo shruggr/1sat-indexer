@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
@@ -33,13 +34,16 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	txid, _ := hex.DecodeString("fe015378df4b217a476ac100d625cc79e7e901f39281431cdc8bb22fa8599ebb")
-	tx, err := lib.LoadTx(txid)
+	txid, _ := hex.DecodeString("0d196ae2672e47b6e167ec1f6f5a2bb69c3e85d39922c07e1ecaa618fdec7595")
+	txData, err := lib.LoadTxData(txid)
 	if err != nil {
 		log.Panic(err)
 	}
-
-	result, err := lib.IndexTxos(tx, 0, 0, false)
+	tx, err := bt.NewTxFromBytes(txData.Transaction)
+	if err != nil {
+		log.Panic(err)
+	}
+	result, err := lib.IndexTxos(tx, txData.BlockHeight, uint32(txData.BlockIndex), true)
 	if err != nil {
 		log.Panic(err)
 	}

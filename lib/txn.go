@@ -98,7 +98,7 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			}
 		}
 
-		if save && len(parsed.Listings) > 0 {
+		if len(parsed.Listings) > 0 {
 			if err != nil {
 				return
 			}
@@ -106,11 +106,16 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 				l.Txid = txid
 				l.Vout = uint32(vout)
 				l.Origin = txo.Origin
-				err = l.Save()
-				if err != nil {
-					return
+				l.Height = height
+				l.Idx = idx
+				txo.Listing = true
+				if save {
+					err = l.Save()
+					if err != nil {
+						return
+					}
+					Rdb.Publish(context.Background(), "list", msg)
 				}
-				Rdb.Publish(context.Background(), "list", msg)
 			}
 		}
 		result.ParsedScripts = append(result.ParsedScripts, parsed)
