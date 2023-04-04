@@ -9,7 +9,7 @@ CREATE TABLE ordinal_lock_listings(
     price BIGINT,
     payout BYTEA,
     origin BYTEA,
-    PRIMARY KEY (txid, lvout)
+    PRIMARY KEY (txid, vout)
 );
 
 -- CREATE TABLE bsbt_listings(
