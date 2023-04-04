@@ -137,7 +137,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	parts, err := bscript.DecodeParts(script)
 	if err != nil {
 		hash := sha256.Sum256(script)
-		p.Lock = hash[:]
+		p.Lock = bt.ReverseBytes(hash[:])
 		// log.Panicf("Parsing Error: %x %+v\n", script, err)
 		return
 	}
@@ -226,7 +226,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	}
 
 	hash := sha256.Sum256(lockScript)
-	p.Lock = hash[:]
+	p.Lock = bt.ReverseBytes(hash[:])
 	if opORD > 0 {
 		p.Ord = &File{}
 		var pos int
