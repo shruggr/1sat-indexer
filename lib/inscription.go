@@ -16,11 +16,15 @@ import (
 )
 
 var PATTERN []byte
-var MAP = []byte("1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5")
+var MAP = "1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5"
+var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 
 type Map map[string]string
 
 func (m Map) Value() (driver.Value, error) {
+	if m == nil {
+		return nil, nil
+	}
 	return json.Marshal(m)
 }
 
@@ -32,80 +36,96 @@ func (m *Map) Scan(value interface{}) error {
 	return json.Unmarshal(b, &m)
 }
 
+var OrdLockPrefix []byte
+var OrdLockSuffix []byte
+
 func init() {
 	val, err := hex.DecodeString("0063036f7264")
 	if err != nil {
 		log.Panic(err)
 	}
 	PATTERN = val
+
+	OrdLockPrefix, _ = hex.DecodeString("2097dfd76851bf465e8f715593b217714858bbe9570ff3bd5e33840a34e20ff0262102ba79df5f8ae7604a9830f03c7933028186aede0675a16f025dc4f8be8eec0382201008ce7480da41702918d1ec8e6849ba32b4d65b1e40dc669c31a1e6306b266c0000")
+	OrdLockSuffix, _ = hex.DecodeString("615179547a75537a537a537a0079537a75527a527a7575615579008763567901c161517957795779210ac407f0e4bd44bfc207355a778b046225a7068fc59ee7eda43ad905aadbffc800206c266b30e6a1319c66dc401e5bd6b432ba49688eecd118297041da8074ce081059795679615679aa0079610079517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01007e81517a75615779567956795679567961537956795479577995939521414136d08c5ed2bf3ba048afe6dcaebafeffffffffffffffffffffffffffffff00517951796151795179970079009f63007952799367007968517a75517a75517a7561527a75517a517951795296a0630079527994527a75517a6853798277527982775379012080517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01205279947f7754537993527993013051797e527e54797e58797e527e53797e52797e57797e0079517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a756100795779ac517a75517a75517a75517a75517a75517a75517a75517a75517a7561517a75517a756169587951797e58797eaa577961007982775179517958947f7551790128947f77517a75517a75618777777777777777777767557951876351795779a9876957795779ac777777777777777767006868")
 }
 
-type Inscription struct {
-	Body []byte
-	Type string
-}
+// type Inscription struct {
+// 	Content []byte
+// 	Type    string
+// }
 
 type File struct {
-	Hash ByteString `json:"hash"`
-	Size uint32     `json:"size"`
-	Type string     `json:"type"`
+	Hash     ByteString `json:"hash"`
+	Size     uint32     `json:"size"`
+	Type     string     `json:"type"`
+	Content  []byte     `json:"-"`
+	Encoding string     `json:"encoding,omitempty"`
+	Name     string     `json:"name,omitempty"`
+}
+
+func (f File) Value() (driver.Value, error) {
+	return json.Marshal(f)
+}
+
+func (f *File) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	return json.Unmarshal(b, &f)
 }
 
 type ParsedScript struct {
-	Id          uint64       `json:"id"`
-	Txid        ByteString   `json:"txid"`
-	Vout        uint32       `json:"vout"`
-	File        File         `json:"file"`
-	Origin      Origin       `json:"origin"`
-	Ordinal     uint32       `json:"ordinal"`
-	Height      uint32       `json:"height"`
-	Idx         uint32       `json:"idx"`
-	Lock        ByteString   `json:"lock"`
-	Map         Map          `json:"MAP"`
-	Inscription *Inscription `json:"-"`
+	Id       uint64            `json:"id"`
+	Txid     ByteString        `json:"txid"`
+	Vout     uint32            `json:"vout"`
+	Ord      *File             `json:"file"`
+	Origin   *Outpoint         `json:"origin"`
+	Ordinal  uint32            `json:"ordinal"`
+	Height   uint32            `json:"height"`
+	Idx      uint32            `json:"idx"`
+	Lock     ByteString        `json:"lock"`
+	Map      Map               `json:"MAP,omitempty"`
+	B        *File             `json:"B,omitempty"`
+	Listings []*OrdLockListing `json:"listings,omitempty"`
+	// Inscription *Inscription `json:"-"`
+}
+
+func (p *ParsedScript) SaveInscription() (err error) {
+	_, err = InsInscription.Exec(
+		p.Txid,
+		p.Vout,
+		p.Height,
+		p.Idx,
+		p.Ord.Hash,
+		p.Ord.Size,
+		p.Ord.Type,
+		p.Map,
+		p.Origin,
+		p.Lock,
+	)
+	if err != nil {
+		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+		log.Panic(err)
+	}
+	return
 }
 
 func (p *ParsedScript) Save() (err error) {
-	// var MAP []byte
-	// if p.Map != nil {
-	// 	MAP, err = json.Marshal(p.Map)
-	// 	if err != nil {
-	// 		return
-	// 	}
-	// }
-	if p.Inscription != nil {
-		_, err = InsInscription.Exec(
-			p.Txid,
-			p.Vout,
-			p.Height,
-			p.Idx,
-			p.File.Hash,
-			p.File.Size,
-			p.File.Type,
-			p.Map,
-			p.Origin,
-			p.Lock,
-		)
-		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.File.Size, p.File.Type, err)
-			log.Panic(err)
-		}
-	}
-
-	if p.Inscription != nil || p.Map != nil {
+	if p.Ord != nil || p.Map != nil || p.B != nil {
 		_, err = InsMetadata.Exec(
 			p.Txid,
 			p.Vout,
 			p.Height,
 			p.Idx,
-			p.File.Hash,
-			p.File.Size,
-			p.File.Type,
+			p.Ord,
 			p.Map,
+			p.B,
 			p.Origin,
 		)
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.File.Size, p.File.Type, err)
+			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
 			log.Panic(err)
 		}
 	}
@@ -113,9 +133,12 @@ func (p *ParsedScript) Save() (err error) {
 }
 
 func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) {
+	p = &ParsedScript{}
 	parts, err := bscript.DecodeParts(script)
 	if err != nil {
-		// log.Panic(err)
+		hash := sha256.Sum256(script)
+		p.Lock = bt.ReverseBytes(hash[:])
+		// log.Panicf("Parsing Error: %x %+v\n", script, err)
 		return
 	}
 
@@ -123,11 +146,11 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	var opIf int
 	var opORD int
 	var opMAP int
+	var opB int
 	var endLock int
 	var mapOperator string
 	lockScript := bscript.Script{}
 
-parseLoop:
 	for i, op := range parts {
 		var opcode byte
 		if len(op) == 1 {
@@ -144,21 +167,29 @@ parseLoop:
 				if opORD == 0 {
 					opORD = -1
 				}
-				if len(parts) > i+4 && bytes.Equal(parts[i+1], MAP) {
-					mapOperator = string(parts[i+2])
-					opMAP = i + 3
-					break parseLoop
+				if endLock > 0 {
+					switch ParseBitcom(parts[i:]) {
+					case MAP:
+						mapOperator = string(parts[i+2])
+						opMAP = i + 3
+					case B:
+						opB = i + 1
+					}
+
 				}
 			case bscript.OpSWAP:
 				if endLock > 0 {
-					if len(parts) > i+4 && bytes.Equal(parts[i+1], MAP) {
+					switch ParseBitcom(parts[i:]) {
+					case MAP:
 						mapOperator = string(parts[i+2])
 						opMAP = i + 3
-						break parseLoop
+					case B:
+						opB = i + 1
 					}
 				}
 			}
 		}
+
 		if opORD == 0 && bytes.Equal(op, []byte("ord")) && opIf == i-1 && opFalse == i-2 {
 			opORD = i
 			endLock = i - 2
@@ -174,17 +205,30 @@ parseLoop:
 		}
 	}
 
-	var hash [32]byte
-	if endLock == 0 {
-		hash = sha256.Sum256(script)
-	} else {
-		hash = sha256.Sum256(lockScript)
+	ordLockPrefixIndex := bytes.Index(script, OrdLockPrefix)
+	ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
+	if ordLockPrefixIndex > -1 && ordLockSuffixIndex > len(OrdLockPrefix) {
+		ordLock := script[ordLockPrefixIndex+len(OrdLockPrefix) : ordLockSuffixIndex]
+		if ordLockParts, err := bscript.DecodeParts(ordLock); err == nil {
+			pkh := ordLockParts[0]
+			payOutput := &bt.Output{}
+			_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
+			if err == nil {
+				if owner, err := bscript.NewP2PKHFromPubKeyHash(pkh); err == nil {
+					lockScript = *owner
+					p.Listings = append(p.Listings, &OrdLockListing{
+						Price:     payOutput.Satoshis,
+						PayOutput: payOutput.Bytes(),
+					})
+				}
+			}
+		}
 	}
-	p = &ParsedScript{
-		Lock: bt.ReverseBytes(hash[:]),
-	}
+
+	hash := sha256.Sum256(lockScript)
+	p.Lock = bt.ReverseBytes(hash[:])
 	if opORD > 0 {
-		p.Inscription = &Inscription{}
+		p.Ord = &File{}
 		var pos int
 	ordLoop:
 		for pos = opORD + 1; pos < len(parts); pos += 2 {
@@ -199,26 +243,21 @@ parseLoop:
 				if len(value) == 1 && value[0] == bscript.Op0 {
 					value = []byte{}
 				}
-				p.Inscription.Body = value
-				break ordLoop
+				p.Ord.Content = value
 			case bscript.Op1:
 				value := parts[pos+1]
 				if len(value) == 1 && value[0] == bscript.Op0 {
 					value = []byte{}
 				}
-				p.Inscription.Type = string(value)
+				p.Ord.Type = string(value)
 			case bscript.OpENDIF:
 				break ordLoop
 			}
 		}
 		if includeFileMeta {
-			hash := sha256.Sum256(p.Inscription.Body)
-			p.File = File{
-				Hash: hash[:],
-				Size: uint32(len(p.Inscription.Body)),
-				Type: p.Inscription.Type,
-			}
-
+			hash := sha256.Sum256(p.Ord.Content)
+			p.Ord.Size = uint32(len(p.Ord.Content))
+			p.Ord.Hash = hash[:]
 		}
 	}
 	if opMAP > 0 && mapOperator == "SET" {
@@ -237,7 +276,47 @@ parseLoop:
 		}
 	}
 
+	if opB > 0 {
+		p.B = &File{}
+		for pos := opB; pos < opB+5; pos++ {
+			op := parts[pos]
+			var opcode byte
+			if len(op) == 1 {
+				opcode = op[0]
+				if opcode == bscript.OpSWAP || opcode == bscript.OpRETURN {
+					break
+				}
+				if opcode == bscript.Op0 {
+					op = []byte{}
+				}
+			}
+
+			switch pos {
+			case opB + 1:
+				p.B.Content = op
+			case opB + 2:
+				p.B.Type = string(op)
+			case opB + 3:
+				p.B.Encoding = string(op)
+			case opB + 4:
+				p.B.Name = string(op)
+			}
+		}
+		if includeFileMeta {
+			hash := sha256.Sum256(p.B.Content)
+			p.B.Size = uint32(len(p.B.Content))
+			p.B.Hash = hash[:]
+		}
+	}
+
 	return
+}
+
+func ParseBitcom(parts [][]byte) (bitcon string) {
+	if len(parts) < 2 {
+		return
+	}
+	return string(parts[1])
 }
 
 func SetInscriptionIds(height uint32) (err error) {

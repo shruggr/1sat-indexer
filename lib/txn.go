@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -37,12 +36,13 @@ func IndexSpends(tx *bt.Tx, save bool) (spends []*Txo, err error) {
 			if err != nil {
 				return
 			}
-			var msg []byte
-			msg, err = json.Marshal(spend)
-			if err != nil {
-				return
-			}
+			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
+			msg := outpoint.String()
+
 			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+			if spend.Listing {
+				Rdb.Publish(context.Background(), "unlist", msg)
+			}
 		}
 	}
 	return
@@ -57,7 +57,8 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 	var accSats uint64
 	for vout, txout := range tx.Outputs {
 		accSats += txout.Satoshis
-
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+		msg := outpoint.String()
 		txo := &Txo{
 			Txid:     txid,
 			Vout:     uint32(vout),
@@ -66,39 +67,65 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 			Satoshis: txout.Satoshis,
 			AccSats:  accSats,
 		}
+
 		txo.Origin, err = LoadOrigin(txo)
 		if err != nil {
 			return
 		}
 
 		parsed := ParseScript(*txout.LockingScript, true)
+		if txo.Origin == nil && parsed.Ord != nil {
+			txo.Origin = &outpoint
+		} else if txo.Origin == nil {
+			continue
+		}
+		txo.Lock = parsed.Lock
 		parsed.Txid = txid
 		parsed.Vout = uint32(vout)
 		parsed.Height = height
 		parsed.Idx = idx
 		parsed.Origin = txo.Origin
 		if save {
+			if txo.Origin == &outpoint {
+				err = parsed.SaveInscription()
+				if err != nil {
+					return
+				}
+			}
 			err = parsed.Save()
 			if err != nil {
 				return
 			}
 		}
 
+		if len(parsed.Listings) > 0 {
+			if err != nil {
+				return
+			}
+			for _, l := range parsed.Listings {
+				l.Txid = txid
+				l.Vout = uint32(vout)
+				l.Origin = txo.Origin
+				l.Height = height
+				l.Idx = idx
+				txo.Listing = true
+				if save {
+					err = l.Save()
+					if err != nil {
+						return
+					}
+					Rdb.Publish(context.Background(), "list", msg)
+				}
+			}
+		}
+		result.ParsedScripts = append(result.ParsedScripts, parsed)
 		if txout.Satoshis != 1 {
 			continue
 		}
 
-		txo.Lock = parsed.Lock
-		result.ParsedScripts = append(result.ParsedScripts, parsed)
-
 		result.Txos = append(result.Txos, txo)
 		if save {
 			err = txo.Save()
-			if err != nil {
-				return
-			}
-			var msg []byte
-			msg, err = json.Marshal(txo)
 			if err != nil {
 				return
 			}
@@ -108,7 +135,10 @@ func IndexTxos(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRe
 	return
 }
 
-func LoadOrigin(txo *Txo) (origin Origin, err error) {
+func LoadOrigin(txo *Txo) (origin *Outpoint, err error) {
+	if txo.Satoshis != 1 {
+		return
+	}
 	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
 	if err != nil {
 		return
@@ -128,12 +158,10 @@ func LoadOrigin(txo *Txo) (origin Origin, err error) {
 		if err != nil {
 			return
 		}
-		if len(inTxo.Origin) > 0 {
+		if inTxo.Origin != nil {
 			origin = inTxo.Origin
 			return
 		}
-	} else {
-		origin = binary.BigEndian.AppendUint32(txo.Txid, txo.Vout)
 	}
 
 	return origin, nil

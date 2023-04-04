@@ -37,7 +37,7 @@ func ProcessTxns(THREADS uint) {
 }
 
 func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	_, err := lib.IndexSpends(txn.Tx, true)
 	if err != nil {
 		log.Panic(err)
@@ -65,6 +65,7 @@ func processTxn(txn *TxnStatus) {
 			InQueue++
 			TxnQueue <- orphan
 		}
+		fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 		InQueue--
 		Wg.Done()
 	}
