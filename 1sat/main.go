@@ -116,7 +116,7 @@ func main() {
 
 func subscribe() {
 	var err error
-	fmt.Println("Subscribing to Junglebus from block", fromBlock)
+	log.Println("Subscribing to Junglebus from block", fromBlock)
 	sub, err = junglebusClient.Subscribe(
 		context.Background(),
 		os.Getenv("ONESAT"),

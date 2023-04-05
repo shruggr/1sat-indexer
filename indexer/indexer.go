@@ -60,10 +60,10 @@ func processTxn(txn *TxnStatus) {
 			InQueue++
 			TxnQueue <- orphan
 		}
-		fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 		InQueue--
 		Wg.Done()
 	}
+	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 }
 
 func ProcessInscriptionIds(settled chan uint32) {
