@@ -161,6 +161,7 @@ func processQueue() {
 			if err != nil {
 				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
 			}
+			lib.TxCache.Add(msg.Id, tx)
 
 			txn := &indexer.TxnStatus{
 				ID:       msg.Id,

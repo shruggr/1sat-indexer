@@ -9,7 +9,7 @@ type Txo struct {
 	Vout     uint32     `json:"vout"`
 	Satoshis uint64     `json:"satoshis,omitempty"`
 	AccSats  uint64     `json:"acc_sats,omitempty"`
-	Lock     ByteString `json:"lock"`
+	Lock     []byte     `json:"lock"`
 	Spend    ByteString `json:"spend,omitempty"`
 	Vin      uint32     `json:"vin"`
 	Origin   *Outpoint  `json:"origin,omitempty"`
@@ -38,7 +38,27 @@ func (t *Txo) Save() (err error) {
 	return
 }
 
-func (t *Txo) SaveSpend() (err error) {
+func (t *Txo) SaveWithSpend() (err error) {
+	_, err = InsSpend.Exec(
+		t.Txid,
+		t.Vout,
+		t.Satoshis,
+		t.AccSats,
+		t.Lock,
+		t.Origin,
+		t.Height,
+		t.Idx,
+		t.Spend,
+	)
+	if err != nil {
+		log.Println("insTxo Err:", err)
+		return
+	}
+
+	return
+}
+
+func (t *Txo) SaveSpend() (update bool, err error) {
 	rows, err := SetSpend.Query(
 		t.Txid,
 		t.Vout,
@@ -50,7 +70,11 @@ func (t *Txo) SaveSpend() (err error) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing)
+		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing, &t.Origin)
+		if err != nil {
+			return
+		}
+		update = true
 	}
 
 	return

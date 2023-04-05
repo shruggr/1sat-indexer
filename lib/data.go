@@ -22,7 +22,7 @@ import (
 
 var TRIGGER = uint32(783968)
 
-var txCache *lru.ARCCache[string, *models.Transaction]
+var TxCache *lru.Cache[string, *bt.Tx]
 
 var Rdb *redis.Client
 var JBClient *junglebus.Client
@@ -31,6 +31,7 @@ var GetInput *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
 var GetUnnumbered *sql.Stmt
 var InsTxo *sql.Stmt
+var InsSpend *sql.Stmt
 var InsInscription *sql.Stmt
 var InsMetadata *sql.Stmt
 var InsListing *sql.Stmt
@@ -81,9 +82,23 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
+			satoshis=EXCLUDED.satoshis,
 			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsSpend, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx, spend)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT(txid, vout) DO UPDATE SET 
+			satoshis=EXCLUDED.satoshis,
+			origin=EXCLUDED.origin,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx,
+			spend=EXCLUDED.spend
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -130,7 +145,7 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, vin=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis, listing
+		RETURNING lock, satoshis, listing, origin
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -168,29 +183,35 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	txCache, err = lru.NewARC[string, *models.Transaction](2 ^ 30)
+	TxCache, err = lru.New[string, *bt.Tx](16 * (2 ^ 20))
 	return
 }
 
 func LoadTx(txid []byte) (tx *bt.Tx, err error) {
+	key := base64.StdEncoding.EncodeToString(txid)
+	if tx, ok := TxCache.Get(key); ok {
+		return tx, nil
+	}
 	txData, err := LoadTxData(txid)
 	if err != nil {
 		return
 	}
-	return bt.NewTxFromBytes(txData.Transaction)
+	tx, err = bt.NewTxFromBytes(txData.Transaction)
+	if err != nil {
+		return
+	}
+	TxCache.Add(key, tx)
+	return
 }
 
 func LoadTxData(txid []byte) (*models.Transaction, error) {
-	key := base64.StdEncoding.EncodeToString(txid)
-	if txData, ok := txCache.Get(key); ok {
-		return txData, nil
-	}
+
 	fmt.Printf("Fetching Tx: %x\n", txid)
 	txData, err := JBClient.GetTransaction(context.Background(), hex.EncodeToString(txid))
 	if err != nil {
 		return nil, err
 	}
-	txCache.Add(key, txData)
+	// TxCache.Add(key, txData)
 	return txData, nil
 }
 
