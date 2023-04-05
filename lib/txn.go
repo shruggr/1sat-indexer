@@ -46,7 +46,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 				var tx *bt.Tx
 				tx, err = LoadTx(spend.Txid)
 				if err != nil {
-					log.Panic(err)
+					log.Panicf("%x: %v\n", spend.Txid, err)
 					return
 				}
 				for vout, txout := range tx.Outputs {
