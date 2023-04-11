@@ -87,6 +87,9 @@ func subscribe() {
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnMempool: func(txResp *jbModels.TransactionResponse) {
+				if len(txResp.Transaction) == 0 {
+					log.Printf("Empty Transaction: %v\n", txResp.Id)
+				}
 				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
