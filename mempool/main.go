@@ -22,7 +22,6 @@ var THREADS uint64 = 16
 var db *sql.DB
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
-var settled = make(chan uint32, 100)
 var fromBlock uint32
 
 type Msg struct {
@@ -111,17 +110,14 @@ func subscribe() {
 }
 
 func processQueue() {
-	go indexer.ProcessInscriptionIds(settled)
 	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
 
 		tx, err := bt.NewTxFromBytes(msg.Transaction)
 		if err != nil {
-			if msg.Height == 0 {
-				continue
-			}
-			log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+			log.Printf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+			continue
 		}
 
 		txn := &indexer.TxnStatus{

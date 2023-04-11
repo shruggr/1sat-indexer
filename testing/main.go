@@ -34,7 +34,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	txid, _ := hex.DecodeString("1c6ce44ec1172e833a8ee27ac6a7a5209a0d35db1ebaabe01cf88cab9e1eb50c")
+	txid, _ := hex.DecodeString("ce47c96d10592c6e90a9b6dc540d842f8817af929f7161b4b3c4e88583c2b6d5")
 	txData, err := lib.LoadTxData(txid)
 	if err != nil {
 		log.Panic(err)
@@ -43,7 +43,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	result, err := lib.IndexTxn(tx, txData.BlockHeight, uint32(txData.BlockIndex), true)
+	result, err := lib.IndexTxn(tx, txData.BlockHeight, uint32(txData.BlockIndex), false)
 	if err != nil {
 		log.Panic(err)
 	}
