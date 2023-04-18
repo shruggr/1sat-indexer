@@ -21,6 +21,11 @@ func (l *OrdLockListing) Save() (err error) {
 		l.PayOutput,
 		l.Origin,
 	)
+
+	if err != nil {
+		return
+	}
+	_, err = SetListing.Exec(l.Txid, l.Vout)
 	return
 }
 
