@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.0
+	github.com/gocql/gocql v1.3.2
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/joho/godotenv v1.5.1
@@ -23,7 +24,9 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/snappy v0.0.3 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/libsv/go-bk v0.1.6 // indirect
@@ -37,4 +40,5 @@ require (
 	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
 )
