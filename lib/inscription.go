@@ -192,8 +192,10 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 
 		if opORD == 0 && bytes.Equal(op, []byte("ord")) && opIf == i-1 && opFalse == i-2 {
 			opORD = i
-			endLock = i - 2
-			lockScript = lockScript[:len(lockScript)-2]
+			if endLock == 0 {
+				endLock = i - 2
+				lockScript = lockScript[:len(lockScript)-2]
+			}
 		}
 		if endLock > 0 {
 			continue

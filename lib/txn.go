@@ -27,6 +27,10 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 	result = &IndexResult{}
 	txid := tx.TxIDBytes()
 	var accSats uint64
+	if height == 0 {
+		// Set height to max uint32 so that it sorts to the end of the list
+		height = ^height
+	}
 	for vin, txin := range tx.Inputs {
 		spend := &Txo{
 			Txid:  txin.PreviousTxID(),
