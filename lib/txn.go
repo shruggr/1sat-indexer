@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log"
+	"math"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -29,7 +30,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 	var accSats uint64
 	if height == 0 {
 		// Set height to max uint32 so that it sorts to the end of the list
-		height = 2 ^ 31 - 1
+		height = uint32(math.Pow(2, 31) - 1)
 	}
 	for vin, txin := range tx.Inputs {
 		spend := &Txo{
