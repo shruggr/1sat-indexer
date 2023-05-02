@@ -8,15 +8,16 @@ type Txo struct {
 	Txid     ByteString `json:"txid"`
 	Vout     uint32     `json:"vout"`
 	Satoshis uint64     `json:"satoshis,omitempty"`
-	AccSats  uint64     `json:"acc_sats,omitempty"`
+	OutAcc   uint64     `json:"outacc,omitempty"`
 	Lock     []byte     `json:"lock"`
 	Spend    ByteString `json:"spend,omitempty"`
-	Vin      uint32     `json:"vin"`
-	Origin   *Outpoint  `json:"origin,omitempty"`
-	Ordinal  uint64     `json:"ordinal"`
-	Height   uint32     `json:"height"`
-	Idx      uint32     `json:"idx"`
-	Listing  bool       `json:"listing,omitempty"`
+	// Vin      uint32     `json:"vin"`
+	InAcc   uint64    `json:"inacc,omitempty"`
+	Origin  *Outpoint `json:"origin,omitempty"`
+	Ordinal uint64    `json:"ordinal"`
+	// Height   uint32     `json:"height"`
+	// Idx      uint32     `json:"idx"`
+	// Listing  bool       `json:"listing,omitempty"`
 }
 
 func (t *Txo) Save() (err error) {
@@ -24,11 +25,11 @@ func (t *Txo) Save() (err error) {
 		t.Txid,
 		t.Vout,
 		t.Satoshis,
-		t.AccSats,
+		t.OutAcc,
 		t.Lock,
-		t.Origin,
-		t.Height,
-		t.Idx,
+		t.Ordinal,
+		// t.Height,
+		// t.Idx,
 	)
 	if err != nil {
 		log.Println("insTxo Err:", err)
@@ -38,39 +39,39 @@ func (t *Txo) Save() (err error) {
 	return
 }
 
-func (t *Txo) SaveWithSpend() (err error) {
-	_, err = InsSpend.Exec(
-		t.Txid,
-		t.Vout,
-		t.Satoshis,
-		t.AccSats,
-		t.Lock,
-		t.Origin,
-		t.Height,
-		t.Idx,
-		t.Spend,
-	)
-	if err != nil {
-		log.Println("insTxo Err:", err)
-		return
-	}
+// func (t *Txo) SaveWithSpend() (err error) {
+// 	_, err = InsSpend.Exec(
+// 		t.Txid,
+// 		t.Vout,
+// 		t.Satoshis,
+// 		t.OutAcc,
+// 		t.Lock,
+// 		t.Origin,
+// 		t.Height,
+// 		t.Idx,
+// 		t.Spend,
+// 	)
+// 	if err != nil {
+// 		log.Println("insTxo Err:", err)
+// 		return
+// 	}
 
-	return
-}
+// 	return
+// }
 
 func (t *Txo) SaveSpend() (update bool, err error) {
 	rows, err := SetSpend.Query(
 		t.Txid,
 		t.Vout,
 		t.Spend,
-		t.Vin,
+		t.InAcc,
 	)
 	if err != nil {
 		return
 	}
 	defer rows.Close()
 	if rows.Next() {
-		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing, &t.Origin)
+		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Ordinal)
 		if err != nil {
 			return
 		}
@@ -79,68 +80,3 @@ func (t *Txo) SaveSpend() (update bool, err error) {
 
 	return
 }
-
-// func LoadTxo(txid []byte, vout uint32) (txo *Txo, err error) {
-// 	rows, err := GetTxo.Query(txid, vout)
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer rows.Close()
-
-// 	if rows.Next() {
-// 		return bindTxo(rows)
-// 	}
-// 	err = &HttpError{
-// 		StatusCode: 404,
-// 		Err:        fmt.Errorf("not-found"),
-// 	}
-// 	return
-// }
-
-// func LoadTxos(txid []byte) (txos []*Txo, err error) {
-// 	rows, err := GetTxos.Query(txid)
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		txo, err := bindTxo(rows)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		txos = append(txos, txo)
-// 	}
-// 	return
-// }
-
-// func LoadUtxos(lock []byte) (utxos []*Txo, err error) {
-// 	rows, err := GetUtxos.Query(lock)
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		txo, err := bindTxo(rows)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		utxos = append(utxos, txo)
-// 	}
-// 	return
-// }
-
-// func bindTxo(rows *sql.Rows) (txo *Txo, err error) {
-// 	txo = &Txo{}
-// 	err = rows.Scan(
-// 		&txo.Txid,
-// 		&txo.Vout,
-// 		&txo.Satoshis,
-// 		&txo.AccSats,
-// 		&txo.Lock,
-// 		&txo.Spend,
-// 		&txo.Origin,
-// 	)
-// 	return
-// }

@@ -38,7 +38,7 @@ func ProcessTxns(THREADS uint) {
 
 func processTxn(txn *TxnStatus) {
 	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
-	_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx, true)
+	_, err := lib.FullIndexTxn(txn.Tx, txn.Height, txn.Idx, true)
 	if err != nil {
 		log.Panic(err)
 	}

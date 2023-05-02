@@ -16,6 +16,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -43,7 +44,7 @@ type Msg struct {
 
 // var ctx = context.Background()
 var rdb *redis.Client
-var cass *gocql.Session
+var rabbit *amqp.Connection
 
 func init() {
 	godotenv.Load("../.env")
@@ -52,7 +53,7 @@ func init() {
 	cluster.Keyspace = "spends"
 
 	var err error
-	cass, err = cluster.CreateSession()
+	rabbit, err = amqp.Dial(os.Getenv("RABBITMQ"))
 	if err != nil {
 		log.Panic(err)
 	}

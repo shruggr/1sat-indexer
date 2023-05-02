@@ -17,6 +17,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,6 +27,7 @@ var TxCache *lru.Cache[string, *bt.Tx]
 
 var Rdb *redis.Client
 var JBClient *junglebus.Client
+var rabbit *amqp.Connection
 
 var GetInput *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
@@ -40,7 +42,7 @@ var SetInscriptionId *sql.Stmt
 var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 
-func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
+func Initialize(db *sql.DB, rdb *redis.Client, rmq *amqp.Connection) (err error) {
 	// db = sdb
 	Rdb = rdb
 	jb := os.Getenv("JUNGLEBUS")
@@ -79,11 +81,10 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, outacc, lock, ordinal)
+		VALUES($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
-			satoshis=EXCLUDED.satoshis,
-			origin=EXCLUDED.origin,
+			ordinal=EXCLUDED.ordinal,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx
 	`)
@@ -91,44 +92,44 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	InsSpend, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx, spend)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT(txid, vout) DO UPDATE SET 
-			satoshis=EXCLUDED.satoshis,
-			origin=EXCLUDED.origin,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx,
-			spend=EXCLUDED.spend
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// InsSpend, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx, spend)
+	// 	VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	// 	ON CONFLICT(txid, vout) DO UPDATE SET
+	// 		satoshis=EXCLUDED.satoshis,
+	// 		origin=EXCLUDED.origin,
+	// 		height=EXCLUDED.height,
+	// 		idx=EXCLUDED.idx,
+	// 		spend=EXCLUDED.spend
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	InsInscription, err = db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO inscriptions(txid, vout, height, idx, ordinal)
+		VALUES($1, $2, $3, $4, $5)
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin, map=EXCLUDED.map
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
 	`)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	InsMetadata, err = db.Prepare(`
-		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, origin)
+		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, ordinal)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
 	`)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	InsListing, err = db.Prepare(`
-		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin)
+		INSERT INTO listings(txid, vout, height, idx, price, payout, ordinal)
 		VALUES($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin`,
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal`,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -143,9 +144,9 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	SetSpend, err = db.Prepare(`UPDATE txos
-		SET spend=$3, vin=$4
+		SET spend=$3, inacc=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis, listing, origin
+		RETURNING lock, satoshis, ordinal
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -222,30 +223,30 @@ func NewOutpointFromString(s string) (o *Outpoint, err error) {
 	if err != nil {
 		return
 	}
-	vout, err := strconv.ParseUint(s[65:], 10, 32)
+	vout, err := strconv.ParseUint(s[65:], 10, 64)
 	if err != nil {
 		return
 	}
-	origin := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	origin := Outpoint(binary.BigEndian.AppendUint64(txid, vout))
 	o = &origin
 	return
 }
 
 func (o *Outpoint) String() string {
-	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint32((*o)[32:]))
+	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint64((*o)[32:]))
 }
 
 func (o *Outpoint) Txid() []byte {
 	return (*o)[:32]
 }
 
-func (o *Outpoint) Vout() uint32 {
-	return binary.BigEndian.Uint32((*o)[32:])
+func (o *Outpoint) Vout() uint64 {
+	return binary.BigEndian.Uint64((*o)[32:])
 }
 
 func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
-	if len(o) == 36 {
-		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+	if len(o) == 40 {
+		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint64(o[32:])))
 	}
 	return bytes, err
 }
@@ -259,12 +260,12 @@ func (o *Outpoint) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		vout, err := strconv.ParseUint(x[65:], 10, 32)
+		vout, err := strconv.ParseUint(x[65:], 10, 64)
 		if err != nil {
 			return err
 		}
 
-		*o = Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+		*o = Outpoint(binary.BigEndian.AppendUint64(txid, vout))
 	}
 
 	return err
