@@ -78,7 +78,7 @@ func init() {
 func main() {
 	var err error
 	junglebusClient, err = junglebus.New(
-		junglebus.WithHTTP("https://junglebus.gorillapool.io"),
+		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
 	)
 	if err != nil {
 		log.Panicln(err.Error())

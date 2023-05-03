@@ -45,7 +45,7 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	Rdb = rdb
 	jb := os.Getenv("JUNGLEBUS")
 	if jb == "" {
-		jb = "https://junglebus.gorillapool.io"
+		jb = os.Getenv("JUNGLEBUS")
 	}
 	JBClient, err = junglebus.New(
 		junglebus.WithHTTP(jb),
