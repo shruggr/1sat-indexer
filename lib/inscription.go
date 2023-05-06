@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
@@ -76,6 +77,27 @@ func (f *File) Scan(value interface{}) error {
 	return json.Unmarshal(b, &f)
 }
 
+type Sigmas []*Sigma
+
+func (s Sigmas) Value() (driver.Value, error) {
+	return json.Marshal(s)
+}
+
+func (s *Sigmas) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	return json.Unmarshal(b, &s)
+}
+
+type Sigma struct {
+	Algorithm string `json:"algorithm"`
+	Address   string `json:"address"`
+	Signature []byte `json:"signature"`
+	Vin       uint32 `json:"vin"`
+}
+
 type ParsedScript struct {
 	Id       uint64            `json:"id"`
 	Txid     ByteString        `json:"txid"`
@@ -89,6 +111,7 @@ type ParsedScript struct {
 	Map      Map               `json:"MAP,omitempty"`
 	B        *File             `json:"B,omitempty"`
 	Listings []*OrdLockListing `json:"listings,omitempty"`
+	Sigmas   Sigmas            `json:"sigma,omitempty"`
 	// Inscription *Inscription `json:"-"`
 }
 
@@ -104,6 +127,7 @@ func (p *ParsedScript) SaveInscription() (err error) {
 		p.Map,
 		p.Origin,
 		p.Lock,
+		p.Sigmas,
 	)
 	if err != nil {
 		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
@@ -123,6 +147,7 @@ func (p *ParsedScript) Save() (err error) {
 			p.Map,
 			p.B,
 			p.Origin,
+			p.Sigmas,
 		)
 		if err != nil {
 			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
@@ -133,7 +158,9 @@ func (p *ParsedScript) Save() (err error) {
 }
 
 func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) {
-	p = &ParsedScript{}
+	p = &ParsedScript{
+		Sigmas: make(Sigmas, 0),
+	}
 	parts, err := bscript.DecodeParts(script)
 	if err != nil {
 		hash := sha256.Sum256(script)
@@ -147,6 +174,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	var opORD int
 	var opMAP int
 	var opB int
+	var opSIGMAs []int
 	var endLock int
 	var mapOperator string
 	lockScript := bscript.Script{}
@@ -174,6 +202,8 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 						opMAP = i + 3
 					case B:
 						opB = i + 1
+					case "SIGMA":
+						opSIGMAs = append(opSIGMAs, i+1)
 					}
 
 				}
@@ -185,6 +215,8 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 						opMAP = i + 3
 					case B:
 						opB = i + 1
+					case "SIGMA":
+						opSIGMAs = append(opSIGMAs, i+1)
 					}
 				}
 			}
@@ -311,10 +343,27 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 		}
 	}
 
+	for _, opSIGMA := range opSIGMAs {
+		if len(parts) < opSIGMA+4 {
+			continue
+		}
+		sigma := &Sigma{
+			Algorithm: string(parts[opSIGMA+1]),
+			Address:   string(parts[opSIGMA+2]),
+			Signature: parts[opSIGMA+3],
+		}
+		vin, err := strconv.ParseUint(string(parts[opSIGMA+4]), 10, 32)
+		if err == nil {
+			continue
+		}
+		sigma.Vin = uint32(vin)
+		p.Sigmas = append(p.Sigmas, sigma)
+	}
+
 	return
 }
 
-func ParseBitcom(parts [][]byte) (bitcon string) {
+func ParseBitcom(parts [][]byte) (bitcom string) {
 	if len(parts) < 2 {
 		return
 	}

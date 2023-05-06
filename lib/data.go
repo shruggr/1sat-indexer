@@ -105,8 +105,8 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsInscription, err = db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock, sigma)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT(txid, vout) DO UPDATE
 			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin, map=EXCLUDED.map
 	`)
@@ -115,8 +115,8 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsMetadata, err = db.Prepare(`
-		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, origin)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, origin, sigma)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(txid, vout) DO UPDATE
 			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin
 	`)
