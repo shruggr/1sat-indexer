@@ -106,6 +106,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 		}
 
 		parsed := ParseScript(*txout.LockingScript, true)
+		txo.Lock = parsed.Lock
 		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
 			txo.Origin = &outpoint
 		}
@@ -118,8 +119,6 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
 		if txo.Origin != nil {
-			txo.Lock = parsed.Lock
-
 			parsed.Txid = txid
 			parsed.Vout = uint32(vout)
 			parsed.Height = height
