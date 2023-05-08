@@ -125,10 +125,11 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsListing, err = db.Prepare(`
-		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin, num)
-		SELECT $1, $2, $3, $4, $5, $6, $7, id
-		FROM inscriptions WHERE origin=$7
-		-- VALUES($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin, num, spend)
+		SELECT $1, $2, $3, $4, $5, $6, $7, i.id, t.spend
+		FROM txos t
+		JOIN inscriptions i ON i.origin = t.origin
+		WHERE t.txid=$1 AND t.vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE
 			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin`,
 	)
