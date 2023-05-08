@@ -106,8 +106,16 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 		}
 
 		parsed := ParseScript(*txout.LockingScript, true)
-		if txo.Origin == nil && parsed.Ord != nil {
+		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
 			txo.Origin = &outpoint
+		}
+		result.Txos = append(result.Txos, txo)
+		if save {
+			err = txo.Save()
+			if err != nil {
+				return
+			}
+			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
 		if txo.Origin != nil {
 			txo.Lock = parsed.Lock
@@ -151,14 +159,6 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 				}
 			}
 			result.ParsedScripts = append(result.ParsedScripts, parsed)
-		}
-		result.Txos = append(result.Txos, txo)
-		if save {
-			err = txo.Save()
-			if err != nil {
-				return
-			}
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		}
 	}
 	return
