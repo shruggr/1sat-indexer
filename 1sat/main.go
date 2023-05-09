@@ -134,9 +134,10 @@ func subscribe() {
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
 				if status.StatusCode == 999 {
+					log.Println(status.Message)
 					log.Println("Unsubscribing...")
 					sub.Unsubscribe()
-					subscribe()
+					os.Exit(0)
 					return
 				}
 				msgQueue <- &Msg{

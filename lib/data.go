@@ -85,7 +85,8 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 			satoshis=EXCLUDED.satoshis,
 			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
-			idx=EXCLUDED.idx
+			idx=EXCLUDED.idx,
+			lock=EXCLUDED.lock
 	`)
 	if err != nil {
 		log.Fatal(err)
