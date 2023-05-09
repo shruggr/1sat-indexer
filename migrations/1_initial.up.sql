@@ -7,79 +7,79 @@ CREATE TABLE blocks(
     id BYTEA PRIMARY KEY,
     height INTEGER,
     subsidy BIGINT,
-    subacc BIGINT,
+    subacc BIGINT
 );
 
 CREATE TABLE txns(
     txid BYTEA PRIMARY KEY,
+	block_id BYTEA,
     height INTEGER,
     idx BIGINT,
     fees BIGINT,
     feeacc BIGINT
 );
-CREATE INDEX txns_blockid_feeacc ON txns(blockid, feeacc);
+CREATE INDEX txns_block_id_feeacc ON txns(block_id, feeacc);
 
 CREATE TABLE txos(
     txid BYTEA,
-    idx INTEGER,
+    vout INTEGER,
     satoshis BIGINT,
     outacc BIGINT,
-    lock BYTEA,
-    spend BYTEA,
+    scripthash BYTEA,
+    spend BYTEA DEFAULT ''::bytea,
     inacc BIGINT,
-    ordinal BIGINT,
-    PRIMARY KEY (txid, idx)
-);
-CREATE INDEX idx_txos_spend_inacc ON txos(spend, inacc) INCLUDE (txid, outacc);
-CREATE INDEX idx_txos_lock_unspent ON txos(LOCK)
-    WHERE spend IS NULL;
-CREATE INDEX idx_txos_lock_spent ON txos(LOCK)
-    WHERE spend IS NOT NULL;
-
-CREATE TABLE metadata(
-    txid BYTEA,
-    vout INTEGER,
-    ord jsonb,
-    map jsonb,
-    b jsonb,
-    -- origin BYTEA,
-    ordinal BIGINT,
-    height INTEGER,
-    idx INTEGER,
-    PRIMARY KEY (txid, vout)
-);
-
-CREATE INDEX idx_metadata_ordinal_height_idx ON metadata(ordinal, height, idx);
-
-CREATE TABLE inscriptions(
-    txid BYTEA,
-    vout INTEGER,
-    height INTEGER,
-    idx INTEGER,
-    num BIGINT,
-    ordinal BIGINT,
     PRIMARY KEY(txid, vout)
 );
-CREATE INDEX idx_inscriptions_height_idx_vout ON inscriptions(height, idx, vout);
+CREATE INDEX idx_txos_spend_inacc ON txos(spend, inacc) INCLUDE (txid, outacc);
+CREATE INDEX idx_txos_scripthash_unspent ON txos(scripthash)
+    WHERE spend = ''::bytea;
+CREATE INDEX idx_txos_scripthash_spent ON txos(scripthash)
+    WHERE spend != ''::bytea;
 
-CREATE TABLE listings(
-    txid BYTEA,
-    vout INTEGER,
-    spend BYTEA,
-    height INTEGER,
-    idx BIGINT,
-    price BIGINT,
-    payout BYTEA,
-    ordinal DECIMAL,
-    PRIMARY KEY (txid, vout),
-    FOREIGN KEY (txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
-);
+-- CREATE TABLE metadata(
+--     txid BYTEA,
+--     vout INTEGER,
+--     ord jsonb,
+--     map jsonb,
+--     b jsonb,
+--     -- origin BYTEA,
+--     ordinal BIGINT,
+--     height INTEGER,
+--     idx INTEGER,
+--     PRIMARY KEY (txid, vout)
+-- );
 
-CREATE INDEX idx_listings_unspent ON listings(height, idx)
-WHERE spend IS NULL;
+-- CREATE INDEX idx_metadata_ordinal_height_idx ON metadata(ordinal, height, idx);
 
-CREATE INDEX idx_listings_spent ON listings(height, idx)
-WHERE spend IS NOT NULL;
+-- CREATE TABLE inscriptions(
+--     txid BYTEA,
+--     vout INTEGER,
+--     height INTEGER,
+--     idx INTEGER,
+--     num BIGINT,
+--     ordinal BIGINT,
+--     PRIMARY KEY(txid, vout)
+-- );
+-- CREATE INDEX idx_inscriptions_height_idx_vout ON inscriptions(height, idx, vout);
+
+-- CREATE TABLE listings(
+--     txid BYTEA,
+--     vout INTEGER,
+--     spend BYTEA,
+--     height INTEGER,
+--     idx BIGINT,
+--     price BIGINT,
+--     payout BYTEA,
+--     ordinal DECIMAL,
+--     PRIMARY KEY (txid, vout),
+--     FOREIGN KEY (txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
+-- );
+
+-- CREATE INDEX idx_listings_unspent ON listings(height, idx)
+-- WHERE spend IS NULL;
+
+-- CREATE INDEX idx_listings_spent ON listings(height, idx)
+-- WHERE spend IS NOT NULL;
 
 -- CREATE OR REPLACE FUNCTION calc_ordinal(txid BYTEA, vout INTEGER, satoshi BIGINT) RETURNS BIGINT AS $$ 
 -- DECLARE ordinal BIGINT;

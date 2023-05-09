@@ -17,7 +17,6 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -27,7 +26,6 @@ var TxCache *lru.Cache[string, *bt.Tx]
 
 var Rdb *redis.Client
 var JBClient *junglebus.Client
-var rabbit *amqp.Connection
 
 var GetInput *sql.Stmt
 var GetMaxInscriptionId *sql.Stmt
@@ -42,7 +40,7 @@ var SetInscriptionId *sql.Stmt
 var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 
-func Initialize(db *sql.DB, rdb *redis.Client, rmq *amqp.Connection) (err error) {
+func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 	// db = sdb
 	Rdb = rdb
 	jb := os.Getenv("JUNGLEBUS")
@@ -56,37 +54,34 @@ func Initialize(db *sql.DB, rdb *redis.Client, rmq *amqp.Connection) (err error)
 		return
 	}
 
-	GetInput, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
-		FROM txos
-		WHERE spend=$1 AND acc_sats>=$2 AND satoshis=1
-		ORDER BY acc_sats ASC
-		LIMIT 1
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetInput, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
+	// 	FROM txos
+	// 	WHERE spend=$1 AND acc_sats>=$2 AND satoshis=1
+	// 	ORDER BY acc_sats ASC
+	// 	LIMIT 1
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	GetMaxInscriptionId, err = db.Prepare(`SELECT MAX(id) FROM inscriptions`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetMaxInscriptionId, err = db.Prepare(`SELECT MAX(id) FROM inscriptions`)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	GetUnnumbered, err = db.Prepare(`
-		SELECT txid, vout 
-		FROM inscriptions
-		WHERE id IS NULL AND height <= $1 AND height > 0
-		ORDER BY height, idx, vout`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// GetUnnumbered, err = db.Prepare(`
+	// 	SELECT txid, vout
+	// 	FROM inscriptions
+	// 	WHERE id IS NULL AND height <= $1 AND height > 0
+	// 	ORDER BY height, idx, vout`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, outacc, lock, ordinal)
-		VALUES($1, $2, $3, $4, $5, $6)
-		ON CONFLICT(txid, vout) DO UPDATE SET 
-			ordinal=EXCLUDED.ordinal,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx
+	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, outacc, scripthash)
+		VALUES($1, $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -105,57 +100,56 @@ func Initialize(db *sql.DB, rdb *redis.Client, rmq *amqp.Connection) (err error)
 	// 	log.Fatal(err)
 	// }
 
-	InsInscription, err = db.Prepare(`
-		INSERT INTO inscriptions(txid, vout, height, idx, ordinal)
-		VALUES($1, $2, $3, $4, $5)
-		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
-	`)
-	if err != nil {
-		log.Panic(err)
-	}
+	// InsInscription, err = db.Prepare(`
+	// 	INSERT INTO inscriptions(txid, vout, height, idx, ordinal)
+	// 	VALUES($1, $2, $3, $4, $5)
+	// 	ON CONFLICT(txid, vout) DO UPDATE
+	// 		SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
+	// `)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 
-	InsMetadata, err = db.Prepare(`
-		INSERT INTO metadata(txid, vout, height, idx, ord, map, b, ordinal)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
-	`)
-	if err != nil {
-		log.Panic(err)
-	}
+	// InsMetadata, err = db.Prepare(`
+	// 	INSERT INTO metadata(txid, vout, height, idx, ord, map, b, ordinal)
+	// 	VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+	// 	ON CONFLICT(txid, vout) DO UPDATE
+	// 		SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal
+	// `)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 
-	InsListing, err = db.Prepare(`
-		INSERT INTO listings(txid, vout, height, idx, price, payout, ordinal)
-		VALUES($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// InsListing, err = db.Prepare(`
+	// 	INSERT INTO listings(txid, vout, height, idx, price, payout, ordinal)
+	// 	VALUES($1, $2, $3, $4, $5, $6, $7)
+	// 	ON CONFLICT(txid, vout) DO UPDATE
+	// 		SET height=EXCLUDED.height, idx=EXCLUDED.idx, ordinal=EXCLUDED.ordinal`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	SetInscriptionId, err = db.Prepare(`UPDATE inscriptions
-		SET id=$3
-		WHERE txid=$1 AND vout=$2
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// SetInscriptionId, err = db.Prepare(`UPDATE inscriptions
+	// 	SET id=$3
+	// 	WHERE txid=$1 AND vout=$2
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, inacc=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis, ordinal
+		RETURNING scripthash, satoshis
 	`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
-		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
+	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, height, idx, fees)
+		VALUES($1, $2, $3, $4)
 		ON CONFLICT(txid) DO UPDATE SET
-			blockid=EXCLUDED.blockid,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx`,
 	)
@@ -163,26 +157,15 @@ func Initialize(db *sql.DB, rdb *redis.Client, rmq *amqp.Connection) (err error)
 		log.Fatal(err)
 	}
 
-	SetListing, err = db.Prepare(`
-		UPDATE txos
-		SET listing=true
-		WHERE txid=$1 AND vout=$2
-		RETURNING lock, origin
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
-		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
-		ON CONFLICT(txid) DO UPDATE SET
-			blockid=EXCLUDED.blockid,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// SetListing, err = db.Prepare(`
+	// 	UPDATE txos
+	// 	SET listing=true
+	// 	WHERE txid=$1 AND vout=$2
+	// 	RETURNING lock, origin
+	// `)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	TxCache, err = lru.New[string, *bt.Tx](16 * (2 ^ 20))
 	return
@@ -233,20 +216,20 @@ func NewOutpointFromString(s string) (o *Outpoint, err error) {
 }
 
 func (o *Outpoint) String() string {
-	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint64((*o)[32:]))
+	return fmt.Sprintf("%x_%d", (*o)[:32], binary.BigEndian.Uint32((*o)[32:]))
 }
 
 func (o *Outpoint) Txid() []byte {
 	return (*o)[:32]
 }
 
-func (o *Outpoint) Vout() uint64 {
-	return binary.BigEndian.Uint64((*o)[32:])
+func (o *Outpoint) Vout() uint32 {
+	return binary.BigEndian.Uint32((*o)[32:])
 }
 
 func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
 	if len(o) == 40 {
-		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint64(o[32:])))
+		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 	}
 	return bytes, err
 }

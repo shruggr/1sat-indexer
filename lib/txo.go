@@ -27,7 +27,7 @@ func (t *Txo) Save() (err error) {
 		t.Satoshis,
 		t.OutAcc,
 		t.Lock,
-		t.Ordinal,
+		// t.Ordinal,
 		// t.Height,
 		// t.Idx,
 	)
@@ -71,7 +71,7 @@ func (t *Txo) SaveSpend() (update bool, err error) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Ordinal)
+		err = rows.Scan(&t.Lock, &t.Satoshis)
 		if err != nil {
 			return
 		}

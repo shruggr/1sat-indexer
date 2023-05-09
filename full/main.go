@@ -10,13 +10,12 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
-	"github.com/gocql/gocql"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -29,7 +28,8 @@ var THREADS uint64 = 16
 var db *sql.DB
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
-var settled = make(chan uint32, 100)
+
+// var settled = make(chan uint32, 1000)
 var fromBlock uint32
 var sub *junglebus.Subscription
 
@@ -38,30 +38,32 @@ type Msg struct {
 	Height      uint32
 	Hash        string
 	Status      uint32
-	Idx         uint32
+	Idx         uint64
 	Transaction []byte
 }
 
 // var ctx = context.Background()
 var rdb *redis.Client
-var rabbit *amqp.Connection
 
 func init() {
 	godotenv.Load("../.env")
 
-	cluster := gocql.NewCluster("server")
-	cluster.Keyspace = "spends"
+	// cluster := gocql.NewCluster("server")
+	// cluster.Keyspace = "spends"
 
 	var err error
-	rabbit, err = amqp.Dial(os.Getenv("RABBITMQ"))
-	if err != nil {
-		log.Panic(err)
-	}
+	// rabbit, err = amqp.Dial(os.Getenv("RABBITMQ"))
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
 	if err != nil {
 		log.Panic(err)
 	}
+	db.SetConnMaxIdleTime(time.Millisecond * 100)
+	db.SetMaxOpenConns(400)
+	db.SetMaxIdleConns(25)
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -96,9 +98,9 @@ func main() {
 		INDEXER,
 	)
 	row.Scan(&fromBlock)
-	if fromBlock < lib.TRIGGER {
-		fromBlock = lib.TRIGGER
-	}
+	// if fromBlock < lib.TRIGGER {
+	// 	fromBlock = lib.TRIGGER
+	// }
 
 	go processQueue()
 	subscribe()
@@ -134,16 +136,16 @@ func subscribe() {
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnTransaction: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+				// log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
+					Idx:         txResp.BlockIndex,
 					Transaction: txResp.Transaction,
 				}
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
-				log.Printf("[STATUS]: %v\n", status)
+				// log.Printf("[STATUS]: %v\n", status)
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -161,7 +163,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go indexer.ProcessInscriptionIds(settled)
+	// go indexer.ProcessInscriptionIds(settled)
 	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
@@ -178,15 +180,15 @@ func processQueue() {
 				ID:       msg.Id,
 				Tx:       tx,
 				Height:   msg.Height,
-				Idx:      msg.Idx,
+				Idx:      uint64(msg.Idx),
 				Parents:  map[string]*indexer.TxnStatus{},
 				Children: map[string]*indexer.TxnStatus{},
 			}
 
-			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
-			if err != nil {
-				panic(err)
-			}
+			// _, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
+			// if err != nil {
+			// 	panic(err)
+			// }
 
 			indexer.M.Lock()
 			_, ok := indexer.Txns[msg.Id]
@@ -215,7 +217,9 @@ func processQueue() {
 
 		case 200:
 			indexer.Wg.Wait()
-			settledHeight = msg.Height - 6
+			if msg.Height > 5 {
+				settledHeight = msg.Height - 6
+			}
 
 			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
 				VALUES($1, $2)
@@ -228,7 +232,7 @@ func processQueue() {
 			}
 			fromBlock = msg.Height + 1
 			fmt.Printf("Completed: %d\n", msg.Height)
-			settled <- settledHeight
+			// settled <- settledHeight
 
 		default:
 			log.Printf("Status: %d\n", msg.Status)

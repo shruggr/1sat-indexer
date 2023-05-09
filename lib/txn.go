@@ -26,37 +26,33 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, save bool) (fees uint64,
 	// result := &IndexResult{}
 	spendsAcc := map[uint64]*Txo{}
 	txid := tx.TxIDBytes()
-	var accSats uint64
-	for _, txin := range tx.Inputs {
-		spend := &Txo{
-			Txid:  txin.PreviousTxID(),
-			Vout:  txin.PreviousTxOutIndex,
-			Spend: txid,
-			InAcc: accSats,
-		}
-		spendsAcc[accSats] = spend
-		if save {
+	var satsIn uint64
+	if !tx.IsCoinbase() {
+		for _, txin := range tx.Inputs {
+			spend := &Txo{
+				Txid:  txin.PreviousTxID(),
+				Vout:  txin.PreviousTxOutIndex,
+				Spend: txid,
+				InAcc: satsIn,
+			}
 			_, err = spend.SaveSpend()
 			if err != nil {
 				log.Panic(err)
-				return
 			}
+			spendsAcc[satsIn] = spend
 
-			accSats += spend.Satoshis
-			spend.OutAcc = accSats
+			satsIn += spend.Satoshis
+			spend.OutAcc = satsIn
 
 			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
 			msg := outpoint.String()
 			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
-			// if spend.Listing {
-			// 	Rdb.Publish(context.Background(), "unlist", msg)
-			// }
 		}
 	}
 
-	accSats = 0
+	var satsOut uint64
 	for vout, txout := range tx.Outputs {
-		accSats += txout.Satoshis
+		satsOut += txout.Satoshis
 		outpoint := Outpoint(binary.BigEndian.AppendUint64(txid, uint64(vout)))
 		msg := outpoint.String()
 		txo := &Txo{
@@ -65,59 +61,59 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, save bool) (fees uint64,
 			// Height:   height,
 			// Idx:      idx,
 			Satoshis: txout.Satoshis,
-			OutAcc:   accSats,
+			OutAcc:   satsOut,
 		}
 
-		if txo.Satoshis == 1 {
-			if spend, ok := spendsAcc[accSats]; ok && spend.Satoshis == 1 {
-				txo.Ordinal = spend.Ordinal
-			} else {
-				// txo.Ordinal =
-			}
+		// if txo.Satoshis == 1 {
+		// 	if spend, ok := spendsAcc[accSats]; ok && spend.Satoshis == 1 {
+		// 		txo.Ordinal = spend.Ordinal
+		// 	} else {
+		// 		// txo.Ordinal =
+		// 	}
 
-			parsed := ParseScript(*txout.LockingScript, true)
-			// if txo.Origin == nil && parsed.Ord != nil {
-			// 	txo.Origin = &outpoint
-			// }
-			if txo.Ordinal > 0 {
-				txo.Lock = parsed.Lock
+		// 	parsed := ParseScript(*txout.LockingScript, true)
+		// 	// if txo.Origin == nil && parsed.Ord != nil {
+		// 	// 	txo.Origin = &outpoint
+		// 	// }
+		// 	if txo.Ordinal > 0 {
+		// 		txo.Lock = parsed.Lock
 
-				parsed.Txid = txid
-				parsed.Vout = uint32(vout)
-				parsed.Height = height
-				parsed.Idx = idx
-				parsed.Origin = txo.Origin
-				if save {
-					if txo.Origin == &outpoint {
-						err = parsed.SaveInscription()
-						if err != nil {
-							return
-						}
-					}
-					err = parsed.Save()
-					if err != nil {
-						return
-					}
-				}
+		// 		parsed.Txid = txid
+		// 		parsed.Vout = uint32(vout)
+		// 		parsed.Height = height
+		// 		parsed.Idx = idx
+		// 		parsed.Origin = txo.Origin
+		// 		if save {
+		// 			if txo.Origin == &outpoint {
+		// 				err = parsed.SaveInscription()
+		// 				if err != nil {
+		// 					return
+		// 				}
+		// 			}
+		// 			err = parsed.Save()
+		// 			if err != nil {
+		// 				return
+		// 			}
+		// 		}
 
-				if parsed.Listing != nil {
-					parsed.Listing.Txid = txid
-					parsed.Listing.Vout = uint32(vout)
-					parsed.Listing.Ordinal = txo.Ordinal
-					parsed.Listing.Height = height
-					parsed.Listing.Idx = idx
-					// txo.Listing = true
-					if save {
-						err = parsed.Listing.Save()
-						if err != nil {
-							return
-						}
-						Rdb.Publish(context.Background(), "list", msg)
-					}
-				}
-				// result.ParsedScripts = append(result.ParsedScripts, parsed)
-			}
-		}
+		// 		if parsed.Listing != nil {
+		// 			parsed.Listing.Txid = txid
+		// 			parsed.Listing.Vout = uint32(vout)
+		// 			parsed.Listing.Ordinal = txo.Ordinal
+		// 			parsed.Listing.Height = height
+		// 			parsed.Listing.Idx = idx
+		// 			// txo.Listing = true
+		// 			if save {
+		// 				err = parsed.Listing.Save()
+		// 				if err != nil {
+		// 					return
+		// 				}
+		// 				Rdb.Publish(context.Background(), "list", msg)
+		// 			}
+		// 		}
+		// 		// result.ParsedScripts = append(result.ParsedScripts, parsed)
+		// 	}
+		// }
 		// var accSpendSats uint64
 		// result.Txos = append(result.Txos, txo)
 		if save && txo.Satoshis > 0 {
@@ -126,6 +122,17 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, save bool) (fees uint64,
 				return
 			}
 			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
+		}
+	}
+
+	if save {
+		if !tx.IsCoinbase() {
+			fees = satsIn - satsOut
+		}
+		_, err = SetTxn.Exec(txid, height, idx, fees)
+		if err != nil {
+			log.Panic(err)
+			return
 		}
 	}
 	return
