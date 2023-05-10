@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
@@ -131,7 +132,6 @@ func (p *ParsedScript) SaveInscription() (err error) {
 	)
 	if err != nil {
 		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
-		log.Panic(err)
 	}
 	return
 }
@@ -305,7 +305,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 				}
 			}
 			if len(parts) > pos+1 {
-				p.Map[string(op)] = string(parts[pos+1])
+				p.Map[string(op)] = strings.ToValidUTF8(string(parts[pos+1]), "")
 			}
 		}
 		if val, ok := p.Map["subTypeData"]; ok {
