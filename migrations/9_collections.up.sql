@@ -4,7 +4,9 @@ ALTER TABLE inscriptions ADD COLUMN IF NOT EXISTS search_text_en TSVECTOR
 GENERATED ALWAYS AS (
 	to_tsvector('english',
 		COALESCE(jsonb_extract_path_text(map, 'name'), '') || ' ' || 
-		COALESCE(jsonb_extract_path_text(map, 'description'), '')
+		COALESCE(jsonb_extract_path_text(map, 'description'), '') || ' ' || 
+		COALESCE(jsonb_extract_path_text(map, 'subTypeData.description'), '') || ' ' || 
+		COALESCE(jsonb_extract_path_text(map, 'keywords'), '')
 	)
 ) STORED;
 

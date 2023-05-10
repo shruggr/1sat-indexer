@@ -20,7 +20,7 @@ var PATTERN []byte
 var MAP = "1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5"
 var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 
-type Map map[string]string
+type Map map[string]interface{}
 
 func (m Map) Value() (driver.Value, error) {
 	if m == nil {
@@ -295,7 +295,7 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 		}
 	}
 	if opMAP > 0 && mapOperator == "SET" {
-		p.Map = map[string]string{}
+		p.Map = map[string]interface{}{}
 		for pos := opMAP; pos < len(parts); pos += 2 {
 			op := parts[pos]
 			if len(op) == 1 {
@@ -306,6 +306,12 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 			}
 			if len(parts) > pos+1 {
 				p.Map[string(op)] = string(parts[pos+1])
+			}
+		}
+		if val, ok := p.Map["subTypeData"]; ok {
+			var subTypeData json.RawMessage
+			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
+				p.Map["subTypeData"] = subTypeData
 			}
 		}
 	}
