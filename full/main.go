@@ -23,7 +23,7 @@ import (
 
 const INDEXER = "full"
 
-var THREADS uint64 = 16
+var THREADS uint64 = 64
 
 var db *sql.DB
 var junglebusClient *junglebus.Client
@@ -98,9 +98,9 @@ func main() {
 		INDEXER,
 	)
 	row.Scan(&fromBlock)
-	// if fromBlock < lib.TRIGGER {
-	// 	fromBlock = lib.TRIGGER
-	// }
+	if fromBlock < lib.TRIGGER {
+		fromBlock = lib.TRIGGER
+	}
 
 	go processQueue()
 	subscribe()
