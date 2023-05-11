@@ -14,6 +14,7 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
@@ -28,6 +29,9 @@ var THREADS uint64 = 16
 var db *sql.DB
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
+
+// fdb.MustAPIVersion(620)
+var foundation fdb.Database
 
 // var settled = make(chan uint32, 1000)
 var fromBlock uint32
@@ -65,13 +69,16 @@ func init() {
 	db.SetMaxOpenConns(400)
 	db.SetMaxIdleConns(25)
 
+	fdb.MustAPIVersion(620)
+	foundation = fdb.MustOpenDefault()
+
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb)
+	err = lib.Initialize(db, rdb, foundation)
 	if err != nil {
 		log.Panic(err)
 	}

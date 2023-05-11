@@ -14,6 +14,8 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
@@ -24,6 +26,8 @@ var TRIGGER = uint32(783968)
 
 var TxCache *lru.Cache[string, *bt.Tx]
 
+var Fdb fdb.Database
+var TxnDir directory.DirectorySubspace
 var Rdb *redis.Client
 var JBClient *junglebus.Client
 
@@ -40,9 +44,16 @@ var SetInscriptionId *sql.Stmt
 var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 
-func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
+func Initialize(db *sql.DB, rdb *redis.Client, foundation fdb.Database) (err error) {
 	// db = sdb
+
 	Rdb = rdb
+	Fdb = foundation
+	TxnDir, err = directory.CreateOrOpen(Fdb, []string{"t"}, nil)
+	if err != nil {
+		return
+	}
+
 	jb := os.Getenv("JUNGLEBUS")
 	if jb == "" {
 		jb = "https://junglebus.gorillapool.io"

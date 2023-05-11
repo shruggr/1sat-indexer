@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"log"
+	"fmt"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/libsv/go-bt/v2"
 )
 
@@ -27,114 +28,75 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, save bool) (fees uint64,
 	spendsAcc := map[uint64]*Txo{}
 	txid := tx.TxIDBytes()
 	var satsIn uint64
-	if !tx.IsCoinbase() {
-		for _, txin := range tx.Inputs {
-			spend := &Txo{
-				Txid:  txin.PreviousTxID(),
-				Vout:  txin.PreviousTxOutIndex,
-				Spend: txid,
-				InAcc: satsIn,
-			}
-			_, err = spend.SaveSpend()
-			if err != nil {
-				log.Panic(err)
-			}
-			spendsAcc[satsIn] = spend
-
-			satsIn += spend.Satoshis
-			spend.OutAcc = satsIn
-
-			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-			msg := outpoint.String()
-			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
-		}
-	}
-
 	var satsOut uint64
-	for vout, txout := range tx.Outputs {
-		satsOut += txout.Satoshis
-		outpoint := Outpoint(binary.BigEndian.AppendUint64(txid, uint64(vout)))
-		msg := outpoint.String()
-		txo := &Txo{
-			Txid: txid,
-			Vout: uint32(vout),
-			// Height:   height,
-			// Idx:      idx,
-			Satoshis: txout.Satoshis,
-			OutAcc:   satsOut,
-		}
-
-		// if txo.Satoshis == 1 {
-		// 	if spend, ok := spendsAcc[accSats]; ok && spend.Satoshis == 1 {
-		// 		txo.Ordinal = spend.Ordinal
-		// 	} else {
-		// 		// txo.Ordinal =
-		// 	}
-
-		// 	parsed := ParseScript(*txout.LockingScript, true)
-		// 	// if txo.Origin == nil && parsed.Ord != nil {
-		// 	// 	txo.Origin = &outpoint
-		// 	// }
-		// 	if txo.Ordinal > 0 {
-		// 		txo.Lock = parsed.Lock
-
-		// 		parsed.Txid = txid
-		// 		parsed.Vout = uint32(vout)
-		// 		parsed.Height = height
-		// 		parsed.Idx = idx
-		// 		parsed.Origin = txo.Origin
-		// 		if save {
-		// 			if txo.Origin == &outpoint {
-		// 				err = parsed.SaveInscription()
-		// 				if err != nil {
-		// 					return
-		// 				}
-		// 			}
-		// 			err = parsed.Save()
-		// 			if err != nil {
-		// 				return
-		// 			}
-		// 		}
-
-		// 		if parsed.Listing != nil {
-		// 			parsed.Listing.Txid = txid
-		// 			parsed.Listing.Vout = uint32(vout)
-		// 			parsed.Listing.Ordinal = txo.Ordinal
-		// 			parsed.Listing.Height = height
-		// 			parsed.Listing.Idx = idx
-		// 			// txo.Listing = true
-		// 			if save {
-		// 				err = parsed.Listing.Save()
-		// 				if err != nil {
-		// 					return
-		// 				}
-		// 				Rdb.Publish(context.Background(), "list", msg)
-		// 			}
-		// 		}
-		// 		// result.ParsedScripts = append(result.ParsedScripts, parsed)
-		// 	}
-		// }
-		// var accSpendSats uint64
-		// result.Txos = append(result.Txos, txo)
-		if save && txo.Satoshis > 0 {
-			err = txo.Save()
-			if err != nil {
-				return
-			}
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
-		}
-	}
-
-	if save {
+	_, err = Fdb.Transact(func(t fdb.Transaction) (ret interface{}, err error) {
 		if !tx.IsCoinbase() {
-			fees = satsIn - satsOut
+			for _, txin := range tx.Inputs {
+				spend := &Txo{
+					Txid:  txin.PreviousTxID(),
+					Vout:  txin.PreviousTxOutIndex,
+					Spend: txid,
+					InAcc: satsIn,
+				}
+				// _, err = spend.SaveSpend()
+				// if err != nil {
+				// 	log.Panic(err)
+				// }
+				out := t.Get(spend.OutputKey())
+				data := out.MustGet()
+				if data == nil {
+					err = fmt.Errorf("txo not found: %x:%d\n", spend.Txid, spend.Vout)
+					return
+				}
+				spend.PopulateOutputData(data)
+				t.Set(spend.SpendKey(), spend.SpendData())
+				spendsAcc[satsIn] = spend
+
+				satsIn += spend.Satoshis
+				spend.OutAcc = satsIn
+
+				outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
+				msg := outpoint.String()
+				Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+			}
 		}
-		_, err = SetTxn.Exec(txid, height, idx, fees)
-		if err != nil {
-			log.Panic(err)
-			return
+
+		for vout, txout := range tx.Outputs {
+			satsOut += txout.Satoshis
+			outpoint := Outpoint(binary.BigEndian.AppendUint64(txid, uint64(vout)))
+			msg := outpoint.String()
+			txo := &Txo{
+				Txid: txid,
+				Vout: uint32(vout),
+				// Height:   height,
+				// Idx:      idx,
+				Satoshis: txout.Satoshis,
+				OutAcc:   satsOut,
+			}
+
+			if save && txo.Satoshis > 0 {
+				// err = txo.Save()
+				// if err != nil {
+				// 	return
+				// }
+				t.Set(txo.OutputKey(), txo.OutputData())
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
+			}
 		}
-	}
+		// if save {
+		// 	if !tx.IsCoinbase() {
+		// 		fees = satsIn - satsOut
+		// 	}
+		// 	_, err = SetTxn.Exec(txid, height, idx, fees)
+		// 	if err != nil {
+		// 		log.Panic(err)
+		// 		return
+		// 	}
+
+		// }
+		return
+	})
+
 	return
 }
 
