@@ -319,6 +319,9 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 	if opB > 0 {
 		p.B = &File{}
 		for pos := opB; pos < opB+5; pos++ {
+			if len(parts) <= pos {
+				break
+			}
 			op := parts[pos]
 			var opcode byte
 			if len(op) == 1 {
