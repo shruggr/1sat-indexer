@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/libsv/go-bt/v2"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -26,18 +27,29 @@ type TxnStatus struct {
 
 func ProcessTxns(THREADS uint) {
 	threadLimiter := make(chan struct{}, THREADS)
+	counter := 0
+	inserts := 0
+	go func() {
+		for now := range time.Tick(time.Second * 10) {
+			fmt.Println(now.Format(time.RFC3339), counter, inserts)
+			counter = 0
+			inserts = 0
+		}
+	}()
 	for {
 		txn := <-TxnQueue
 		threadLimiter <- struct{}{}
 		go func(txn *TxnStatus) {
 			processTxn(txn)
+			counter++
+			inserts += 1 + len(txn.Tx.Inputs) + len(txn.Tx.Outputs)
 			<-threadLimiter
 		}(txn)
 	}
 }
 
 func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	_, err := lib.FullIndexTxn(txn.Tx, txn.Height, txn.Idx, true)
 	if err != nil {
 		log.Panic(err)
@@ -63,7 +75,7 @@ func processTxn(txn *TxnStatus) {
 	InQueue--
 	Wg.Done()
 	// }
-	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 }
 
 func ProcessInscriptionIds(settled chan uint32) {

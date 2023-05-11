@@ -136,7 +136,7 @@ func subscribe() {
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnTransaction: func(txResp *jbModels.TransactionResponse) {
-				// log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Height:      txResp.BlockHeight,
@@ -145,7 +145,7 @@ func subscribe() {
 				}
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
-				// log.Printf("[STATUS]: %v\n", status)
+				log.Printf("[STATUS]: %v\n", status)
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
