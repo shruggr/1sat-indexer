@@ -5,14 +5,16 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 
+	"github.com/bitcoinschema/go-bitcoin"
 	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
 )
@@ -97,6 +99,7 @@ type Sigma struct {
 	Address   string `json:"address"`
 	Signature []byte `json:"signature"`
 	Vin       uint32 `json:"vin"`
+	Valid     bool   `json:"valid"`
 }
 
 type ParsedScript struct {
@@ -157,87 +160,290 @@ func (p *ParsedScript) Save() (err error) {
 	return
 }
 
-func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) {
+type OpPart struct {
+	OpCode byte
+	Data   []byte
+	Len    uint32
+}
+
+func ReadOp(b []byte, idx *int) (op *OpPart, err error) {
+	if len(b) <= *idx {
+		// log.Panicf("ReadOp: %d %d", len(b), *idx)
+		err = fmt.Errorf("ReadOp: %d %d", len(b), *idx)
+		return
+	}
+	switch b[*idx] {
+	case bscript.OpPUSHDATA1:
+		if len(b) < *idx+2 {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		l := int(b[*idx+1])
+		*idx += 2
+
+		if len(b) < *idx+l {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		op = &OpPart{OpCode: bscript.OpPUSHDATA1, Data: b[*idx : *idx+l]}
+		*idx += l
+
+	case bscript.OpPUSHDATA2:
+		if len(b) < *idx+3 {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		l := int(binary.LittleEndian.Uint16(b[*idx+1:]))
+		*idx += 3
+
+		if len(b) < *idx+l {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		op = &OpPart{OpCode: bscript.OpPUSHDATA2, Data: b[*idx : *idx+l]}
+		*idx += l
+
+	case bscript.OpPUSHDATA4:
+		if len(b) < *idx+5 {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		l := int(binary.LittleEndian.Uint32(b[*idx+1:]))
+		*idx += 5
+
+		if len(b) < *idx+l {
+			err = bscript.ErrDataTooSmall
+			return
+		}
+
+		op = &OpPart{OpCode: bscript.OpPUSHDATA4, Data: b[*idx : *idx+l]}
+		*idx += l
+
+	default:
+		if b[*idx] >= 0x01 && b[*idx] < bscript.OpPUSHDATA1 {
+			l := b[*idx]
+			if len(b) < *idx+int(1+l) {
+				err = bscript.ErrDataTooSmall
+				return
+			}
+			op = &OpPart{OpCode: b[*idx], Data: b[*idx+1 : *idx+int(l+1)]}
+			*idx += int(1 + l)
+		} else {
+			op = &OpPart{OpCode: b[*idx]}
+			*idx++
+		}
+	}
+
+	return
+}
+
+func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error) {
+	prevIdx := *idx
+	op, err := ReadOp(script, idx)
+	if err != nil {
+		return
+	}
+	switch string(op.Data) {
+	case MAP:
+		op, err = ReadOp(script, idx)
+		if err != nil {
+			return
+		}
+		if string(op.Data) != "SET" {
+			return nil
+		}
+		p.Map = map[string]interface{}{}
+		for {
+			op, err = ReadOp(script, idx)
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+				break
+			}
+			opKey := string(op.Data)
+			op, err = ReadOp(script, idx)
+			if err != nil {
+				break
+			}
+			// fmt.Println(opKey, op.OpCode, string(op.Data))
+			p.Map[opKey] = string(op.Data)
+		}
+		if val, ok := p.Map["subTypeData"]; ok {
+			var subTypeData json.RawMessage
+			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
+				p.Map["subTypeData"] = subTypeData
+			}
+		}
+		return nil
+	case B:
+		p.B = &File{}
+		for i := 0; i < 4; i++ {
+			op, err = ReadOp(script, idx)
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+				break
+			}
+
+			switch i {
+			case 0:
+				p.B.Content = op.Data
+			case 1:
+				p.B.Type = string(op.Data)
+			case 2:
+				p.B.Encoding = string(op.Data)
+			case 3:
+				p.B.Name = string(op.Data)
+			}
+		}
+		hash := sha256.Sum256(p.B.Content)
+		p.B.Size = uint32(len(p.B.Content))
+		p.B.Hash = hash[:]
+	case "SIGMA":
+		sigma := &Sigma{}
+		for i := 0; i < 4; i++ {
+			op, err = ReadOp(script, idx)
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+				break
+			}
+
+			switch i {
+			case 0:
+				sigma.Algorithm = string(op.Data)
+			case 1:
+				sigma.Address = string(op.Data)
+			case 2:
+				sigma.Signature = op.Data
+			case 3:
+				vin, err := strconv.ParseInt(string(op.Data), 10, 32)
+				if err == nil {
+					sigma.Vin = uint32(vin)
+				}
+			}
+		}
+		p.Sigmas = append(p.Sigmas, sigma)
+
+		outpoint := tx.Inputs[sigma.Vin].PreviousTxID()
+		outpoint = binary.LittleEndian.AppendUint32(outpoint, tx.Inputs[sigma.Vin].PreviousTxOutIndex)
+		inputHash := sha256.Sum256(outpoint)
+		var scriptBuf []byte
+		if script[prevIdx-1] == bscript.OpRETURN {
+			scriptBuf = script[:prevIdx-1]
+		} else if script[prevIdx-1] == bscript.OpSWAP {
+			scriptBuf = script[:prevIdx-2]
+		} else {
+			return nil
+		}
+		// fmt.Printf("scriptBuf %x\n", scriptBuf)
+		outputHash := sha256.Sum256(scriptBuf)
+		// fmt.Printf("ohash: %x\n", outputHash)
+		msgHash := sha256.Sum256(append(inputHash[:], outputHash[:]...))
+		err = bitcoin.VerifyMessage(sigma.Address,
+			base64.StdEncoding.EncodeToString(sigma.Signature),
+			string(msgHash[:]),
+		)
+		if err != nil {
+			fmt.Println("Error verifying signature", err)
+			return nil
+		}
+		sigma.Valid = true
+	default:
+		*idx--
+	}
+	return
+}
+
+func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
 	p = &ParsedScript{
 		Sigmas: make(Sigmas, 0),
-	}
-	parts, err := bscript.DecodeParts(script)
-	if err != nil {
-		hash := sha256.Sum256(script)
-		p.Lock = bt.ReverseBytes(hash[:])
-		// log.Panicf("Parsing Error: %x %+v\n", script, err)
-		return
 	}
 
 	var opFalse int
 	var opIf int
-	var opORD int
-	var opMAP int
-	var opB int
-	var opSIGMAs []int
 	var endLock int
-	var mapOperator string
-	lockScript := bscript.Script{}
-
-	for i, op := range parts {
-		var opcode byte
-		if len(op) == 1 {
-			opcode = op[0]
-			switch opcode {
-			case bscript.Op0:
-				opFalse = i
-			case bscript.OpIF:
-				opIf = i
-			case bscript.OpRETURN:
-				if endLock == 0 {
-					endLock = i
-				}
-				if opORD == 0 {
-					opORD = -1
-				}
-				if endLock > 0 {
-					switch ParseBitcom(parts[i:]) {
-					case MAP:
-						mapOperator = string(parts[i+2])
-						opMAP = i + 3
-					case B:
-						opB = i + 1
-					case "SIGMA":
-						opSIGMAs = append(opSIGMAs, i+1)
-					}
-
-				}
-			case bscript.OpSWAP:
-				if endLock > 0 {
-					switch ParseBitcom(parts[i:]) {
-					case MAP:
-						mapOperator = string(parts[i+2])
-						opMAP = i + 3
-					case B:
-						opB = i + 1
-					case "SIGMA":
-						opSIGMAs = append(opSIGMAs, i+1)
-					}
-				}
-			}
+	for i := 0; i < len(script); {
+		startIdx := i
+		op, err := ReadOp(script, &i)
+		if err != nil {
+			break
 		}
-
-		if opORD == 0 && bytes.Equal(op, []byte("ord")) && opIf == i-1 && opFalse == i-2 {
-			opORD = i
+		// fmt.Println(prevI, i, op)
+		switch op.OpCode {
+		case bscript.Op0:
+			opFalse = startIdx
+		case bscript.OpIF:
+			opIf = startIdx
+		case bscript.OpRETURN:
 			if endLock == 0 {
-				endLock = i - 2
-				lockScript = lockScript[:len(lockScript)-2]
+				endLock = startIdx
+			}
+			if endLock > 0 {
+				err = ParseBitcom(script, &i, p, tx)
+				if err != nil {
+					log.Println("Error parsing bitcom", err)
+					continue
+				}
+			}
+		case bscript.OpDATA1:
+			if op.Data[0] == '|' && endLock > 0 {
+				err = ParseBitcom(script, &i, p, tx)
+				if err != nil {
+					log.Println("Error parsing bitcom", err)
+					continue
+				}
 			}
 		}
-		if endLock > 0 {
-			continue
-		}
-		if len(op) == 1 {
-			lockScript.AppendOpcodes(opcode)
-		} else {
-			lockScript.AppendPushData(op)
+
+		if bytes.Equal(op.Data, []byte("ord")) && opIf == startIdx-1 && opFalse == startIdx-2 {
+			if endLock == 0 {
+				endLock = startIdx - 2
+				// lockParts = lockParts[:len(lockParts)-2]
+				// lockScript = lockScript[:len(lockScript)-2]
+			}
+			p.Ord = &File{}
+		ordLoop:
+			for {
+				op, err = ReadOp(script, &i)
+				if err != nil {
+					break
+				}
+				switch op.OpCode {
+				case bscript.Op0:
+					op, err = ReadOp(script, &i)
+					if err != nil {
+						break ordLoop
+					}
+					p.Ord.Content = op.Data
+				case bscript.Op1:
+					op, err = ReadOp(script, &i)
+					if err != nil {
+						break ordLoop
+					}
+					p.Ord.Type = string(op.Data)
+				case bscript.OpENDIF:
+					break ordLoop
+				}
+			}
+			hash := sha256.Sum256(p.Ord.Content)
+			p.Ord.Size = uint32(len(p.Ord.Content))
+			p.Ord.Hash = hash[:]
 		}
 	}
+
+	var lockScript bscript.Script
+
+	fmt.Println("endLock", endLock)
+	if endLock > 0 {
+		lockScript = script[:endLock]
+	} else {
+		lockScript = script
+	}
+	// asm, err := lockScript.ToASM()
+	// if err != nil {
+	// 	fmt.Println("Error converting to asm", err)
+	// }
+	// fmt.Printf("lockScript: %s\n", asm)
 
 	ordLockPrefixIndex := bytes.Index(script, OrdLockPrefix)
 	ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
@@ -261,122 +467,8 @@ func ParseScript(script bscript.Script, includeFileMeta bool) (p *ParsedScript) 
 
 	hash := sha256.Sum256(lockScript)
 	p.Lock = bt.ReverseBytes(hash[:])
-	if opORD > 0 {
-		p.Ord = &File{}
-		var pos int
-	ordLoop:
-		for pos = opORD + 1; pos < len(parts); pos += 2 {
-			op := parts[pos]
-			if len(op) != 1 {
-				break
-			}
-			opcode := op[0]
-			switch opcode {
-			case bscript.Op0:
-				value := parts[pos+1]
-				if len(value) == 1 && value[0] == bscript.Op0 {
-					value = []byte{}
-				}
-				p.Ord.Content = value
-			case bscript.Op1:
-				value := parts[pos+1]
-				if len(value) == 1 && value[0] == bscript.Op0 {
-					value = []byte{}
-				}
-				p.Ord.Type = string(value)
-			case bscript.OpENDIF:
-				break ordLoop
-			}
-		}
-		if includeFileMeta {
-			hash := sha256.Sum256(p.Ord.Content)
-			p.Ord.Size = uint32(len(p.Ord.Content))
-			p.Ord.Hash = hash[:]
-		}
-	}
-	if opMAP > 0 && mapOperator == "SET" {
-		p.Map = map[string]interface{}{}
-		for pos := opMAP; pos < len(parts); pos += 2 {
-			op := parts[pos]
-			if len(op) == 1 {
-				opcode := op[0]
-				if opcode == bscript.OpSWAP {
-					break
-				}
-			}
-			if len(parts) > pos+1 {
-				p.Map[string(op)] = strings.ToValidUTF8(string(parts[pos+1]), "")
-			}
-		}
-		if val, ok := p.Map["subTypeData"]; ok {
-			var subTypeData json.RawMessage
-			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
-				p.Map["subTypeData"] = subTypeData
-			}
-		}
-	}
-
-	if opB > 0 {
-		p.B = &File{}
-		for pos := opB; pos < opB+5; pos++ {
-			if len(parts) <= pos {
-				break
-			}
-			op := parts[pos]
-			var opcode byte
-			if len(op) == 1 {
-				opcode = op[0]
-				if opcode == bscript.OpSWAP || opcode == bscript.OpRETURN {
-					break
-				}
-				if opcode == bscript.Op0 {
-					op = []byte{}
-				}
-			}
-
-			switch pos {
-			case opB + 1:
-				p.B.Content = op
-			case opB + 2:
-				p.B.Type = string(op)
-			case opB + 3:
-				p.B.Encoding = string(op)
-			case opB + 4:
-				p.B.Name = string(op)
-			}
-		}
-		if includeFileMeta {
-			hash := sha256.Sum256(p.B.Content)
-			p.B.Size = uint32(len(p.B.Content))
-			p.B.Hash = hash[:]
-		}
-	}
-
-	for _, opSIGMA := range opSIGMAs {
-		if len(parts) < opSIGMA+4 {
-			continue
-		}
-		sigma := &Sigma{
-			Algorithm: string(parts[opSIGMA+1]),
-			Address:   string(parts[opSIGMA+2]),
-			Signature: parts[opSIGMA+3],
-		}
-		vin, err := strconv.ParseUint(string(parts[opSIGMA+4]), 10, 32)
-		if err == nil {
-			continue
-		}
-		sigma.Vin = uint32(vin)
-		p.Sigmas = append(p.Sigmas, sigma)
-	}
 
 	return
-}
-
-func ParseBitcom(parts [][]byte) (bitcom string) {
-	if len(parts) < 2 {
-		return
-	}
-	return string(parts[1])
 }
 
 func SetInscriptionIds(height uint32) (err error) {

@@ -9,7 +9,7 @@ type Txo struct {
 	Vout     uint32     `json:"vout"`
 	Satoshis uint64     `json:"satoshis,omitempty"`
 	AccSats  uint64     `json:"acc_sats,omitempty"`
-	Lock     []byte     `json:"lock"`
+	Lock     ByteString `json:"lock"`
 	Spend    ByteString `json:"spend,omitempty"`
 	Vin      uint32     `json:"vin"`
 	Origin   *Outpoint  `json:"origin,omitempty"`

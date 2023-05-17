@@ -105,7 +105,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 			}
 		}
 
-		parsed := ParseScript(*txout.LockingScript, true)
+		parsed := ParseScript(*txout.LockingScript, tx)
 		txo.Lock = parsed.Lock
 		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
 			txo.Origin = &outpoint
