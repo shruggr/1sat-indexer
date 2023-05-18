@@ -109,7 +109,7 @@ func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
 		INSERT INTO inscriptions(txid, vout, height, idx, filehash, filesize, filetype, map, origin, lock, sigma)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin, map=EXCLUDED.map
+			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin, map=EXCLUDED.map, sigma=EXCLUDED.sigma
 	`)
 	if err != nil {
 		log.Panic(err)
