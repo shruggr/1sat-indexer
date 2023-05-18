@@ -216,8 +216,7 @@ func processQueue() {
 			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
 				VALUES($1, $2)
 				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2
-					WHERE height < $2`,
+					SET height=$2`,
 				INDEXER,
 				settledHeight,
 			); err != nil {
