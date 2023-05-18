@@ -243,7 +243,7 @@ func ReadOp(b []byte, idx *int) (op *OpPart, err error) {
 }
 
 func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error) {
-	prevIdx := *idx
+	startIdx := *idx
 	op, err := ReadOp(script, idx)
 	if err != nil {
 		return
@@ -259,13 +259,17 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 		}
 		p.Map = map[string]interface{}{}
 		for {
+			prevIdx := *idx
 			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+				*idx = prevIdx
 				break
 			}
 			opKey := string(op.Data)
+			prevIdx = *idx
 			op, err = ReadOp(script, idx)
-			if err != nil {
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+				*idx = prevIdx
 				break
 			}
 			// fmt.Println(opKey, op.OpCode, string(op.Data))
@@ -281,8 +285,10 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 	case B:
 		p.B = &File{}
 		for i := 0; i < 4; i++ {
+			prevIdx := *idx
 			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+				*idx = prevIdx
 				break
 			}
 
@@ -303,8 +309,10 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 	case "SIGMA":
 		sigma := &Sigma{}
 		for i := 0; i < 4; i++ {
+			prevIdx := *idx
 			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == bscript.OpSWAP) {
+			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+				*idx = prevIdx
 				break
 			}
 
@@ -326,12 +334,14 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 
 		outpoint := tx.Inputs[sigma.Vin].PreviousTxID()
 		outpoint = binary.LittleEndian.AppendUint32(outpoint, tx.Inputs[sigma.Vin].PreviousTxOutIndex)
+		// fmt.Printf("outpoint %x\n", outpoint)
 		inputHash := sha256.Sum256(outpoint)
+		// fmt.Printf("ihash: %x\n", inputHash)
 		var scriptBuf []byte
-		if script[prevIdx-1] == bscript.OpRETURN {
-			scriptBuf = script[:prevIdx-1]
-		} else if script[prevIdx-1] == bscript.OpSWAP {
-			scriptBuf = script[:prevIdx-2]
+		if script[startIdx-1] == bscript.OpRETURN {
+			scriptBuf = script[:startIdx-1]
+		} else if script[startIdx-1] == '|' {
+			scriptBuf = script[:startIdx-2]
 		} else {
 			return nil
 		}
@@ -339,6 +349,7 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 		outputHash := sha256.Sum256(scriptBuf)
 		// fmt.Printf("ohash: %x\n", outputHash)
 		msgHash := sha256.Sum256(append(inputHash[:], outputHash[:]...))
+		// fmt.Printf("msghash: %x\n", msgHash)
 		err = bitcoin.VerifyMessage(sigma.Address,
 			base64.StdEncoding.EncodeToString(sigma.Signature),
 			string(msgHash[:]),
@@ -375,6 +386,7 @@ func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
 		case bscript.OpIF:
 			opIf = startIdx
 		case bscript.OpRETURN:
+			// fmt.Println("RETURN", startIdx, op.Data)
 			if endLock == 0 {
 				endLock = startIdx
 			}
@@ -386,6 +398,7 @@ func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
 				}
 			}
 		case bscript.OpDATA1:
+			// fmt.Println("DATA1", startIdx, op.Data)
 			if op.Data[0] == '|' && endLock > 0 {
 				err = ParseBitcom(script, &i, p, tx)
 				if err != nil {
@@ -433,7 +446,7 @@ func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
 
 	var lockScript bscript.Script
 
-	fmt.Println("endLock", endLock)
+	// fmt.Println("endLock", endLock)
 	if endLock > 0 {
 		lockScript = script[:endLock]
 	} else {
