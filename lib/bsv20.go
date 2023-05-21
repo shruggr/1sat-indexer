@@ -239,13 +239,12 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			setValid(t, bsv20.Txid, bsv20.Vout)
 		case "mint":
 			if token == nil || bsv20.Amt > token.Limit {
-				log.Panicf("invalid mint: %s %d %d %d %d %d %v", bsv20.Ticker, bsv20.Height, bsv20.Idx, bsv20.Amt, bsv20.Max, bsv20.Limit, token)
-				setInvalidRollback(t, txid)
-				return
+				// log.Panicf("invalid mint: %s %d %d %d %d %d %v", bsv20.Ticker, bsv20.Height, bsv20.Idx, bsv20.Amt, bsv20.Max, bsv20.Limit, token)
+				setInvalid(t, txid, bsv20.Vout)
+				continue
 			}
 
 			if token.Supply >= token.Max {
-				log.Panicf("invalid supply: %s %d %d", bsv20.Ticker, token.Supply, token.Max)
 				setInvalid(t, txid, bsv20.Vout)
 				continue
 			}
@@ -267,7 +266,6 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			setValid(t, bsv20.Txid, bsv20.Vout)
 
 		case "transfer":
-
 			if balance, ok := tokensIn[bsv20.Ticker]; ok {
 				if balance < bsv20.Amt {
 					log.Fatalf("invalid transfer: %s %d %d", bsv20.Ticker, balance, bsv20.Amt)
