@@ -19,14 +19,21 @@ var (
 )
 
 type IndexResult struct {
+	Txid          ByteString      `json:"txid"`
+	Height        uint32          `json:"height"`
+	Idx           uint32          `json:"idx"`
 	Txos          []*Txo          `json:"txos"`
 	ParsedScripts []*ParsedScript `json:"parsed"`
 	Spends        []*Txo          `json:"spends"`
 }
 
-func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexResult, err error) {
-	result = &IndexResult{}
+func IndexTxn(tx *bt.Tx, height uint32, idx uint32) (result *IndexResult, err error) {
 	txid := tx.TxIDBytes()
+	result = &IndexResult{
+		Txid:   txid,
+		Height: height,
+		Idx:    idx,
+	}
 	var accSats uint64
 	if height == 0 {
 		// Set height to max uint32 so that it sorts to the end of the list
@@ -40,46 +47,45 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 			Vin:   uint32(vin),
 		}
 		result.Spends = append(result.Spends, spend)
-		if save {
-			var exists bool
-			exists, err = spend.SaveSpend()
+
+		var exists bool
+		exists, err = spend.SaveSpend()
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		if !exists {
+			var tx *bt.Tx
+			tx, err = LoadTx(spend.Txid)
+			if err != nil {
+				log.Panicf("%x: %v\n", spend.Txid, err)
+				return
+			}
+			for vout, txout := range tx.Outputs {
+				if vout > int(spend.Vout) {
+					break
+				}
+				spend.AccSats += txout.Satoshis
+			}
+			spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
+			hash := sha256.Sum256(*tx.Outputs[spend.Vout].LockingScript)
+			spend.Lock = bt.ReverseBytes(hash[:])
+
+			err = spend.SaveWithSpend()
 			if err != nil {
 				log.Panic(err)
 				return
 			}
-			if !exists && save {
-				var tx *bt.Tx
-				tx, err = LoadTx(spend.Txid)
-				if err != nil {
-					log.Panicf("%x: %v\n", spend.Txid, err)
-					return
-				}
-				for vout, txout := range tx.Outputs {
-					if vout > int(spend.Vout) {
-						break
-					}
-					spend.AccSats += txout.Satoshis
-				}
-				spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
-				hash := sha256.Sum256(*tx.Outputs[spend.Vout].LockingScript)
-				spend.Lock = bt.ReverseBytes(hash[:])
+		}
 
-				err = spend.SaveWithSpend()
-				if err != nil {
-					log.Panic(err)
-					return
-				}
-			}
+		accSats += spend.Satoshis
+		spend.AccSats = accSats
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
 
-			accSats += spend.Satoshis
-			spend.AccSats = accSats
-			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-
-			msg := outpoint.String()
-			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
-			if spend.Listing {
-				Rdb.Publish(context.Background(), "unlist", msg)
-			}
+		msg := outpoint.String()
+		Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+		if spend.Listing {
+			Rdb.Publish(context.Background(), "unlist", msg)
 		}
 	}
 
@@ -105,36 +111,32 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 			}
 		}
 
-		parsed := ParseScript(*txout.LockingScript, tx)
+		parsed := ParseScript(*txout.LockingScript, tx, height)
 		txo.Lock = parsed.Lock
 		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
 			txo.Origin = &outpoint
 		}
 		result.Txos = append(result.Txos, txo)
-		if save {
-			err = txo.Save()
-			if err != nil {
-				return
-			}
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
+		err = txo.Save()
+		if err != nil {
+			return
 		}
+		Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
 		if txo.Origin != nil {
 			parsed.Txid = txid
 			parsed.Vout = uint32(vout)
 			parsed.Height = height
 			parsed.Idx = idx
 			parsed.Origin = txo.Origin
-			if save {
-				if txo.Origin == &outpoint {
-					err = parsed.SaveInscription()
-					if err != nil {
-						return
-					}
-				}
-				err = parsed.Save()
+			if txo.Origin == &outpoint {
+				err = parsed.SaveInscription()
 				if err != nil {
 					return
 				}
+			}
+			err = parsed.Save()
+			if err != nil {
+				return
 			}
 
 			if len(parsed.Listings) > 0 {
@@ -148,16 +150,20 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint32, save bool) (result *IndexRes
 					l.Height = height
 					l.Idx = idx
 					txo.Listing = true
-					if save {
-						err = l.Save()
-						if err != nil {
-							return
-						}
-						Rdb.Publish(context.Background(), "list", msg)
+					err = l.Save()
+					if err != nil {
+						return
 					}
+					Rdb.Publish(context.Background(), "list", msg)
 				}
 			}
 			result.ParsedScripts = append(result.ParsedScripts, parsed)
+		}
+		if parsed.Bsv20 != nil {
+			err = processBsv20Txn(result)
+			if err != nil {
+				return
+			}
 		}
 	}
 	return

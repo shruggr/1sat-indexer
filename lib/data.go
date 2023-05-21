@@ -24,6 +24,7 @@ var TRIGGER = uint32(783968)
 
 var TxCache *lru.Cache[string, *bt.Tx]
 
+var db *sql.DB
 var Rdb *redis.Client
 var JBClient *junglebus.Client
 
@@ -40,8 +41,9 @@ var SetInscriptionId *sql.Stmt
 var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 
-func Initialize(db *sql.DB, rdb *redis.Client) (err error) {
+func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	// db = sdb
+	db = postgres
 	Rdb = rdb
 	jb := os.Getenv("JUNGLEBUS")
 	if jb == "" {
@@ -220,6 +222,11 @@ func LoadTxData(txid []byte) (*models.Transaction, error) {
 }
 
 type Outpoint []byte
+
+func NewOutpoint(txid []byte, vout uint32) *Outpoint {
+	o := Outpoint(binary.BigEndian.AppendUint32(txid, vout))
+	return &o
+}
 
 func NewOutpointFromString(s string) (o *Outpoint, err error) {
 	txid, err := hex.DecodeString(s[:64])

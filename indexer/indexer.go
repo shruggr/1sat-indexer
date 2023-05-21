@@ -38,7 +38,7 @@ func ProcessTxns(THREADS uint) {
 
 func processTxn(txn *TxnStatus) {
 	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
-	_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx, true)
+	_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -64,15 +64,4 @@ func processTxn(txn *TxnStatus) {
 		Wg.Done()
 	}
 	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
-}
-
-func ProcessInscriptionIds(settled chan uint32) {
-	for {
-		height := <-settled
-		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
-	}
 }

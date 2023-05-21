@@ -157,7 +157,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go indexer.ProcessInscriptionIds(settled)
+	go processSettled(settled)
 	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
@@ -213,10 +213,9 @@ func processQueue() {
 			indexer.Wg.Wait()
 			settledHeight = msg.Height - 6
 
-			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
-				VALUES($1, $2)
-				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2`,
+			if _, err := db.Exec(`UPDATE progress
+				SET height=$2
+				WHERE indexer=$1 and height<$2`,
 				INDEXER,
 				settledHeight,
 			); err != nil {
@@ -229,5 +228,18 @@ func processQueue() {
 		default:
 			log.Printf("Status: %d\n", msg.Status)
 		}
+	}
+}
+
+func processSettled(settled chan uint32) {
+	for {
+		height := <-settled
+		fmt.Println("Processing inscription ids for height", height)
+		err := lib.SetInscriptionIds(height)
+		if err != nil {
+			log.Panicln("Error processing inscription ids:", err)
+		}
+
+		lib.ValidateBsv20(height)
 	}
 }

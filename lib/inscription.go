@@ -116,7 +116,7 @@ type ParsedScript struct {
 	B        *File             `json:"B,omitempty"`
 	Listings []*OrdLockListing `json:"listings,omitempty"`
 	Sigmas   Sigmas            `json:"sigma,omitempty"`
-	// Inscription *Inscription `json:"-"`
+	Bsv20    *Bsv20            `json:"bsv20,omitempty"`
 }
 
 func (p *ParsedScript) SaveInscription() (err error) {
@@ -365,7 +365,7 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 	return
 }
 
-func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
+func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScript) {
 	p = &ParsedScript{
 		Sigmas: make(Sigmas, 0),
 	}
@@ -441,11 +441,12 @@ func ParseScript(script bscript.Script, tx *bt.Tx) (p *ParsedScript) {
 			hash := sha256.Sum256(p.Ord.Content)
 			p.Ord.Size = uint32(len(p.Ord.Content))
 			p.Ord.Hash = hash[:]
+
+			p.Bsv20, _ = parseBsv20(p.Ord, height)
 		}
 	}
 
 	var lockScript bscript.Script
-
 	// fmt.Println("endLock", endLock)
 	if endLock > 0 {
 		lockScript = script[:endLock]
