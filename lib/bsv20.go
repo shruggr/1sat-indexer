@@ -2,6 +2,7 @@ package lib
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -128,9 +129,10 @@ func processBsv20Txn(ires *IndexResult) (err error) {
 }
 
 func ValidateBsv20(height uint32) {
-	txrows, err := db.Query(`SELECT DISTINCT txid
+	txrows, err := db.Query(`SELECT txid
 		FROM bsv20_txos
-		WHERE valid IS NULL AND height <= $1`,
+		WHERE valid IS NULL AND height <= $1
+		ORDER BY height ASC, idx ASC`,
 		height,
 	)
 	if err != nil {
@@ -138,18 +140,22 @@ func ValidateBsv20(height uint32) {
 	}
 	defer txrows.Close()
 
+	processed := map[string]struct{}{}
 	for txrows.Next() {
 		var txid []byte
 		err = txrows.Scan(&txid)
 		if err != nil {
 			log.Panic(err)
 		}
+		if _, ok := processed[hex.EncodeToString(txid)]; !ok {
+			validateTxBsv20s(txid)
+			processed[hex.EncodeToString(txid)] = struct{}{}
+		}
 
-		validateTxBsv20s(txid)
 	}
 }
 
-func validateTxBsv20s(txid []byte) {
+func validateTxBsv20s(txid []byte) (updates int64) {
 	rows, err := db.Query(`SELECT tick, amt, valid
 			FROM bsv20_txos
 			WHERE spend=$1`,
@@ -175,7 +181,7 @@ func validateTxBsv20s(txid []byte) {
 			log.Panicln(err)
 		}
 		if !valid.Bool {
-			setInvalid(t, txid)
+			setInvalidRollback(t, txid)
 			return
 		}
 		if balance, ok := tokensIn[tick]; ok {
@@ -209,13 +215,15 @@ func validateTxBsv20s(txid []byte) {
 			token = t
 		} else {
 			token = loadBsv20(bsv20.Ticker)
+			tokenSupply[bsv20.Ticker] = token
 		}
 
 		switch bsv20.Op {
 		case "deploy":
 			if token != nil {
-				setInvalid(t, txid)
-				return
+				setTokenInvalid(t, *NewOutpoint(bsv20.Txid, bsv20.Vout))
+				setInvalid(t, txid, bsv20.Vout)
+				continue
 			}
 
 			bsv20.Id = NewOutpoint(bsv20.Txid, bsv20.Vout)
@@ -230,9 +238,16 @@ func validateTxBsv20s(txid []byte) {
 			}
 			setValid(t, bsv20.Txid, bsv20.Vout)
 		case "mint":
-			if token == nil || token.Supply >= bsv20.Max {
-				setInvalid(t, txid)
+			if token == nil || bsv20.Amt > token.Limit {
+				log.Panicf("invalid mint: %s %d %d %d %d %d %v", bsv20.Ticker, bsv20.Height, bsv20.Idx, bsv20.Amt, bsv20.Max, bsv20.Limit, token)
+				setInvalidRollback(t, txid)
 				return
+			}
+
+			if token.Supply >= token.Max {
+				log.Panicf("invalid supply: %s %d %d", bsv20.Ticker, token.Supply, token.Max)
+				setInvalid(t, txid, bsv20.Vout)
+				continue
 			}
 
 			if token.Supply+bsv20.Amt > token.Max {
@@ -255,12 +270,17 @@ func validateTxBsv20s(txid []byte) {
 
 			if balance, ok := tokensIn[bsv20.Ticker]; ok {
 				if balance < bsv20.Amt {
-					setInvalid(t, txid)
+					log.Fatalf("invalid transfer: %s %d %d", bsv20.Ticker, balance, bsv20.Amt)
+					setInvalidRollback(t, txid)
 					return
 				}
 				balance -= bsv20.Amt
 				tokensIn[bsv20.Ticker] = balance
 				setValid(t, bsv20.Txid, bsv20.Vout)
+			} else {
+				log.Fatalf("invalid transfer: %s %d %d", bsv20.Ticker, balance, bsv20.Amt)
+				setInvalidRollback(t, txid)
+				return
 			}
 		}
 	}
@@ -270,6 +290,7 @@ func validateTxBsv20s(txid []byte) {
 	if err != nil {
 		log.Panic(err)
 	}
+	return
 }
 
 func loadBsv20(tick string) (bsv20 *Bsv20) {
@@ -304,7 +325,31 @@ func setValid(t *sql.Tx, txid []byte, vout uint32) {
 	}
 }
 
-func setInvalid(t *sql.Tx, txid []byte) bool {
+func setTokenInvalid(t *sql.Tx, id []byte) bool {
+	_, err := t.Exec(`UPDATE bsv20
+		SET valid=FALSE
+		WHERE id=$1`,
+		id,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	return true
+}
+
+func setInvalid(t *sql.Tx, txid []byte, vout uint32) {
+	_, err := db.Exec(`UPDATE bsv20_txos
+		SET valid=FALSE
+		WHERE txid=$1 AND vout=$2`,
+		txid,
+		vout,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func setInvalidRollback(t *sql.Tx, txid []byte) {
 	err := t.Rollback()
 	if err != nil {
 		log.Panic(err)
@@ -317,5 +362,4 @@ func setInvalid(t *sql.Tx, txid []byte) bool {
 	if err != nil {
 		log.Panic(err)
 	}
-	return true
 }
