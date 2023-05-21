@@ -131,7 +131,7 @@ func processBsv20Txn(ires *IndexResult) (err error) {
 func ValidateBsv20(height uint32) {
 	txrows, err := db.Query(`SELECT txid
 		FROM bsv20_txos
-		WHERE valid IS NULL AND height <= $1
+		WHERE valid IS NULL AND height <= $1 AND height > 0
 		ORDER BY height ASC, idx ASC`,
 		height,
 	)
