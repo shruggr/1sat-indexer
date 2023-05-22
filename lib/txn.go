@@ -185,7 +185,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			bsv20.B = parsed.B
 			bsv20.Save()
 		} else if txo.Bsv20 {
-			processBsv20Txn(result)
+			saveImpliedBsv20Transfer(txid, uint32(vout), txo)
 		}
 		// wg.Done()
 		// <-threadLimiter
@@ -194,36 +194,3 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 	// wg.Wait()
 	return
 }
-
-// func LoadOrigin(txo *Txo) (origin *Outpoint, err error) {
-// 	if txo.Satoshis != 1 {
-// 		return
-// 	}
-// 	fmt.Printf("load origin %x %d\n", txo.Txid, txo.AccSats)
-// 	rows, err := GetInput.Query(txo.Txid, txo.AccSats)
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer rows.Close()
-// 	if rows.Next() {
-// 		inTxo := &Txo{}
-// 		err = rows.Scan(
-// 			&inTxo.Txid,
-// 			&inTxo.Vout,
-// 			&inTxo.Satoshis,
-// 			&inTxo.AccSats,
-// 			&inTxo.Lock,
-// 			&inTxo.Spend,
-// 			&inTxo.Origin,
-// 		)
-// 		if err != nil {
-// 			return
-// 		}
-// 		if inTxo.Origin != nil {
-// 			origin = inTxo.Origin
-// 			return
-// 		}
-// 	}
-
-// 	return origin, nil
-// }

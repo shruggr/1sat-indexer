@@ -34,7 +34,7 @@ type Msg struct {
 	Height      uint32
 	Hash        string
 	Status      uint32
-	Idx         uint32
+	Idx         uint64
 	Transaction []byte
 }
 
@@ -117,7 +117,7 @@ func subscribe() {
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
+					Idx:         txResp.BlockIndex,
 					Transaction: txResp.Transaction,
 				}
 

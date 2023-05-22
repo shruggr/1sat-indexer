@@ -141,18 +141,18 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 		if err != nil {
 			log.Panic(err)
 		}
-		bsv20 := &Bsv20{}
-	}
-}
-
-func processBsv20Txn(ires *IndexResult) {
-	for _, p := range ires.ParsedScripts {
-		if p.Bsv20 == nil {
-			continue
+		bsv20 := &Bsv20{
+			Txid:    txo.Txid,
+			Vout:    txo.Vout,
+			Height:  txo.Height,
+			Idx:     txo.Idx,
+			Op:      "transfer",
+			Ticker:  ticker,
+			Amt:     uint64(amt),
+			Lock:    txo.Lock,
+			Implied: true,
 		}
-
-		// fmt.Println("BSV20:", p.Bsv20.Ticker, p.Bsv20.Amt)
-
+		bsv20.Save()
 	}
 }
 
@@ -248,7 +248,8 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 
 		switch bsv20.Op {
 		case "deploy":
-			if token != nil {
+			chars := []rune(bsv20.Ticker)
+			if token != nil || len(chars) > 4 {
 				setTokenInvalid(t, *NewOutpoint(bsv20.Txid, bsv20.Vout))
 				setInvalid(t, txid, bsv20.Vout)
 				continue

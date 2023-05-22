@@ -19,7 +19,7 @@ type TxnStatus struct {
 	ID       string
 	Tx       *bt.Tx
 	Height   uint32
-	Idx      uint32
+	Idx      uint64
 	Parents  map[string]*TxnStatus
 	Children map[string]*TxnStatus
 }
