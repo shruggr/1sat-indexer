@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     lock BYTEA,
     spend BYTEA,
     valid BOOL,
-    implied BOOL DEFAULT FALSE,
+    bsv20_amt BIGINT DEFAULT FALSE,
     PRIMARY KEY(txid, vout),
     FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
 );

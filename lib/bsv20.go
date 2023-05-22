@@ -25,7 +25,8 @@ type Bsv20 struct {
 	Lock     ByteString `json:"lock"`
 	Amt      uint64     `json:"amt"`
 	Supply   uint64     `json:"supply"`
-	Image    *File      `json:"image"`
+	Map      Map        `json:"MAP,omitempty"`
+	B        *File      `json:"B,omitempty"`
 	Implied  bool       `json:"implied"`
 }
 
@@ -82,8 +83,66 @@ func parseBsv20(ord *File, height uint32) (*Bsv20, error) {
 	return bsv20, nil
 }
 
-func setImpliedBsv20() {
+func (b *Bsv20) Save() {
+	if b.Op == "deploy" {
+		b.Id = NewOutpoint(b.Txid, b.Vout)
+		_, err := db.Exec(`INSERT INTO bsv20(id, height, idx, tick, max, lim, dec, map, b)
+			VALUES($1, $2, $3, UPPER($4), $5, $6, $7, $8, $9)
+			ON CONFLICT(id) DO NOTHING`,
+			b.Id,
+			b.Height,
+			b.Idx,
+			b.Ticker,
+			b.Max,
+			b.Limit,
+			b.Decimals,
+			b.Map,
+			b.B,
+		)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
 
+	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend)
+		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $8, $9, spend
+		FROM txos
+		WHERE txid=$1 AND vout=$2
+		ON CONFLICT(txid, vout) DO NOTHING`,
+		b.Txid,
+		b.Vout,
+		b.Height,
+		b.Idx,
+		b.Ticker,
+		b.Op,
+		b.Amt,
+		b.Lock,
+		b.Implied,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
+	rows, err := db.Query(`SELECT amt, tick
+		FROM bsv20_txos
+		WHERE txid=$1 AND vout=$2`,
+		txid,
+		vout,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	if rows.Next() {
+		var ticker string
+		var amt int64
+		err := rows.Scan(&ticker, &amt)
+		if err != nil {
+			log.Panic(err)
+		}
+		bsv20 := &Bsv20{}
+	}
 }
 
 func processBsv20Txn(ires *IndexResult) {
@@ -91,44 +150,9 @@ func processBsv20Txn(ires *IndexResult) {
 		if p.Bsv20 == nil {
 			continue
 		}
-		if p.Bsv20.Op == "deploy" {
-			p.Bsv20.Id = NewOutpoint(ires.Txid, p.Vout)
-			_, err := db.Exec(`INSERT INTO bsv20(id, height, idx, tick, max, lim, dec, map, b)
-				VALUES($1, $2, $3, UPPER($4), $5, $6, $7, $8, $9)
-				ON CONFLICT(id) DO NOTHING`,
-				p.Bsv20.Id,
-				ires.Height,
-				ires.Idx,
-				p.Bsv20.Ticker,
-				p.Bsv20.Max,
-				p.Bsv20.Limit,
-				p.Bsv20.Decimals,
-				p.Map,
-				p.B,
-			)
-			if err != nil {
-				log.Panic(err)
-			}
-		}
 
 		// fmt.Println("BSV20:", p.Bsv20.Ticker, p.Bsv20.Amt)
-		_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend)
-			SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $8, $9, spend
-			FROM txos
-			WHERE txid=$1 AND vout=$2
-			ON CONFLICT(txid, vout) DO NOTHING`,
-			p.Txid,
-			p.Vout,
-			ires.Height,
-			ires.Idx,
-			p.Bsv20.Ticker,
-			p.Bsv20.Op,
-			p.Bsv20.Amt,
-			p.Lock,
-		)
-		if err != nil {
-			log.Panic(err)
-		}
+
 	}
 }
 
@@ -242,7 +266,8 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			}
 			setValid(t, bsv20.Txid, bsv20.Vout)
 		case "mint":
-			if token == nil || bsv20.Amt > token.Limit || token.Supply >= token.Max {
+			if token == nil || token.Supply >= token.Max ||
+				(token.Limit > 0 && bsv20.Amt > token.Limit) {
 				setInvalid(t, txid, bsv20.Vout)
 				continue
 			}

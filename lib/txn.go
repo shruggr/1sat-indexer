@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"log"
 	"math"
-	"sync"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -44,62 +43,62 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 		// Set height to max uint32 so that it sorts to the end of the list
 		height = uint32(math.Pow(2, 31) - 1)
 	}
-	threadLimiter := make(chan struct{}, THREADS)
-	var wg sync.WaitGroup
+	// threadLimiter := make(chan struct{}, THREADS)
+	// var wg sync.WaitGroup
 	for vin, txin := range tx.Inputs {
-		threadLimiter <- struct{}{}
-		wg.Add(1)
-		go func(txin *bt.Input, vin int) {
-			spend := &Txo{
-				Txid:  txin.PreviousTxID(),
-				Vout:  txin.PreviousTxOutIndex,
-				Spend: txid,
-				Vin:   uint32(vin),
-			}
-			result.Spends[vin] = spend
+		// threadLimiter <- struct{}{}
+		// wg.Add(1)
+		// go func(txin *bt.Input, vin int) {
+		spend := &Txo{
+			Txid:  txin.PreviousTxID(),
+			Vout:  txin.PreviousTxOutIndex,
+			Spend: txid,
+			Vin:   uint32(vin),
+		}
+		result.Spends[vin] = spend
 
-			var exists bool
-			exists, err = spend.SaveSpend()
+		var exists bool
+		exists, err = spend.SaveSpend()
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		if !exists {
+			var tx *bt.Tx
+			tx, err = LoadTx(spend.Txid)
+			if err != nil {
+				log.Panicf("%x: %v\n", spend.Txid, err)
+			}
+			for vout, txout := range tx.Outputs {
+				if vout > int(spend.Vout) {
+					break
+				}
+				spend.AccSats += txout.Satoshis
+			}
+			spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
+			hash := sha256.Sum256(*tx.Outputs[spend.Vout].LockingScript)
+			spend.Lock = bt.ReverseBytes(hash[:])
+
+			err = spend.SaveWithSpend()
 			if err != nil {
 				log.Panic(err)
-				return
 			}
-			if !exists {
-				var tx *bt.Tx
-				tx, err = LoadTx(spend.Txid)
-				if err != nil {
-					log.Panicf("%x: %v\n", spend.Txid, err)
-				}
-				for vout, txout := range tx.Outputs {
-					if vout > int(spend.Vout) {
-						break
-					}
-					spend.AccSats += txout.Satoshis
-				}
-				spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
-				hash := sha256.Sum256(*tx.Outputs[spend.Vout].LockingScript)
-				spend.Lock = bt.ReverseBytes(hash[:])
+		}
 
-				err = spend.SaveWithSpend()
-				if err != nil {
-					log.Panic(err)
-				}
-			}
+		accSats += spend.Satoshis
+		spend.AccSats = accSats
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
 
-			accSats += spend.Satoshis
-			spend.AccSats = accSats
-			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-
-			msg := outpoint.String()
-			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
-			if spend.Listing {
-				Rdb.Publish(context.Background(), "unlist", msg)
-			}
-			wg.Done()
-			<-threadLimiter
-		}(txin, vin)
+		msg := outpoint.String()
+		Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+		if spend.Listing {
+			Rdb.Publish(context.Background(), "unlist", msg)
+		}
+		// 	wg.Done()
+		// 	<-threadLimiter
+		// }(txin, vin)
 	}
-	wg.Wait()
+	// wg.Wait()
 
 	accSats = 0
 	for vout, txout := range tx.Outputs {
@@ -122,73 +121,77 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			}
 		}
 
-		threadLimiter <- struct{}{}
-		wg.Add(1)
-		go func(txo *Txo, txout *bt.Output, vout int) {
-			outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
-			msg := outpoint.String()
-			parsed := ParseScript(*txout.LockingScript, tx, height)
-			txo.Lock = parsed.Lock
-			if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
-				txo.Origin = &outpoint
+		// threadLimiter <- struct{}{}
+		// wg.Add(1)
+		// go func(txo *Txo, txout *bt.Output, vout int) {
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+		msg := outpoint.String()
+		parsed := ParseScript(*txout.LockingScript, tx, height)
+		txo.Lock = parsed.Lock
+		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
+			txo.Origin = &outpoint
+		}
+		if parsed.Listing != nil {
+			txo.Listing = true
+		}
+		if parsed.Bsv20 != nil {
+			txo.Bsv20 = true
+		}
+		result.Txos = append(result.Txos, txo)
+		err = txo.Save()
+		if err != nil {
+			log.Panicf("%x: %v\n", txid, err)
+		}
+		Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
+		if txo.Origin != nil {
+			parsed.Txid = txid
+			parsed.Vout = uint32(vout)
+			parsed.Height = height
+			parsed.Idx = idx
+			parsed.Origin = txo.Origin
+			if txo.Origin == &outpoint {
+				err = parsed.SaveInscription()
+				if err != nil {
+					log.Panic(err)
+				}
 			}
-			if parsed.Listing != nil {
-				txo.Listing = true
-			}
-			if parsed.Bsv20 != nil {
-				txo.Bsv20 = true
-			}
-			result.Txos = append(result.Txos, txo)
-			err = txo.Save()
+			err = parsed.Save()
 			if err != nil {
 				log.Panicf("%x: %v\n", txid, err)
 			}
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
-			if txo.Origin != nil {
-				parsed.Txid = txid
-				parsed.Vout = uint32(vout)
-				parsed.Height = height
-				parsed.Idx = idx
-				parsed.Origin = txo.Origin
-				if txo.Origin == &outpoint {
-					err = parsed.SaveInscription()
-					if err != nil {
-						log.Panic(err)
-					}
-				}
-				err = parsed.Save()
+
+			if parsed.Listing != nil {
+				parsed.Listing.Txid = txid
+				parsed.Listing.Vout = uint32(vout)
+				parsed.Listing.Origin = txo.Origin
+				parsed.Listing.Height = height
+				parsed.Listing.Idx = idx
+				err = parsed.Listing.Save()
 				if err != nil {
 					log.Panicf("%x: %v\n", txid, err)
 				}
-
-				if parsed.Listing != nil {
-					parsed.Listing.Txid = txid
-					parsed.Listing.Vout = uint32(vout)
-					parsed.Listing.Origin = txo.Origin
-					parsed.Listing.Height = height
-					parsed.Listing.Idx = idx
-					err = parsed.Listing.Save()
-					if err != nil {
-						log.Panicf("%x: %v\n", txid, err)
-					}
-					Rdb.Publish(context.Background(), "list", msg)
-				}
-				result.ParsedScripts = append(result.ParsedScripts, parsed)
+				Rdb.Publish(context.Background(), "list", msg)
 			}
-			if parsed.Bsv20 != nil {
-				bsv20 := parsed.Bsv20
-				bsv20.Height = height
-				bsv20.Idx = uint64(idx)
-				bsv20.Lock = parsed.Lock
-				processBsv20Txn(result)
-			} else if txo.Bsv20 {
-
-			}
-			wg.Done()
-			<-threadLimiter
-		}(txo, txout, vout)
-		wg.Wait()
+			result.ParsedScripts = append(result.ParsedScripts, parsed)
+		}
+		if parsed.Bsv20 != nil {
+			bsv20 := parsed.Bsv20
+			bsv20.Txid = txid
+			bsv20.Vout = uint32(vout)
+			bsv20.Height = height
+			bsv20.Idx = uint64(idx)
+			bsv20.Lock = parsed.Lock
+			bsv20.Map = parsed.Map
+			bsv20.B = parsed.B
+			bsv20.Save()
+		} else if txo.Bsv20 {
+			processBsv20Txn(result)
+		}
+		// wg.Done()
+		// <-threadLimiter
+		// }(txo, txout, vout)
 	}
+	// wg.Wait()
 	return
 }
 
