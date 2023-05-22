@@ -90,7 +90,8 @@ func main() {
 	}
 
 	go processQueue()
-	subscribe()
+	settled <- 792700
+	// subscribe()
 	defer func() {
 		if r := recover(); r != nil {
 			sub.Unsubscribe()

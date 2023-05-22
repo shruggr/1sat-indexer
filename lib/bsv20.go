@@ -119,7 +119,7 @@ func processBsv20Txn(ires *IndexResult) (err error) {
 			p.Bsv20.Ticker,
 			p.Bsv20.Op,
 			p.Bsv20.Amt,
-			p.Bsv20.Lock,
+			p.Lock,
 		)
 		if err != nil {
 			log.Panic(err)
@@ -239,7 +239,6 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			setValid(t, bsv20.Txid, bsv20.Vout)
 		case "mint":
 			if token == nil || bsv20.Amt > token.Limit {
-				// log.Panicf("invalid mint: %s %d %d %d %d %d %v", bsv20.Ticker, bsv20.Height, bsv20.Idx, bsv20.Amt, bsv20.Max, bsv20.Limit, token)
 				setInvalid(t, txid, bsv20.Vout)
 				continue
 			}
