@@ -1,4 +1,4 @@
-ALTER TABLE txos ADD COLUMN IF NOT EXISTS bsv20 BOOL;
+ALTER TABLE txos ADD COLUMN IF NOT EXISTS bsv20 BOOL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS bsv20 (
     id BYTEA PRIMARY KEY,
     height INT,
@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     lock BYTEA,
     spend BYTEA,
     valid BOOL,
-    bsv20 BOOL DEFAULT FALSE,
     PRIMARY KEY(txid, vout),
     FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
 );
