@@ -103,20 +103,20 @@ type Sigma struct {
 }
 
 type ParsedScript struct {
-	Id       uint64            `json:"id"`
-	Txid     ByteString        `json:"txid"`
-	Vout     uint32            `json:"vout"`
-	Ord      *File             `json:"file"`
-	Origin   *Outpoint         `json:"origin"`
-	Ordinal  uint32            `json:"ordinal"`
-	Height   uint32            `json:"height"`
-	Idx      uint32            `json:"idx"`
-	Lock     ByteString        `json:"lock"`
-	Map      Map               `json:"MAP,omitempty"`
-	B        *File             `json:"B,omitempty"`
-	Listings []*OrdLockListing `json:"listings,omitempty"`
-	Sigmas   Sigmas            `json:"sigma,omitempty"`
-	Bsv20    *Bsv20            `json:"bsv20,omitempty"`
+	Id      uint64          `json:"id"`
+	Txid    ByteString      `json:"txid"`
+	Vout    uint32          `json:"vout"`
+	Ord     *File           `json:"file"`
+	Origin  *Outpoint       `json:"origin"`
+	Ordinal uint32          `json:"ordinal"`
+	Height  uint32          `json:"height"`
+	Idx     uint64          `json:"idx"`
+	Lock    ByteString      `json:"lock"`
+	Map     Map             `json:"MAP,omitempty"`
+	B       *File           `json:"B,omitempty"`
+	Listing *OrdLockListing `json:"listings,omitempty"`
+	Sigmas  Sigmas          `json:"sigma,omitempty"`
+	Bsv20   *Bsv20          `json:"bsv20,omitempty"`
 }
 
 func (p *ParsedScript) SaveInscription() (err error) {
@@ -470,10 +470,10 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 			if err == nil {
 				if owner, err := bscript.NewP2PKHFromPubKeyHash(pkh); err == nil {
 					lockScript = *owner
-					p.Listings = append(p.Listings, &OrdLockListing{
+					p.Listing = &OrdLockListing{
 						Price:     payOutput.Satoshis,
 						PayOutput: payOutput.Bytes(),
-					})
+					}
 				}
 			}
 		}

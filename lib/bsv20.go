@@ -26,6 +26,7 @@ type Bsv20 struct {
 	Amt      uint64     `json:"amt"`
 	Supply   uint64     `json:"supply"`
 	Image    *File      `json:"image"`
+	Implied  bool       `json:"implied"`
 }
 
 func parseBsv20(ord *File, height uint32) (*Bsv20, error) {
@@ -81,14 +82,18 @@ func parseBsv20(ord *File, height uint32) (*Bsv20, error) {
 	return bsv20, nil
 }
 
-func processBsv20Txn(ires *IndexResult) (err error) {
+func setImpliedBsv20() {
+
+}
+
+func processBsv20Txn(ires *IndexResult) {
 	for _, p := range ires.ParsedScripts {
 		if p.Bsv20 == nil {
 			continue
 		}
 		if p.Bsv20.Op == "deploy" {
 			p.Bsv20.Id = NewOutpoint(ires.Txid, p.Vout)
-			_, err = db.Exec(`INSERT INTO bsv20(id, height, idx, tick, max, lim, dec, map, b)
+			_, err := db.Exec(`INSERT INTO bsv20(id, height, idx, tick, max, lim, dec, map, b)
 				VALUES($1, $2, $3, UPPER($4), $5, $6, $7, $8, $9)
 				ON CONFLICT(id) DO NOTHING`,
 				p.Bsv20.Id,
@@ -107,8 +112,8 @@ func processBsv20Txn(ires *IndexResult) (err error) {
 		}
 
 		// fmt.Println("BSV20:", p.Bsv20.Ticker, p.Bsv20.Amt)
-		_, err = db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, spend)
-			SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $8, spend
+		_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend)
+			SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $8, $9, spend
 			FROM txos
 			WHERE txid=$1 AND vout=$2
 			ON CONFLICT(txid, vout) DO NOTHING`,
@@ -125,7 +130,6 @@ func processBsv20Txn(ires *IndexResult) (err error) {
 			log.Panic(err)
 		}
 	}
-	return nil
 }
 
 func ValidateBsv20(height uint32) {
@@ -238,12 +242,7 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			}
 			setValid(t, bsv20.Txid, bsv20.Vout)
 		case "mint":
-			if token == nil || bsv20.Amt > token.Limit {
-				setInvalid(t, txid, bsv20.Vout)
-				continue
-			}
-
-			if token.Supply >= token.Max {
+			if token == nil || bsv20.Amt > token.Limit || token.Supply >= token.Max {
 				setInvalid(t, txid, bsv20.Vout)
 				continue
 			}

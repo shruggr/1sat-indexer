@@ -63,5 +63,5 @@ func processTxn(txn *TxnStatus) {
 		InQueue--
 		Wg.Done()
 	}
-	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 }

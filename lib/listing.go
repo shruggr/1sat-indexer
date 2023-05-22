@@ -4,7 +4,7 @@ type OrdLockListing struct {
 	Txid      ByteString `json:"txid"`
 	Vout      uint32     `json:"vout"`
 	Height    uint32     `json:"height"`
-	Idx       uint32     `json:"idx"`
+	Idx       uint64     `json:"idx"`
 	Price     uint64     `json:"price"`
 	PayOutput ByteString `json:"pay_output"`
 	Origin    *Outpoint  `json:"origin"`

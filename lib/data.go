@@ -81,14 +81,16 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+	InsTxo, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, lock, origin, height, idx, listing, bsv20)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
 			satoshis=EXCLUDED.satoshis,
 			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx,
-			lock=EXCLUDED.lock
+			lock=EXCLUDED.lock,
+			listing=EXCLUDED.listing,
+			bsv20=EXCLUDED.bsv20
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -151,7 +153,7 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, vin=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis, listing, origin
+		RETURNING lock, satoshis, listing, bsv20, origin
 	`)
 	if err != nil {
 		log.Fatal(err)
