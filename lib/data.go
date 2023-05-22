@@ -38,7 +38,6 @@ var InsMetadata *sql.Stmt
 var InsListing *sql.Stmt
 var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
-var SetListing *sql.Stmt
 var SetTxn *sql.Stmt
 
 func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
@@ -166,16 +165,6 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx`,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	SetListing, err = db.Prepare(`
-		UPDATE txos
-		SET listing=true
-		WHERE txid=$1 AND vout=$2
-		RETURNING lock, origin
-	`)
 	if err != nil {
 		log.Fatal(err)
 	}
