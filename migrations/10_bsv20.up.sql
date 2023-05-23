@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS bsv20 (
     supply BIGINT DEFAULT 0,
     map JSONB,
     b JSONB,
-    valid BOOL
+    valid BOOL,
+    reason TEXT,
 );
 CREATE INDEX IF NOT EXISTS idx_bsv20_tick ON bsv20(tick);
 -- CREATE INDEX IN NOT EXISTS idx_bsv20_valid_height_idx ON bsv20(valid, height, idx, vout);
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     spend BYTEA,
     valid BOOL,
     implied BOOL DEFAULT false,
+    reason TEXT,
     PRIMARY KEY(txid, vout),
     FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
 );
