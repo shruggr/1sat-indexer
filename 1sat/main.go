@@ -211,7 +211,11 @@ func processQueue() {
 
 		case 200:
 			indexer.Wg.Wait()
-			settledHeight = msg.Height - 6
+			if msg.Height > 6 {
+				settledHeight = msg.Height - 6
+			} else {
+				settledHeight = 0
+			}
 
 			if _, err := db.Exec(`UPDATE progress
 				SET height=$2
