@@ -9,6 +9,7 @@ type OrdLockListing struct {
 	PayOutput ByteString `json:"pay_output"`
 	Origin    *Outpoint  `json:"origin"`
 	Ordinal   uint64     `json:"ordinal"`
+	Outpoint  *Outpoint  `json:"outpoint,omitempty"`
 }
 
 func (l *OrdLockListing) Save() (err error) {

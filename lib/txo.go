@@ -18,10 +18,12 @@ type Txo struct {
 	Idx      uint64     `json:"idx"`
 	Listing  bool       `json:"listing,omitempty"`
 	Bsv20    bool       `json:"bsv20,omitempty"`
+	Spends   *Txo       `json:"spends,omitempty"`
+	Outpoint *Outpoint  `json:"outpoint,omitempty"`
 }
 
-func (t *Txo) Save() (err error) {
-	_, err = InsTxo.Exec(
+func (t *Txo) Save() {
+	_, err := InsTxo.Exec(
 		t.Txid,
 		t.Vout,
 		t.Satoshis,
@@ -34,15 +36,12 @@ func (t *Txo) Save() (err error) {
 		t.Bsv20,
 	)
 	if err != nil {
-		log.Println("insTxo Err:", err)
-		return
+		log.Panicln("insTxo Err:", err)
 	}
-
-	return
 }
 
-func (t *Txo) SaveWithSpend() (err error) {
-	_, err = InsSpend.Exec(
+func (t *Txo) SaveWithSpend() {
+	_, err := InsSpend.Exec(
 		t.Txid,
 		t.Vout,
 		t.Satoshis,
@@ -54,14 +53,11 @@ func (t *Txo) SaveWithSpend() (err error) {
 		t.Spend,
 	)
 	if err != nil {
-		log.Println("insTxo Err:", err)
-		return
+		log.Panicln("insTxo Err:", err)
 	}
-
-	return
 }
 
-func (t *Txo) SaveSpend() (update bool, err error) {
+func (t *Txo) SaveSpend() (update bool) {
 	rows, err := SetSpend.Query(
 		t.Txid,
 		t.Vout,
@@ -69,13 +65,13 @@ func (t *Txo) SaveSpend() (update bool, err error) {
 		t.Vin,
 	)
 	if err != nil {
-		return
+		log.Panicln("setSpend Err:", err)
 	}
 	defer rows.Close()
 	if rows.Next() {
 		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing, &t.Bsv20, &t.Origin)
 		if err != nil {
-			return
+			log.Panic(err)
 		}
 		update = true
 	}

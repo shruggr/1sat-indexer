@@ -13,20 +13,23 @@ import (
 
 const THREADS = 16
 
-type Status uint
+// type Status uint
 
-var (
-	Unconfirmed Status = 0
-	Confirmed   Status = 1
-)
+// var (
+// 	Unconfirmed Status = 0
+// 	Confirmed   Status = 1
+// )
 
 type IndexResult struct {
-	Txid          ByteString      `json:"txid"`
-	Height        uint32          `json:"height"`
-	Idx           uint64          `json:"idx"`
-	Txos          []*Txo          `json:"txos"`
-	ParsedScripts []*ParsedScript `json:"parsed"`
-	Spends        []*Txo          `json:"spends"`
+	Txid          ByteString        `json:"txid"`
+	Height        uint32            `json:"height"`
+	Idx           uint64            `json:"idx"`
+	Txos          []*Txo            `json:"txos"`
+	ParsedScripts []*ParsedScript   `json:"parsed"`
+	Inscriptions  []*ParsedScript   `json:"inscriptions"`
+	Spends        []*Txo            `json:"spends"`
+	Listings      []*OrdLockListing `json:"listings"`
+	Bsv20s        []*Bsv20          `json:"bsv20s"`
 }
 
 func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err error) {
@@ -36,7 +39,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 		Height: height,
 		Idx:    idx,
 		Spends: make([]*Txo, len(tx.Inputs)),
-		Txos:   make([]*Txo, len(tx.Outputs)),
+		// Txos:   make([]*Txo, len(tx.Outputs)),
 	}
 	var accSats uint64
 	if height == 0 {
@@ -57,12 +60,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 		}
 		result.Spends[vin] = spend
 
-		var exists bool
-		exists, err = spend.SaveSpend()
-		if err != nil {
-			log.Panic(err)
-			return
-		}
+		exists := spend.SaveSpend()
 		if !exists {
 			var tx *bt.Tx
 			tx, err = LoadTx(spend.Txid)
@@ -79,10 +77,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			hash := sha256.Sum256(*tx.Outputs[spend.Vout].LockingScript)
 			spend.Lock = bt.ReverseBytes(hash[:])
 
-			err = spend.SaveWithSpend()
-			if err != nil {
-				log.Panic(err)
-			}
+			spend.SaveWithSpend()
 		}
 
 		accSats += spend.Satoshis
@@ -103,6 +98,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 	accSats = 0
 	for vout, txout := range tx.Outputs {
 		accSats += txout.Satoshis
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
 		txo := &Txo{
 			Txid:     txid,
 			Vout:     uint32(vout),
@@ -110,26 +106,26 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			Idx:      idx,
 			Satoshis: txout.Satoshis,
 			AccSats:  accSats,
+			Outpoint: &outpoint,
 		}
 
 		var accSpendSats uint64
 		for _, spend := range result.Spends {
 			accSpendSats += spend.Satoshis
-			if spend.Satoshis == 1 && accSpendSats == txo.AccSats {
+			if txo.Satoshis == 1 && spend.Satoshis == 1 && accSpendSats == txo.AccSats {
 				txo.Origin = spend.Origin
-				txo.Bsv20 = spend.Bsv20
+				txo.Spends = spend
 			}
 		}
 
 		// threadLimiter <- struct{}{}
 		// wg.Add(1)
 		// go func(txo *Txo, txout *bt.Output, vout int) {
-		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
-		msg := outpoint.String()
+		// msg := outpoint.String()
 		parsed := ParseScript(*txout.LockingScript, tx, height)
 		txo.Lock = parsed.Lock
 		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
-			txo.Origin = &outpoint
+			txo.Origin = txo.Outpoint
 		}
 		if parsed.Listing != nil {
 			txo.Listing = true
@@ -138,11 +134,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			txo.Bsv20 = true
 		}
 		result.Txos = append(result.Txos, txo)
-		err = txo.Save()
-		if err != nil {
-			log.Panicf("%x: %v\n", txid, err)
-		}
-		Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
+
 		if txo.Origin != nil {
 			parsed.Txid = txid
 			parsed.Vout = uint32(vout)
@@ -150,15 +142,9 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			parsed.Idx = idx
 			parsed.Origin = txo.Origin
 			if txo.Origin == &outpoint {
-				err = parsed.SaveInscription()
-				if err != nil {
-					log.Panic(err)
-				}
+				result.Inscriptions = append(result.Inscriptions, parsed)
 			}
-			err = parsed.Save()
-			if err != nil {
-				log.Panicf("%x: %v\n", txid, err)
-			}
+			result.ParsedScripts = append(result.ParsedScripts, parsed)
 
 			if parsed.Listing != nil {
 				parsed.Listing.Txid = txid
@@ -166,13 +152,9 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 				parsed.Listing.Origin = txo.Origin
 				parsed.Listing.Height = height
 				parsed.Listing.Idx = idx
-				err = parsed.Listing.Save()
-				if err != nil {
-					log.Panicf("%x: %v\n", txid, err)
-				}
-				Rdb.Publish(context.Background(), "list", msg)
+				parsed.Listing.Outpoint = &outpoint
+				result.Listings = append(result.Listings, parsed.Listing)
 			}
-			result.ParsedScripts = append(result.ParsedScripts, parsed)
 		}
 		if parsed.Bsv20 != nil {
 			bsv20 := parsed.Bsv20
@@ -183,13 +165,36 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 			bsv20.Lock = parsed.Lock
 			bsv20.Map = parsed.Map
 			bsv20.B = parsed.B
-			bsv20.Save()
-		} else if txo.Bsv20 {
-			saveImpliedBsv20Transfer(txid, uint32(vout), txo)
+			result.Bsv20s = append(result.Bsv20s, bsv20)
 		}
 		// wg.Done()
 		// <-threadLimiter
 		// }(txo, txout, vout)
+	}
+	for _, txo := range result.Txos {
+		impliedBsv20 := false
+		if len(result.Bsv20s) == 0 && txo.Spends != nil {
+			impliedBsv20 = txo.Spends.Bsv20
+			txo.Bsv20 = txo.Spends.Bsv20
+		}
+		txo.Save()
+		Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+		if impliedBsv20 {
+			saveImpliedBsv20Transfer(txo.Spends.Txid, txo.Spends.Vout, txo)
+		}
+	}
+	for _, inscription := range result.Inscriptions {
+		inscription.SaveInscription()
+	}
+	for _, parsed := range result.ParsedScripts {
+		parsed.Save()
+	}
+	for _, listing := range result.Listings {
+		listing.Save()
+		Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
+	}
+	for _, bsv20 := range result.Bsv20s {
+		bsv20.Save()
 	}
 	// wg.Wait()
 	return

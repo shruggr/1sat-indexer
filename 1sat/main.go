@@ -22,7 +22,7 @@ import (
 
 const INDEXER = "1sat"
 
-var THREADS uint64 = 16
+var THREADS uint64 = 64
 
 var db *sql.DB
 var junglebusClient *junglebus.Client

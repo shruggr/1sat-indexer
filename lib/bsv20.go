@@ -70,10 +70,7 @@ func parseBsv20(ord *File, height uint32) (*Bsv20, error) {
 	}
 	if dec, ok := data["dec"]; ok {
 		val, err := strconv.ParseUint(dec, 10, 8)
-		if err != nil {
-			log.Panic(err)
-		}
-		if val > 18 {
+		if err != nil || val > 18 {
 			return nil, fmt.Errorf("invalid decimals: %d", val)
 		}
 		bsv20.Decimals = uint8(val)
@@ -125,7 +122,7 @@ func (b *Bsv20) Save() {
 }
 
 func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
-	rows, err := db.Query(`SELECT amt, tick
+	rows, err := db.Query(`SELECT tick, amt
 		FROM bsv20_txos
 		WHERE txid=$1 AND vout=$2`,
 		txid,
@@ -292,7 +289,7 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 		case "transfer":
 			if balance, ok := tokensIn[bsv20.Ticker]; ok {
 				if balance < bsv20.Amt {
-					log.Fatalf("invalid transfer: %s %d %d", bsv20.Ticker, balance, bsv20.Amt)
+					log.Printf("invalid transfer: %x %s %d %d", txid, bsv20.Ticker, balance, bsv20.Amt)
 					setInvalidRollback(t, txid)
 					return
 				}
@@ -300,7 +297,7 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 				tokensIn[bsv20.Ticker] = balance
 				setValid(t, bsv20.Txid, bsv20.Vout)
 			} else {
-				log.Fatalf("invalid transfer: %s %d %d", bsv20.Ticker, balance, bsv20.Amt)
+				log.Printf("insufficient balance: %x %s %d %d", txid, bsv20.Ticker, balance, bsv20.Amt)
 				setInvalidRollback(t, txid)
 				return
 			}
