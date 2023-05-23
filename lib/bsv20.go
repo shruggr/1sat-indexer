@@ -196,15 +196,27 @@ func ValidateBsv20(height uint32) {
 			log.Panic(err)
 		}
 		if _, ok := processed[hex.EncodeToString(txid)]; !ok {
-			validateTxBsv20s(txid)
+			ValidateTxBsv20s(txid, false)
 			processed[hex.EncodeToString(txid)] = struct{}{}
 		}
 
 	}
 }
 
-func validateTxBsv20s(txid []byte) (updates int64) {
-	rows, err := db.Query(`SELECT tick, amt, valid
+type Bsv20Results struct {
+	Balance   map[string]uint64
+	TokensIn  []*Bsv20
+	TokensOut []*Bsv20
+	Tickers   []*Bsv20
+	Reasons   map[uint32]string
+}
+
+func ValidateTxBsv20s(txid []byte, dryRun bool) (results *Bsv20Results) {
+	results = &Bsv20Results{
+		Balance: make(map[string]uint64),
+		Reasons: make(map[uint32]string),
+	}
+	rows, err := db.Query(`SELECT vout, tick, amt, valid
 			FROM bsv20_txos
 			WHERE spend=$1`,
 		txid,
@@ -221,19 +233,28 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 	defer t.Rollback()
 	tokensIn := map[string]uint64{}
 	for rows.Next() {
-		var amt uint64
+		var vout uint32
+		var amtInt int64
 		var tick string
 		var valid sql.NullBool
-		err = rows.Scan(&tick, &amt, &valid)
+		err = rows.Scan(&vout, &tick, &amtInt, &valid)
 		if err != nil {
-			log.Panicln(err)
+			log.Panicf("%x %v\n", txid, err)
 		}
+		amt := uint64(amtInt)
 		if valid.Valid && valid.Bool {
 			if balance, ok := tokensIn[tick]; ok {
 				amt += balance
 			}
 			tokensIn[tick] = amt
+			results.TokensIn = append(results.TokensIn, &Bsv20{
+				Vout:   vout,
+				Ticker: tick,
+				Amt:    amt,
+				Valid:  valid,
+			})
 		}
+		results.Balance = tokensIn
 	}
 
 	rows, err = db.Query(`SELECT txid, vout, height, idx, op, tick, amt
@@ -252,16 +273,20 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 	invalidTransfers := map[string]struct{}{}
 	for rows.Next() {
 		bsv20 := &Bsv20{}
-		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &bsv20.Ticker, &bsv20.Amt)
+		var amtInt int64
+		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &bsv20.Ticker, &amtInt)
 		if err != nil {
 			log.Panic(err)
 		}
+		bsv20.Amt = uint64(amtInt)
+		results.TokensOut = append(results.TokensOut, bsv20)
 
 		var ticker *Bsv20
 		if t, ok := tokenSupply[bsv20.Ticker]; ok {
 			ticker = t
 		} else {
 			ticker = loadTicker(bsv20.Ticker)
+			results.Tickers = append(results.Tickers, ticker)
 			tokenSupply[bsv20.Ticker] = ticker
 		}
 
@@ -275,8 +300,11 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 				reason = fmt.Sprintf("length %d", len(chars))
 			}
 			if reason != "" {
-				setTokenInvalid(t, *NewOutpoint(bsv20.Txid, bsv20.Vout), reason)
-				setInvalid(t, txid, bsv20.Vout, reason)
+				if !dryRun {
+					setTokenInvalid(t, *NewOutpoint(bsv20.Txid, bsv20.Vout), reason)
+					setInvalid(t, txid, bsv20.Vout, reason)
+				}
+				results.Reasons[bsv20.Vout] = reason
 				continue
 			}
 
@@ -289,7 +317,11 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			if err != nil {
 				log.Panicln(bsv20.Id, err)
 			}
-			setValid(t, bsv20.Txid, bsv20.Vout, "")
+			if !dryRun {
+				setValid(t, bsv20.Txid, bsv20.Vout, "")
+			}
+			results.Reasons[bsv20.Vout] = ""
+
 		case "mint":
 			reason := ""
 			if ticker == nil {
@@ -300,7 +332,10 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 				reason = fmt.Sprintf("amt %d > limit %d", bsv20.Amt, ticker.Limit)
 			}
 			if reason != "" {
-				setInvalid(t, txid, bsv20.Vout, reason)
+				if !dryRun {
+					setInvalid(t, txid, bsv20.Vout, reason)
+				}
+				results.Reasons[bsv20.Vout] = reason
 				continue
 			}
 
@@ -319,7 +354,10 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			if err != nil {
 				log.Panic(err)
 			}
-			setValid(t, bsv20.Txid, bsv20.Vout, reason)
+			if !dryRun {
+				setValid(t, bsv20.Txid, bsv20.Vout, reason)
+			}
+			results.Reasons[bsv20.Vout] = reason
 
 		case "transfer":
 			reason := ""
@@ -328,21 +366,28 @@ func validateTxBsv20s(txid []byte) (updates int64) {
 			}
 			var balance uint64
 			if tbal, ok := tokensIn[bsv20.Ticker]; ok {
+				balance = tbal
 				if bsv20.Amt > balance {
 					reason = fmt.Sprintf("amt %d > bal %d", bsv20.Amt, balance)
-				} else {
-					balance = tbal
 				}
 			} else {
 				reason = "no inputs"
 			}
 			if reason != "" {
-				setInvalid(t, bsv20.Txid, bsv20.Vout, reason)
+				if !dryRun {
+					setInvalid(t, bsv20.Txid, bsv20.Vout, reason)
+				}
+				results.Reasons[bsv20.Vout] = reason
+				invalidTransfers[bsv20.Ticker] = struct{}{}
 				continue
 			}
 			balance -= bsv20.Amt
 			tokensIn[bsv20.Ticker] = balance
-			setValid(t, bsv20.Txid, bsv20.Vout, fmt.Sprintf("amt %d <= bal %d", bsv20.Amt, balance))
+			reason = fmt.Sprintf("amt %d <= bal %d", bsv20.Amt, balance)
+			if !dryRun {
+				setValid(t, bsv20.Txid, bsv20.Vout, reason)
+			}
+			results.Reasons[bsv20.Vout] = reason
 		}
 	}
 	rows.Close()

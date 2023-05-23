@@ -32,7 +32,7 @@ type IndexResult struct {
 	Bsv20s        []*Bsv20          `json:"bsv20s"`
 }
 
-func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err error) {
+func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexResult, err error) {
 	txid := tx.TxIDBytes()
 	result = &IndexResult{
 		Txid:   txid,
@@ -132,6 +132,15 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 		}
 		if parsed.Bsv20 != nil {
 			txo.Bsv20 = true
+			bsv20 := parsed.Bsv20
+			bsv20.Txid = txid
+			bsv20.Vout = uint32(vout)
+			bsv20.Height = height
+			bsv20.Idx = uint64(idx)
+			bsv20.Lock = parsed.Lock
+			bsv20.Map = parsed.Map
+			bsv20.B = parsed.B
+			result.Bsv20s = append(result.Bsv20s, bsv20)
 		}
 		result.Txos = append(result.Txos, txo)
 
@@ -156,45 +165,37 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64) (result *IndexResult, err er
 				result.Listings = append(result.Listings, parsed.Listing)
 			}
 		}
-		if parsed.Bsv20 != nil {
-			bsv20 := parsed.Bsv20
-			bsv20.Txid = txid
-			bsv20.Vout = uint32(vout)
-			bsv20.Height = height
-			bsv20.Idx = uint64(idx)
-			bsv20.Lock = parsed.Lock
-			bsv20.Map = parsed.Map
-			bsv20.B = parsed.B
-			result.Bsv20s = append(result.Bsv20s, bsv20)
-		}
+
 		// wg.Done()
 		// <-threadLimiter
 		// }(txo, txout, vout)
 	}
-	for _, txo := range result.Txos {
-		impliedBsv20 := false
-		if len(result.Bsv20s) == 0 && txo.Spends != nil {
-			impliedBsv20 = txo.Spends.Bsv20
-			txo.Bsv20 = txo.Spends.Bsv20
+	if !dryRun {
+		for _, txo := range result.Txos {
+			impliedBsv20 := false
+			if len(result.Bsv20s) == 0 && txo.Spends != nil {
+				impliedBsv20 = txo.Spends.Bsv20
+				txo.Bsv20 = txo.Spends.Bsv20
+			}
+			txo.Save()
+			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+			if impliedBsv20 {
+				saveImpliedBsv20Transfer(txo.Spends.Txid, txo.Spends.Vout, txo)
+			}
 		}
-		txo.Save()
-		Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
-		if impliedBsv20 {
-			saveImpliedBsv20Transfer(txo.Spends.Txid, txo.Spends.Vout, txo)
+		for _, inscription := range result.Inscriptions {
+			inscription.SaveInscription()
 		}
-	}
-	for _, inscription := range result.Inscriptions {
-		inscription.SaveInscription()
-	}
-	for _, parsed := range result.ParsedScripts {
-		parsed.Save()
-	}
-	for _, listing := range result.Listings {
-		listing.Save()
-		Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
-	}
-	for _, bsv20 := range result.Bsv20s {
-		bsv20.Save()
+		for _, parsed := range result.ParsedScripts {
+			parsed.Save()
+		}
+		for _, listing := range result.Listings {
+			listing.Save()
+			Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
+		}
+		for _, bsv20 := range result.Bsv20s {
+			bsv20.Save()
+		}
 	}
 	// wg.Wait()
 	return
