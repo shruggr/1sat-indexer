@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_lock ON bsv20_txos(lock, valid, spend);
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_spend ON bsv20_txos(spend);
-CREATE INDEX IF NOT EXISTS idx_bsv20_txos_tick_op ON bsv20_txos(tick, op, height);
+CREATE INDEX IF NOT EXISTS idx_bsv20_txos_tick_valid_op_height ON bsv20_txos(tick, valid, op, height);
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_to_validate ON bsv20_txos(height)
 WHERE valid IS NULL;

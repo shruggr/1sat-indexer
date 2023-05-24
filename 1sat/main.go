@@ -140,6 +140,12 @@ func subscribe() {
 					os.Exit(0)
 					return
 				}
+				if status.StatusCode == 200 && status.Block < lib.TRIGGER {
+					fmt.Printf("Crawler Reset!!!!")
+					fmt.Println("Unsubscribing and exiting...")
+					sub.Unsubscribe()
+					os.Exit(0)
+				}
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
@@ -211,6 +217,7 @@ func processQueue() {
 
 		case 200:
 			indexer.Wg.Wait()
+			rdb.Publish(context.Background(), "indexed", fmt.Sprintf("%d", msg.Height-1))
 			if msg.Height > 6 {
 				settledHeight = msg.Height - 6
 			} else {
@@ -245,5 +252,6 @@ func processSettled(settled chan uint32) {
 		}
 
 		lib.ValidateBsv20(height)
+		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
 }
