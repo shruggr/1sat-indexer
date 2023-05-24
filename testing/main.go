@@ -54,7 +54,7 @@ func main() {
 	// }
 	// result, err := lib.IndexTxn(tx, 0, 0, true)
 
-	result := lib.ValidateTicker(793251, "PEPE")
+	result := lib.ValidateTicker(793319, "😎")
 	if err != nil {
 		log.Panic(err)
 	}

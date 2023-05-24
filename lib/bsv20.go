@@ -97,18 +97,23 @@ func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
 }
 
 func (b *Bsv20) Save() {
+	b.Ticker = strings.ToUpper(b.Ticker)
 	b.Op = strings.ToLower(b.Op)
 	if b.Op == "deploy" {
 		b.Id = NewOutpoint(b.Txid, b.Vout)
-		_, err := db.Exec(`INSERT INTO bsv20(id, height, idx, tick, max, lim, dec, map, b, valid, reason)
-			VALUES($1, $2, $3, UPPER($4), $5, $6, $7, $8, $9, $10, $11)
-			ON CONFLICT(id) DO NOTHING`,
+		_, err := db.Exec(`INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec, map, b, valid, reason)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			ON CONFLICT(id) DO UPDATE SET
+				height=EXCLUDED.height,
+				idx=EXCLUDED.idx`,
+			b.Txid,
+			b.Vout,
 			b.Id,
 			b.Height,
 			b.Idx,
 			b.Ticker,
 			int64(b.Max),
-			b.Limit,
+			int64(b.Limit),
 			b.Decimals,
 			b.Map,
 			b.B,
@@ -287,7 +292,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				continue
 			}
 
-			row := t.QueryRow(`UPDATE bsv20 SET valid=TRUE WHERE id=$1
+			row := t.QueryRow(`UPDATE bsv20 SET valid=TRUE 
+				WHERE id=$1
 				RETURNING id, height, idx, tick, max, lim, supply`,
 				outpoint,
 			)
@@ -308,6 +314,13 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 			continue
 		}
 
+		// if ticker != nil {
+		// 	out, _ := json.MarshalIndent(ticker, "", "  ")
+		// 	fmt.Println("Ticker:", string(out))
+		// } else {
+		// 	fmt.Println("Ticker Missing")
+		// }
+
 		// if ticker == nil {
 		// _, err = t.Exec(`UPDATE bsv20_txos
 		// 	SET valid=FALSE, reason=$3
@@ -327,19 +340,20 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 			if ticker == nil || ticker.Height > bsv20.Height || (ticker.Height == bsv20.Height && ticker.Idx > bsv20.Idx) {
 				reason = fmt.Sprintf("invalid ticker %s as of %d %d", tick, bsv20.Height, bsv20.Idx)
 			} else if ticker.Supply >= ticker.Max {
-				reason = fmt.Sprintf("supply %d = max %d", ticker.Supply, ticker.Max)
+				reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
 			} else if ticker.Limit > 0 && bsv20.Amt > ticker.Limit {
 				reason = fmt.Sprintf("amt %d > limit %d", bsv20.Amt, ticker.Limit)
 			}
 			if reason != "" {
+				// fmt.Println("REASON:", reason)
 				setInvalid(t, bsv20.Txid, bsv20.Vout, reason)
 				r.Mint.Invalid++
 				continue
 			}
 
 			if ticker.Max-ticker.Supply < bsv20.Amt {
-				bsv20.Amt = bsv20.Max - ticker.Supply
 				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, bsv20.Amt, ticker.Max)
+				bsv20.Amt = ticker.Max - ticker.Supply
 			}
 			_, err := t.Exec(`UPDATE bsv20_txos
 				SET amt=$3, valid=TRUE, reason=$4
@@ -430,7 +444,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		log.Panic(err)
 	}
 	err = t.Commit()
-	fmt.Printf("BSV20 %s\n", tick)
+	fmt.Printf("BSV20 %s - dep: %d %d mint: %d %d xfer: %d %d\n", tick, r.Deploy.Valid, r.Deploy.Invalid, r.Mint.Valid, r.Mint.Invalid, r.Transfer.Valid, r.Transfer.Invalid)
 	if err != nil {
 		log.Panic(err)
 	}

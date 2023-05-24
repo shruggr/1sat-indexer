@@ -1,6 +1,8 @@
 ALTER TABLE txos ADD COLUMN IF NOT EXISTS bsv20 BOOL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS bsv20 (
     id BYTEA PRIMARY KEY,
+    txid BYTEA,
+    vout INT,
     height INT,
     idx BIGINT,
     tick TEXT,
