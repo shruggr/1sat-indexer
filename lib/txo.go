@@ -18,7 +18,7 @@ type Txo struct {
 	Idx      uint64     `json:"idx"`
 	Listing  bool       `json:"listing,omitempty"`
 	Bsv20    bool       `json:"bsv20,omitempty"`
-	Spends   *Txo       `json:"spends,omitempty"`
+	PrevOrd  *Txo       `json:"prevOrd,omitempty"`
 	Outpoint *Outpoint  `json:"outpoint,omitempty"`
 }
 

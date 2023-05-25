@@ -129,13 +129,15 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	InsListing, err = db.Prepare(`
-		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin, num, spend)
-		SELECT $1, $2, $3, $4, $5, $6, $7, i.id, t.spend
+		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin, num, spend, lock, bsv20)
+		SELECT $1, $2, $3, $4, $5, $6, $7, i.id, t.spend, t.lock, t.bsv20
 		FROM txos t
 		JOIN inscriptions i ON i.origin = t.origin
 		WHERE t.txid=$1 AND t.vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE
-			SET height=EXCLUDED.height, idx=EXCLUDED.idx, origin=EXCLUDED.origin`,
+			SET height=EXCLUDED.height, 
+				idx=EXCLUDED.idx, 
+				origin=EXCLUDED.origin`,
 	)
 	if err != nil {
 		log.Fatal(err)

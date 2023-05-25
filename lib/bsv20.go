@@ -29,6 +29,7 @@ type Bsv20 struct {
 	Map      Map          `json:"MAP,omitempty"`
 	B        *File        `json:"B,omitempty"`
 	Implied  bool         `json:"implied"`
+	Listing  bool         `json:"listing"`
 	Valid    sql.NullBool `json:"valid"`
 	Reason   string       `json:"reason"`
 }
@@ -43,6 +44,7 @@ func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
 	// fmt.Println("JSON:", string(p.Ord.Content))
 	err = json.Unmarshal(ord.Content, &data)
 	if err != nil {
+		fmt.Println("JSON PARSE ERROR:", err)
 		return
 	}
 	if protocol, ok := data["p"]; !ok || protocol != "bsv-20" {
@@ -125,8 +127,8 @@ func (b *Bsv20) Save() {
 		}
 	}
 
-	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend, valid, reason)
-		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $8, $9, spend, $10, $11
+	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend, valid, reason, listing)
+		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, lock, $8, spend, $9, $10, listing
 		FROM txos
 		WHERE txid=$1 AND vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE SET
@@ -141,7 +143,6 @@ func (b *Bsv20) Save() {
 		b.Ticker,
 		b.Op,
 		int64(b.Amt),
-		b.Lock,
 		b.Implied,
 		b.Valid,
 		b.Reason,

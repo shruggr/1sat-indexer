@@ -114,7 +114,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 			accSpendSats += spend.Satoshis
 			if txo.Satoshis == 1 && spend.Satoshis == 1 && accSpendSats == txo.AccSats {
 				txo.Origin = spend.Origin
-				txo.Spends = spend
+				txo.PrevOrd = spend
 			}
 		}
 
@@ -140,6 +140,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 			bsv20.Lock = parsed.Lock
 			bsv20.Map = parsed.Map
 			bsv20.B = parsed.B
+			bsv20.Listing = parsed.Listing != nil
 			result.Bsv20s = append(result.Bsv20s, bsv20)
 		}
 		result.Txos = append(result.Txos, txo)
@@ -173,14 +174,14 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 	if !dryRun {
 		for _, txo := range result.Txos {
 			impliedBsv20 := false
-			if len(result.Bsv20s) == 0 && txo.Spends != nil {
-				impliedBsv20 = txo.Spends.Bsv20
-				txo.Bsv20 = txo.Spends.Bsv20
+			if len(result.Bsv20s) == 0 && txo.PrevOrd != nil {
+				impliedBsv20 = txo.PrevOrd.Bsv20
+				txo.Bsv20 = txo.PrevOrd.Bsv20
 			}
 			txo.Save()
 			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
 			if impliedBsv20 {
-				saveImpliedBsv20Transfer(txo.Spends.Txid, txo.Spends.Vout, txo)
+				saveImpliedBsv20Transfer(txo.PrevOrd.Txid, txo.PrevOrd.Vout, txo)
 			}
 		}
 		for _, inscription := range result.Inscriptions {

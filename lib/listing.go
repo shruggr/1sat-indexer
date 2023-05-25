@@ -10,6 +10,8 @@ type OrdLockListing struct {
 	Origin    *Outpoint  `json:"origin"`
 	Ordinal   uint64     `json:"ordinal"`
 	Outpoint  *Outpoint  `json:"outpoint,omitempty"`
+	Lock      ByteString `json:"lock"`
+	Bsv20     bool       `json:"bsv20"`
 }
 
 func (l *OrdLockListing) Save() (err error) {
