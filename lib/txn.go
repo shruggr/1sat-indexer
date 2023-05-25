@@ -131,7 +131,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 			txo.Listing = true
 		}
 		if parsed.Bsv20 != nil {
-			txo.Bsv20 = true
+			txo.Bsv20 = parsed.Bsv20.Op != "deploy"
 			bsv20 := parsed.Bsv20
 			bsv20.Txid = txid
 			bsv20.Vout = uint32(vout)

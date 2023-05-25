@@ -1,4 +1,14 @@
 ALTER TABLE ordinal_lock_listings ADD COLUMN IF NOT EXISTS bsv20 BOOLEAN DEFAULT FALSE;
+UPDATE ordinal_lock_listings l
+SET bsv20 = TRUE 
+FROM bsv20_txos b
+WHERE b.txid=l.txid AND b.vout=l.vout;
+
+ALTER TABLE ordinal_lock_listings ADD COLUMN IF NOT EXISTS lock BYTEA;
+UPDATE ordinal_lock_listings l
+SET lock = t.lock
+FROM txos t
+WHERE t.txid=l.txid AND t.vout=l.vout;
 
 CREATE INDEX idx_ordinal_lock_listings_bsv20_price_unspent ON ordinal_lock_listings(bsv20, price)
 WHERE spend = decode('', 'hex');
@@ -12,13 +22,7 @@ CREATE INDEX idx_ordinal_lock_listings_bsv20_height_idx_unspent ON ordinal_lock_
 WHERE spend = decode('', 'hex');
 DROP INDEX IF EXISTS idx_ordinal_lock_listings_height_idx_unspent;
 
-UPDATE ordinal_lock_listings l
-SET bsv20 = TRUE 
-FROM bsv20_txos b
-WHERE b.txid=l.txid AND b.vout=l.vout;
-
 ALTER TABLE bsv20_txos ADD COLUMN IF NOT EXISTS listing BOOLEAN DEFAULT FALSE;
-
 UPDATE bsv20_txos b
 SET listing = TRUE 
 FROM ordinal_lock_listings l
