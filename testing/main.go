@@ -34,7 +34,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	txid, _ := hex.DecodeString("da58bb1591431d6f3e6608791db546b3313a3d02b2ab20e304eae2d1781e1aad")
+	txid, _ := hex.DecodeString("9a1dd41536caefdbfee6e610acc208023d8c6912539d977fb389742fda11ae46")
 	txData, err := lib.LoadTxData(txid)
 	if err != nil {
 		log.Panic(err)
@@ -56,7 +56,7 @@ func main() {
 	// }
 	// result, err := lib.IndexTxn(tx, 0, 0, true)
 
-	// result := lib.ValidateTicker(793319, "😎")
+	// result := lib.ValidateTicker(793390, "1")
 	if err != nil {
 		log.Panic(err)
 	}

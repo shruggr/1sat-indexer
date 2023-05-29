@@ -62,11 +62,18 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 
 		exists := spend.SaveSpend()
 		if !exists {
-			var tx *bt.Tx
-			tx, err = LoadTx(spend.Txid)
+			tx := bt.NewTx()
+			r, err := bit.GetRawTransactionRest(hex.EncodeToString(spend.Txid))
 			if err != nil {
 				log.Panicf("%x: %v\n", spend.Txid, err)
 			}
+			if _, err = tx.ReadFrom(r); err != nil {
+				log.Panicf("%x: %v\n", spend.Txid, err)
+			}
+			// tx, err = LoadTx(spend.Txid)
+			// if err != nil {
+			// 	log.Panicf("%x: %v\n", spend.Txid, err)
+			// }
 			for vout, txout := range tx.Outputs {
 				if vout > int(spend.Vout) {
 					break
@@ -82,12 +89,14 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 
 		accSats += spend.Satoshis
 		spend.AccSats = accSats
-		outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
+		if Rdb != nil {
+			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
+			msg := outpoint.String()
+			Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+			if spend.Listing {
+				Rdb.Publish(context.Background(), "unlist", msg)
+			}
 
-		msg := outpoint.String()
-		Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
-		if spend.Listing {
-			Rdb.Publish(context.Background(), "unlist", msg)
 		}
 		// 	wg.Done()
 		// 	<-threadLimiter
@@ -179,7 +188,9 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 				txo.Bsv20 = txo.PrevOrd.Bsv20
 			}
 			txo.Save()
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+			if Rdb != nil {
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+			}
 			if impliedBsv20 {
 				saveImpliedBsv20Transfer(txo.PrevOrd.Txid, txo.PrevOrd.Vout, txo)
 			}
@@ -192,7 +203,9 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 		}
 		for _, listing := range result.Listings {
 			listing.Save()
-			Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
+			if Rdb != nil {
+				Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
+			}
 		}
 		for _, bsv20 := range result.Bsv20s {
 			bsv20.Save()

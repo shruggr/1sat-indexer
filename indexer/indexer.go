@@ -15,6 +15,17 @@ var M sync.Mutex
 var Wg sync.WaitGroup
 var InQueue uint32
 
+type TxFee struct {
+	Txid []byte
+	Fees uint64
+}
+
+type BlockCtx struct {
+	Height uint32
+	TxFees []*TxFee
+	Wg     sync.WaitGroup
+}
+
 type TxnStatus struct {
 	ID       string
 	Tx       *bt.Tx
@@ -22,6 +33,7 @@ type TxnStatus struct {
 	Idx      uint64
 	Parents  map[string]*TxnStatus
 	Children map[string]*TxnStatus
+	Ctx      *BlockCtx
 }
 
 func ProcessTxns(THREADS uint) {
@@ -56,8 +68,8 @@ func processTxn(txn *TxnStatus) {
 		}
 		M.Unlock()
 		for _, orphan := range orphans {
-			Wg.Add(1)
 			InQueue++
+			Wg.Add(1)
 			TxnQueue <- orphan
 		}
 		InQueue--

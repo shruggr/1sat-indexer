@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
 	"github.com/libsv/go-bt/v2"
@@ -273,7 +274,9 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 				break
 			}
 			// fmt.Println(opKey, op.OpCode, string(op.Data))
-			p.Map[opKey] = string(op.Data)
+			if utf8.Valid(op.Data) {
+				p.Map[opKey] = string(op.Data)
+			}
 		}
 		if val, ok := p.Map["subTypeData"]; ok {
 			var subTypeData json.RawMessage
