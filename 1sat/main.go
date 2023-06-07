@@ -73,6 +73,7 @@ func init() {
 
 func main() {
 	var err error
+	fmt.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
 	junglebusClient, err = junglebus.New(
 		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
 	)
@@ -246,12 +247,12 @@ func processSettled(settled chan uint32) {
 	for {
 		height := <-settled
 		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
+		// err := lib.SetInscriptionIds(height)
+		// if err != nil {
+		// 	log.Panicln("Error processing inscription ids:", err)
+		// }
 
-		lib.ValidateBsv20(height)
-		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
+		// lib.ValidateBsv20(height)
+		// rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
 }

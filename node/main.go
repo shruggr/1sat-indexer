@@ -183,6 +183,11 @@ func processBlock(height uint32) (err error) {
 		if !has1Sat {
 			continue
 		}
+		_, err = lib.SetTxn.Exec(txn.ID, block.Hash, txn.Height, txn.Idx)
+		if err != nil {
+			panic(err)
+		}
+
 		indexer.M.Lock()
 		indexer.Txns[txn.ID] = txn
 		for _, input := range txn.Tx.Inputs {

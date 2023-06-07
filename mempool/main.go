@@ -70,6 +70,7 @@ func init() {
 
 func main() {
 	var err error
+	fmt.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
 	junglebusClient, err = junglebus.New(
 		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
 	)
@@ -124,6 +125,13 @@ func subscribe() {
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
+				if status.StatusCode == 999 {
+					log.Println(status.Message)
+					log.Println("Unsubscribing...")
+					sub.Unsubscribe()
+					os.Exit(0)
+					return
+				}
 			},
 			OnError: func(err error) {
 				log.Printf("[ERROR]: %v", err)
