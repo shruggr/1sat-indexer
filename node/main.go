@@ -111,42 +111,42 @@ func processBlock(height uint32) (err error) {
 	fmt.Println("Processing Block", height)
 	block, err := bit.GetBlockByHeight(int(height))
 	if err != nil {
-		panic(err)
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("Block %s\n", block.Hash)
 	r, err := bit.GetRawBlockRest(block.Hash)
 	if err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// var n int
 	// var n64 int64
 	if _, err = io.ReadFull(r, bits4); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("version %d %d\n", bits4, n)
 	if _, err = io.ReadFull(r, bits32); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("hash %x %d\n", bits32, n)
 	if _, err = io.ReadFull(r, bits32); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("root %x %d\n", bits32, n)
 	if _, err = io.ReadFull(r, bits4); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("time %d %d\n", bits4, n)
 	if _, err = io.ReadFull(r, bits4); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("bits %d %d\n", bits4, n)
 	if _, err = io.ReadFull(r, bits4); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("nonce %d %d\n", bits4, n)
 	var txCount bt.VarInt
 	if _, err = txCount.ReadFrom(r); err != nil {
-		return
+		log.Panicln(height, err)
 	}
 	// fmt.Printf("txcount %d %d\n", txCount, n64)
 	var idx int
@@ -166,7 +166,7 @@ func processBlock(height uint32) (err error) {
 		}
 
 		if _, err = txn.Tx.ReadFrom(r); err != nil {
-			return
+			log.Panicln(height, idx, err)
 		}
 
 		// fmt.Printf("Eval Txn %d\n", idx)
@@ -185,7 +185,7 @@ func processBlock(height uint32) (err error) {
 		}
 		_, err = lib.SetTxn.Exec(txn.ID, block.Hash, txn.Height, txn.Idx)
 		if err != nil {
-			panic(err)
+			log.Panicln(txn.ID, err)
 		}
 
 		indexer.M.Lock()

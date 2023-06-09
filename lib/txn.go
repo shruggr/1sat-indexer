@@ -63,10 +63,10 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 		exists := spend.SaveSpend()
 		if !exists {
 			tx := bt.NewTx()
-			if height > 0 {
+			if height == uint32(math.Pow(2, 31)-1) {
 				r, err := bit.GetRawTransactionRest(hex.EncodeToString(spend.Txid))
 				if err != nil {
-					log.Panicf("%x: %v\n", spend.Txid, err)
+					log.Panicf("%x: %d %v\n", spend.Txid, height, err)
 				}
 				if _, err = tx.ReadFrom(r); err != nil {
 					log.Panicf("%x: %v\n", spend.Txid, err)

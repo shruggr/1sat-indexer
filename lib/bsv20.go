@@ -107,15 +107,17 @@ func (b *Bsv20) Save() {
 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT(id) DO UPDATE SET
 				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
+				idx=EXCLUDED.idx,
+				max=EXCLUDED.max,
+				lim=EXCLUDED.lim`,
 			b.Txid,
 			b.Vout,
 			b.Id,
 			b.Height,
 			b.Idx,
 			b.Ticker,
-			int64(b.Max),
-			int64(b.Limit),
+			b.Max,
+			b.Limit,
 			b.Decimals,
 			b.Map,
 			b.B,
@@ -127,8 +129,8 @@ func (b *Bsv20) Save() {
 		}
 	}
 
-	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, lock, implied, spend, valid, reason, listing)
-		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, lock, $8, spend, $9, $10, listing
+	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, orig_amt, lock, implied, spend, valid, reason, listing)
+		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $7, lock, $8, spend, $9, $10, listing
 		FROM txos
 		WHERE txid=$1 AND vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE SET
@@ -137,6 +139,7 @@ func (b *Bsv20) Save() {
 			implied=EXCLUDED.implied,
 			lock=EXCLUDED.lock,
 			amt=EXCLUDED.amt,
+			orig_amt=EXCLUDED.orig_amt,
 			listing=EXCLUDED.listing`,
 		b.Txid,
 		b.Vout,
@@ -144,7 +147,7 @@ func (b *Bsv20) Save() {
 		b.Idx,
 		b.Ticker,
 		b.Op,
-		int64(b.Amt),
+		b.Amt,
 		b.Implied,
 		b.Valid,
 		b.Reason,
@@ -167,7 +170,7 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 	defer rows.Close()
 	if rows.Next() {
 		var ticker string
-		var amt int64
+		var amt uint64
 		err := rows.Scan(&ticker, &amt)
 		if err != nil {
 			log.Panic(err)
@@ -179,7 +182,7 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 			Idx:     txo.Idx,
 			Op:      "transfer",
 			Ticker:  ticker,
-			Amt:     uint64(amt),
+			Amt:     amt,
 			Lock:    txo.Lock,
 			Implied: true,
 		}
@@ -240,7 +243,7 @@ type TickerResults struct {
 	Transfer OpResult
 }
 
-var tokenSupply map[string]*Bsv20
+// var tokenSupply map[string]*Bsv20
 
 func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 	ticker := loadTicker(tick)
@@ -248,7 +251,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		Height: height,
 	}
 
-	tickRows, err := db.Query(`SELECT txid, vout, height, idx, op, amt
+	tickRows, err := db.Query(`SELECT txid, vout, height, idx, op, orig_amt
 		FROM bsv20_txos
 		WHERE tick=$1 AND valid IS NULL AND height <= $2 AND height > 0
 		ORDER BY op, height, idx`,
@@ -269,12 +272,10 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 
 	for tickRows.Next() {
 		bsv20 := &Bsv20{}
-		var amtInt int64
-		err = tickRows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &amtInt)
+		err = tickRows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &bsv20.Amt)
 		if err != nil {
 			log.Panic(err)
 		}
-		bsv20.Amt = uint64(amtInt)
 
 		reason := ""
 		if bsv20.Op == "deploy" {
@@ -353,7 +354,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				WHERE txid=$1 AND vout=$2`,
 				bsv20.Txid,
 				bsv20.Vout,
-				int64(bsv20.Amt),
+				bsv20.Amt,
 				reason,
 			)
 			if err != nil {
@@ -486,29 +487,29 @@ func setValid(t *sql.Tx, txid []byte, vout uint32, reason string) {
 	}
 }
 
-func setTickerInvalid(t *sql.Tx, tick string, reason string) {
-	_, err := t.Exec(`UPDATE bsv20
-		SET valid=FALSE, reason=$2
-		WHERE tick=$1 AND valid IS NULL`,
-		tick,
-		reason,
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-}
+// func setTickerInvalid(t *sql.Tx, tick string, reason string) {
+// 	_, err := t.Exec(`UPDATE bsv20
+// 		SET valid=FALSE, reason=$2
+// 		WHERE tick=$1 AND valid IS NULL`,
+// 		tick,
+// 		reason,
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// }
 
-func setTxosInvalid(t *sql.Tx, tick string, reason string) {
-	_, err := t.Exec(`UPDATE bsv20_txos
-		SET valid=FALSE, reason=$3
-		WHERE tick=$1 AND valid IS NULL`,
-		tick,
-		reason,
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-}
+// func setTxosInvalid(t *sql.Tx, tick string, reason string) {
+// 	_, err := t.Exec(`UPDATE bsv20_txos
+// 		SET valid=FALSE, reason=$3
+// 		WHERE tick=$1 AND valid IS NULL`,
+// 		tick,
+// 		reason,
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// }
 
 func setTokenInvalid(t *sql.Tx, id []byte, reason string) bool {
 	_, err := t.Exec(`UPDATE bsv20
