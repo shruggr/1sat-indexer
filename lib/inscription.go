@@ -104,7 +104,7 @@ type Sigma struct {
 }
 
 type ParsedScript struct {
-	Id      uint64          `json:"id"`
+	Num     uint64          `json:"num"`
 	Txid    ByteString      `json:"txid"`
 	Vout    uint32          `json:"vout"`
 	Ord     *File           `json:"file"`
@@ -489,13 +489,13 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 }
 
 func SetInscriptionIds(height uint32) (err error) {
-	rows, err := GetMaxInscriptionId.Query()
+	rows, err := GetMaxInscriptionNum.Query()
 	if err != nil {
 		log.Panic(err)
 		return
 	}
 	defer rows.Close()
-	var id uint64
+	var num uint64
 	if rows.Next() {
 		var dbId sql.NullInt64
 		err = rows.Scan(&dbId)
@@ -504,7 +504,7 @@ func SetInscriptionIds(height uint32) (err error) {
 			return
 		}
 		if dbId.Valid {
-			id = uint64(dbId.Int64 + 1)
+			num = uint64(dbId.Int64 + 1)
 		}
 	} else {
 		return
@@ -524,13 +524,13 @@ func SetInscriptionIds(height uint32) (err error) {
 			log.Panic(err)
 			return
 		}
-		fmt.Printf("Inscription ID %d %x %d\n", id, txid, vout)
-		_, err = SetInscriptionId.Exec(txid, vout, id)
+		fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
+		_, err = SetInscriptionId.Exec(txid, vout, num)
 		if err != nil {
 			log.Panic(err)
 			return
 		}
-		id++
+		num++
 	}
 	return
 }

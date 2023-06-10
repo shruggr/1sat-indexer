@@ -21,7 +21,7 @@ import (
 
 const INDEXER = "node"
 
-var THREADS uint64 = 8
+var THREADS uint64 = 32
 
 var db *sql.DB
 var bit *bitcoin.Bitcoind

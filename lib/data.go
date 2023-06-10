@@ -31,7 +31,7 @@ var JBClient *junglebus.Client
 var bit *bitcoin.Bitcoind
 
 var GetInput *sql.Stmt
-var GetMaxInscriptionId *sql.Stmt
+var GetMaxInscriptionNum *sql.Stmt
 var GetUnnumbered *sql.Stmt
 var InsTxo *sql.Stmt
 var InsSpend *sql.Stmt
@@ -73,7 +73,7 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	GetMaxInscriptionId, err = db.Prepare(`SELECT MAX(id) FROM inscriptions`)
+	GetMaxInscriptionNum, err = db.Prepare(`SELECT MAX(num) FROM inscriptions`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	GetUnnumbered, err = db.Prepare(`
 		SELECT txid, vout 
 		FROM inscriptions
-		WHERE id = -1 AND height <= $1 AND height > 0
+		WHERE num = -1 AND height <= $1 AND height > 0
 		ORDER BY height, idx, vout`,
 	)
 	if err != nil {
@@ -138,7 +138,7 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 
 	InsListing, err = db.Prepare(`
 		INSERT INTO ordinal_lock_listings(txid, vout, height, idx, price, payout, origin, num, spend, lock, bsv20)
-		SELECT $1, $2, $3, $4, $5, $6, $7, i.id, t.spend, t.lock, t.bsv20
+		SELECT $1, $2, $3, $4, $5, $6, $7, i.num, t.spend, t.lock, t.bsv20
 		FROM txos t
 		JOIN inscriptions i ON i.origin = t.origin
 		WHERE t.txid=$1 AND t.vout=$2
@@ -152,7 +152,7 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	}
 
 	SetInscriptionId, err = db.Prepare(`UPDATE inscriptions
-		SET id=$3
+		SET num=$3
 		WHERE txid=$1 AND vout=$2
 	`)
 	if err != nil {
