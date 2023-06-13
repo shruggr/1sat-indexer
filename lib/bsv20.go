@@ -116,7 +116,7 @@ func (b *Bsv20) Save() {
 			b.Height,
 			b.Idx,
 			b.Ticker,
-			b.Max,
+			strconv.FormatUint(b.Max, 10),
 			b.Limit,
 			b.Decimals,
 			b.Map,
@@ -302,19 +302,12 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				outpoint,
 			)
 			ticker = &Bsv20{}
-			var maxInt int64
-			var supplyInt int64
-			var limitInt int64
-			err = row.Scan(&ticker.Id, &ticker.Height, &ticker.Idx, &ticker.Ticker, &maxInt, &limitInt, &supplyInt)
+			err = row.Scan(&ticker.Id, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply)
 			if err != nil {
 				log.Panicln(outpoint, err)
 			}
-			ticker.Max = uint64(maxInt)
-			ticker.Supply = uint64(supplyInt)
-			ticker.Limit = uint64(limitInt)
 			setValid(t, bsv20.Txid, bsv20.Vout, "")
 			r.Deploy.Valid++
-			// ticker = loadTicker(tick)
 			continue
 		}
 
