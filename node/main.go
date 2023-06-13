@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/bitcoinsv/bsvd/wire"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
@@ -93,7 +93,7 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("CurrentBlock", info.Blocks)
-		for height < uint32(info.Blocks-6) {
+		for height < uint32(info.Blocks) {
 			if err := processBlock(height); err != nil {
 				panic(err)
 			}
@@ -103,9 +103,6 @@ func main() {
 		time.Sleep(30 * time.Second)
 	}
 }
-
-var bits4 = make([]byte, 4)
-var bits32 = make([]byte, 32)
 
 func processBlock(height uint32) (err error) {
 	fmt.Println("Processing Block", height)
@@ -118,37 +115,22 @@ func processBlock(height uint32) (err error) {
 	if err != nil {
 		log.Panicln(height, err)
 	}
-	// var n int
-	// var n64 int64
-	if _, err = io.ReadFull(r, bits4); err != nil {
-		log.Panicln(height, err)
+	protocolVersion := wire.ProtocolVersion
+	wireBlockHeader := wire.BlockHeader{}
+	err = wireBlockHeader.Bsvdecode(r, protocolVersion, wire.BaseEncoding)
+	if err != nil {
+		err = fmt.Errorf("ERROR: while opening block reader: %w", err)
+		return
 	}
-	// fmt.Printf("version %d %d\n", bits4, n)
-	if _, err = io.ReadFull(r, bits32); err != nil {
-		log.Panicln(height, err)
+
+	var txCount uint64
+	txCount, err = wire.ReadVarInt(r, protocolVersion)
+	if err != nil {
+		err = fmt.Errorf("ERROR: while reading transaction count: %w", err)
+		return
 	}
-	// fmt.Printf("hash %x %d\n", bits32, n)
-	if _, err = io.ReadFull(r, bits32); err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("root %x %d\n", bits32, n)
-	if _, err = io.ReadFull(r, bits4); err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("time %d %d\n", bits4, n)
-	if _, err = io.ReadFull(r, bits4); err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("bits %d %d\n", bits4, n)
-	if _, err = io.ReadFull(r, bits4); err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("nonce %d %d\n", bits4, n)
-	var txCount bt.VarInt
-	if _, err = txCount.ReadFrom(r); err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("txcount %d %d\n", txCount, n64)
+
+	fmt.Printf("txcount %d\n", txCount)
 	var idx int
 	blockCtx := &indexer.BlockCtx{
 		Height: height,
@@ -215,19 +197,12 @@ func processBlock(height uint32) (err error) {
 
 func processCompletions() {
 	for ctx := range settle {
-		// ctx.Wg.Wait()
-		// var accFees uint64
-		// for idx, txFee := range ctx.TxFees {
-		// 	if err := lib.SaveTxn(txFee.Txid, height, uint64(idx), txFee.Fees, accFees); err != nil {
-		// 		panic(err)
-		// 	}
-		// 	accFees += txFee.Fees
-		// 	indexer.Inserts++
-		// }
+		height := ctx.Height - 6
 		if _, err := db.Exec(`INSERT INTO progress(indexer, height)
 				VALUES($1, $2)
 				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2`,
+					SET height=$2
+					WHERE progress.height < $2`,
 			INDEXER,
 			height,
 		); err != nil {
