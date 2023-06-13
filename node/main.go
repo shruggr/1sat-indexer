@@ -93,7 +93,7 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("CurrentBlock", info.Blocks)
-		for height < uint32(info.Blocks-6) {
+		for height < uint32(info.Blocks) {
 			if err := processBlock(height); err != nil {
 				panic(err)
 			}
@@ -103,9 +103,6 @@ func main() {
 		time.Sleep(30 * time.Second)
 	}
 }
-
-// var bits4 = make([]byte, 4)
-// var bits32 = make([]byte, 32)
 
 func processBlock(height uint32) (err error) {
 	fmt.Println("Processing Block", height)

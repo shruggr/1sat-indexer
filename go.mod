@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/GorillaPool/go-junglebus v0.2.0
 	github.com/bitcoinschema/go-bitcoin v0.3.20
+	github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/joho/godotenv v1.5.1
@@ -17,7 +18,6 @@ require (
 require (
 	bitbucket.org/simon_ordish/cryptolib v1.0.48 // indirect
 	github.com/Microsoft/go-winio v0.6.0 // indirect
-	github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173 // indirect
 	github.com/bitcoinsv/bsvlog v0.0.0-20181216181007-cb81b076bf2e // indirect
 	github.com/bitcoinsv/bsvutil v0.0.0-20181216182056-1d77cf353ea9 // indirect
 	github.com/centrifugal/centrifuge-go v0.9.4 // indirect
