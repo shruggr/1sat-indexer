@@ -93,7 +93,7 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("CurrentBlock", info.Blocks)
-		for height < uint32(info.Blocks) {
+		for height <= uint32(info.Blocks) {
 			if err := processBlock(height); err != nil {
 				panic(err)
 			}

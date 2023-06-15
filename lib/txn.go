@@ -178,10 +178,6 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 				result.Listings = append(result.Listings, parsed.Listing)
 			}
 		}
-
-		// wg.Done()
-		// <-threadLimiter
-		// }(txo, txout, vout)
 	}
 	if !dryRun {
 		for _, txo := range result.Txos {

@@ -452,17 +452,10 @@ func loadTicker(tick string) (ticker *Bsv20) {
 	defer rows.Close()
 	if rows.Next() {
 		ticker = &Bsv20{}
-		var maxInt int64
-		var supplyInt int64
-		var limitInt int64
-		err = rows.Scan(&ticker.Id, &ticker.Height, &ticker.Idx, &ticker.Ticker, &maxInt, &limitInt, &supplyInt)
+		err = rows.Scan(&ticker.Id, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply)
 		if err != nil {
 			log.Panicln(tick, err)
 		}
-
-		ticker.Max = uint64(maxInt)
-		ticker.Supply = uint64(supplyInt)
-		ticker.Limit = uint64(limitInt)
 	}
 	return
 }
