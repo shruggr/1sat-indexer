@@ -55,32 +55,6 @@ func init() {
 	OrdLockSuffix, _ = hex.DecodeString("615179547a75537a537a537a0079537a75527a527a7575615579008763567901c161517957795779210ac407f0e4bd44bfc207355a778b046225a7068fc59ee7eda43ad905aadbffc800206c266b30e6a1319c66dc401e5bd6b432ba49688eecd118297041da8074ce081059795679615679aa0079610079517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01007e81517a75615779567956795679567961537956795479577995939521414136d08c5ed2bf3ba048afe6dcaebafeffffffffffffffffffffffffffffff00517951796151795179970079009f63007952799367007968517a75517a75517a7561527a75517a517951795296a0630079527994527a75517a6853798277527982775379012080517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01205279947f7754537993527993013051797e527e54797e58797e527e53797e52797e57797e0079517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a756100795779ac517a75517a75517a75517a75517a75517a75517a75517a75517a7561517a75517a756169587951797e58797eaa577961007982775179517958947f7551790128947f77517a75517a75618777777777777777777767557951876351795779a9876957795779ac777777777777777767006868")
 }
 
-// type Inscription struct {
-// 	Content []byte
-// 	Type    string
-// }
-
-type File struct {
-	Hash     ByteString `json:"hash"`
-	Size     uint32     `json:"size"`
-	Type     string     `json:"type"`
-	Content  []byte     `json:"-"`
-	Encoding string     `json:"encoding,omitempty"`
-	Name     string     `json:"name,omitempty"`
-}
-
-func (f File) Value() (driver.Value, error) {
-	return json.Marshal(f)
-}
-
-func (f *File) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed")
-	}
-	return json.Unmarshal(b, &f)
-}
-
 type Sigmas []*Sigma
 
 func (s Sigmas) Value() (driver.Value, error) {
@@ -104,20 +78,20 @@ type Sigma struct {
 }
 
 type ParsedScript struct {
-	Num     uint64          `json:"num"`
-	Txid    ByteString      `json:"txid"`
-	Vout    uint32          `json:"vout"`
-	Ord     *File           `json:"file"`
-	Origin  *Outpoint       `json:"origin"`
-	Ordinal uint32          `json:"ordinal"`
-	Height  uint32          `json:"height"`
-	Idx     uint64          `json:"idx"`
-	Lock    ByteString      `json:"lock"`
-	Map     Map             `json:"MAP,omitempty"`
-	B       *File           `json:"B,omitempty"`
-	Listing *OrdLockListing `json:"listings,omitempty"`
-	Sigmas  Sigmas          `json:"sigma,omitempty"`
-	Bsv20   *Bsv20          `json:"bsv20,omitempty"`
+	Num         uint64          `json:"num"`
+	Txid        ByteString      `json:"txid"`
+	Vout        uint32          `json:"vout"`
+	Inscription *File           `json:"inscription"`
+	Origin      *Outpoint       `json:"origin"`
+	Ordinal     uint32          `json:"ordinal"`
+	Height      uint32          `json:"height"`
+	Idx         uint64          `json:"idx"`
+	Lock        ByteString      `json:"lock"`
+	Map         Map             `json:"MAP,omitempty"`
+	B           *File           `json:"B,omitempty"`
+	Listing     *OrdLockListing `json:"listings,omitempty"`
+	Sigmas      Sigmas          `json:"sigma,omitempty"`
+	Bsv20       *Bsv20          `json:"bsv20,omitempty"`
 }
 
 func (p *ParsedScript) SaveInscription() (err error) {
@@ -126,35 +100,35 @@ func (p *ParsedScript) SaveInscription() (err error) {
 		p.Vout,
 		p.Height,
 		p.Idx,
-		p.Ord.Hash,
-		p.Ord.Size,
-		p.Ord.Type,
+		p.Inscription.Hash,
+		p.Inscription.Size,
+		p.Inscription.Type,
 		p.Map,
 		p.Origin,
 		p.Lock,
 		p.Sigmas,
 	)
 	if err != nil {
-		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
 	}
 	return
 }
 
 func (p *ParsedScript) Save() (err error) {
-	if p.Ord != nil || p.Map != nil || p.B != nil {
+	if p.Inscription != nil || p.Map != nil || p.B != nil {
 		_, err = InsMetadata.Exec(
 			p.Txid,
 			p.Vout,
 			p.Height,
 			p.Idx,
-			p.Ord,
+			p.Inscription,
 			p.Map,
 			p.B,
 			p.Origin,
 			p.Sigmas,
 		)
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
 			log.Panic(err)
 		}
 	}
@@ -417,7 +391,7 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 				// lockParts = lockParts[:len(lockParts)-2]
 				// lockScript = lockScript[:len(lockScript)-2]
 			}
-			p.Ord = &File{}
+			p.Inscription = &File{}
 		ordLoop:
 			for {
 				op, err = ReadOp(script, &i)
@@ -430,37 +404,27 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 					if err != nil {
 						break ordLoop
 					}
-					p.Ord.Content = op.Data
+					p.Inscription.Content = op.Data
 				case bscript.Op1:
 					op, err = ReadOp(script, &i)
 					if err != nil {
 						break ordLoop
 					}
-					p.Ord.Type = string(op.Data)
+					p.Inscription.Type = string(op.Data)
 				case bscript.OpENDIF:
 					break ordLoop
 				}
 			}
-			hash := sha256.Sum256(p.Ord.Content)
-			p.Ord.Size = uint32(len(p.Ord.Content))
-			p.Ord.Hash = hash[:]
+			hash := sha256.Sum256(p.Inscription.Content)
+			p.Inscription.Size = uint32(len(p.Inscription.Content))
+			p.Inscription.Hash = hash[:]
 
-			p.Bsv20, _ = parseBsv20(p.Ord, height)
+			p.Bsv20, _ = parseBsv20(p.Inscription, height)
 		}
 	}
 
 	var lockScript bscript.Script
 	// fmt.Println("endLock", endLock)
-	if endLock > 0 {
-		lockScript = script[:endLock]
-	} else {
-		lockScript = script
-	}
-	// asm, err := lockScript.ToASM()
-	// if err != nil {
-	// 	fmt.Println("Error converting to asm", err)
-	// }
-	// fmt.Printf("lockScript: %s\n", asm)
 
 	ordLockPrefixIndex := bytes.Index(script, OrdLockPrefix)
 	ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
@@ -480,6 +444,8 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 				}
 			}
 		}
+	} else if endLock > 0 {
+		lockScript = script[:endLock]
 	}
 
 	hash := sha256.Sum256(lockScript)

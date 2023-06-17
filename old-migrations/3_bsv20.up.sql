@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     orig_amt NUMERIC NOT NULL,
     amt NUMERIC NOT NULL,
     lock BYTEA,
-    spend BYTEA,
+    spend BYTEA DEFAULT ''::bytea,
     valid BOOL,
     implied BOOL DEFAULT FALSE,
     listing BOOLEAN DEFAULT FALSE,

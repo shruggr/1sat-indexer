@@ -157,7 +157,40 @@ func (b *Bsv20) Save() {
 	}
 }
 
-func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
+// func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
+// 	rows, err := db.Query(`SELECT tick, amt
+// 		FROM bsv20_txos
+// 		WHERE txid=$1 AND vout=$2`,
+// 		txid,
+// 		vout,
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// 	defer rows.Close()
+// 	if rows.Next() {
+// 		var ticker string
+// 		var amt uint64
+// 		err := rows.Scan(&ticker, &amt)
+// 		if err != nil {
+// 			log.Panic(err)
+// 		}
+// 		bsv20 := &Bsv20{
+// 			Txid:    txo.Txid,
+// 			Vout:    txo.Vout,
+// 			Height:  txo.Height,
+// 			Idx:     txo.Idx,
+// 			Op:      "transfer",
+// 			Ticker:  ticker,
+// 			Amt:     amt,
+// 			Lock:    txo.Lock,
+// 			Implied: true,
+// 		}
+// 		bsv20.Save()
+// 	}
+// }
+
+func loadImpliedBsv20(txid []byte, vout uint32, txo *Txo) (bsv20 *Bsv20) {
 	rows, err := db.Query(`SELECT tick, amt
 		FROM bsv20_txos
 		WHERE txid=$1 AND vout=$2`,
@@ -169,25 +202,18 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		var ticker string
-		var amt uint64
-		err := rows.Scan(&ticker, &amt)
+		bsv20 = &Bsv20{
+			Txid:    txo.Txid,
+			Vout:    txo.Vout,
+			Op:      "transfer",
+			Implied: true,
+		}
+		err := rows.Scan(&bsv20.Ticker, &bsv20.Amt)
 		if err != nil {
 			log.Panic(err)
 		}
-		bsv20 := &Bsv20{
-			Txid:    txo.Txid,
-			Vout:    txo.Vout,
-			Height:  txo.Height,
-			Idx:     txo.Idx,
-			Op:      "transfer",
-			Ticker:  ticker,
-			Amt:     amt,
-			Lock:    txo.Lock,
-			Implied: true,
-		}
-		bsv20.Save()
 	}
+	return
 }
 
 func ValidateBsv20(height uint32) {
