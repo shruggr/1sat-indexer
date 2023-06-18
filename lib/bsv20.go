@@ -34,15 +34,10 @@ type Bsv20 struct {
 	Reason   string       `json:"reason"`
 }
 
-func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
-	mime := strings.ToLower(ord.Type)
-	if !strings.HasPrefix(mime, "application/bsv-20") &&
-		!(height > 0 && height < 793000 && strings.HasPrefix(mime, "text/plain")) {
-		return nil, nil
-	}
+func parseBsv20(content []byte) (bsv20 *Bsv20, err error) {
 	data := map[string]string{}
 	// fmt.Println("JSON:", string(p.Ord.Content))
-	err = json.Unmarshal(ord.Content, &data)
+	err = json.Unmarshal(content, &data)
 	if err != nil {
 		fmt.Println("JSON PARSE ERROR:", err)
 		return
@@ -51,111 +46,96 @@ func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
 		return nil, nil
 	}
 	bsv20 = &Bsv20{
-		Protocol: data["p"],
-		Op:       data["op"],
-		Ticker:   data["tick"],
+		Decimals: 18,
 	}
-	if amt, ok := data["amt"]; ok {
-		bsv20.Amt, err = strconv.ParseUint(amt, 10, 64)
+	for k, v := range data {
+		switch k {
+		case "p":
+			bsv20.Protocol = v
+		case "op":
+			bsv20.Op = strings.ToLower(v)
+		case "tick":
+			bsv20.Ticker = strings.ToUpper(v)
+		case "amt":
+			bsv20.Amt, err = strconv.ParseUint(data["amt"], 10, 64)
+		case "max":
+			bsv20.Max, err = strconv.ParseUint(data["max"], 10, 64)
+		case "lim":
+			bsv20.Limit, err = strconv.ParseUint(data["lim"], 10, 64)
+		case "dec":
+			var val uint64
+			val, err = strconv.ParseUint(data["dec"], 10, 8)
+			if val > 18 {
+				err = fmt.Errorf("dec > 18")
+			}
+			bsv20.Decimals = uint8(val)
+		}
 		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "amt parse"
-			return nil, nil
+			return nil, err
 		}
 	}
-	if max, ok := data["max"]; ok {
-		bsv20.Max, err = strconv.ParseUint(max, 10, 64)
-		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "max parse"
-			return nil, nil
-		}
-	}
-	if limit, ok := data["lim"]; ok {
-		bsv20.Limit, err = strconv.ParseUint(limit, 10, 64)
-		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "lim parse"
-			return nil, nil
-		}
-	}
-	if dec, ok := data["dec"]; ok {
-		var val uint64
-		val, err = strconv.ParseUint(dec, 10, 8)
-		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "dec parse"
-			return nil, nil
-		} else if val > 18 {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = fmt.Sprintf("dec %s > 18", dec)
-			return nil, nil
-		}
-		bsv20.Decimals = uint8(val)
-	} else {
-		bsv20.Decimals = 18
-	}
+
 	return bsv20, nil
 }
 
-func (b *Bsv20) Save() {
-	b.Ticker = strings.ToUpper(b.Ticker)
-	b.Op = strings.ToLower(b.Op)
-	if b.Op == "deploy" {
-		b.Id = NewOutpoint(b.Txid, b.Vout)
-		_, err := db.Exec(`INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec, map, b, valid, reason)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-			ON CONFLICT(id) DO UPDATE SET
-				height=EXCLUDED.height,
-				idx=EXCLUDED.idx,
-				max=EXCLUDED.max,
-				lim=EXCLUDED.lim`,
-			b.Txid,
-			b.Vout,
-			b.Id,
-			b.Height,
-			b.Idx,
-			b.Ticker,
-			strconv.FormatUint(b.Max, 10),
-			b.Limit,
-			b.Decimals,
-			b.Map,
-			b.B,
-			b.Valid,
-			b.Reason,
-		)
-		if err != nil {
-			log.Panic(err)
-		}
-	}
+// func (b *Bsv20) Save() {
+// 	b.Ticker = strings.ToUpper(b.Ticker)
+// 	b.Op = strings.ToLower(b.Op)
+// 	if b.Op == "deploy" {
+// 		b.Id = NewOutpoint(b.Txid, b.Vout)
+// 		_, err := db.Exec(`INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec, map, b, valid, reason)
+// 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+// 			ON CONFLICT(id) DO UPDATE SET
+// 				height=EXCLUDED.height,
+// 				idx=EXCLUDED.idx,
+// 				max=EXCLUDED.max,
+// 				lim=EXCLUDED.lim`,
+// 			b.Txid,
+// 			b.Vout,
+// 			b.Id,
+// 			b.Height,
+// 			b.Idx,
+// 			b.Ticker,
+// 			strconv.FormatUint(b.Max, 10),
+// 			b.Limit,
+// 			b.Decimals,
+// 			b.Map,
+// 			b.B,
+// 			b.Valid,
+// 			b.Reason,
+// 		)
+// 		if err != nil {
+// 			log.Panic(err)
+// 		}
+// 	}
 
-	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, orig_amt, lock, implied, spend, valid, reason, listing)
-		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $7, lock, $8, spend, $9, $10, listing
-		FROM txos
-		WHERE txid=$1 AND vout=$2
-		ON CONFLICT(txid, vout) DO UPDATE SET
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx,
-			implied=EXCLUDED.implied,
-			lock=EXCLUDED.lock,
-			amt=EXCLUDED.amt,
-			orig_amt=EXCLUDED.orig_amt,
-			listing=EXCLUDED.listing`,
-		b.Txid,
-		b.Vout,
-		b.Height,
-		b.Idx,
-		b.Ticker,
-		b.Op,
-		b.Amt,
-		b.Implied,
-		b.Valid,
-		b.Reason,
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-}
+// 	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, orig_amt, lock, implied, spend, valid, reason, listing)
+// 		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $7, lock, $8, spend, $9, $10, listing
+// 		FROM txos
+// 		WHERE txid=$1 AND vout=$2
+// 		ON CONFLICT(txid, vout) DO UPDATE SET
+// 			height=EXCLUDED.height,
+// 			idx=EXCLUDED.idx,
+// 			implied=EXCLUDED.implied,
+// 			lock=EXCLUDED.lock,
+// 			amt=EXCLUDED.amt,
+// 			orig_amt=EXCLUDED.orig_amt,
+// 			listing=EXCLUDED.listing`,
+// 		b.Txid,
+// 		b.Vout,
+// 		b.Height,
+// 		b.Idx,
+// 		b.Ticker,
+// 		b.Op,
+// 		b.Amt,
+// 		b.Implied,
+// 		b.Valid,
+// 		b.Reason,
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// }
 
 // func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 // 	rows, err := db.Query(`SELECT tick, amt
@@ -190,31 +170,31 @@ func (b *Bsv20) Save() {
 // 	}
 // }
 
-func loadImpliedBsv20(txid []byte, vout uint32, txo *Txo) (bsv20 *Bsv20) {
-	rows, err := db.Query(`SELECT tick, amt
-		FROM bsv20_txos
-		WHERE txid=$1 AND vout=$2`,
-		txid,
-		vout,
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer rows.Close()
-	if rows.Next() {
-		bsv20 = &Bsv20{
-			Txid:    txo.Txid,
-			Vout:    txo.Vout,
-			Op:      "transfer",
-			Implied: true,
-		}
-		err := rows.Scan(&bsv20.Ticker, &bsv20.Amt)
-		if err != nil {
-			log.Panic(err)
-		}
-	}
-	return
-}
+// func loadImpliedBsv20(txid []byte, vout uint32, txo *Txo) (bsv20 *Bsv20) {
+// 	rows, err := db.Query(`SELECT tick, amt
+// 		FROM bsv20_txos
+// 		WHERE txid=$1 AND vout=$2`,
+// 		txid,
+// 		vout,
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// 	defer rows.Close()
+// 	if rows.Next() {
+// 		bsv20 = &Bsv20{
+// 			Txid:    txo.Txid,
+// 			Vout:    txo.Vout,
+// 			Op:      "transfer",
+// 			Implied: true,
+// 		}
+// 		err := rows.Scan(&bsv20.Ticker, &bsv20.Amt)
+// 		if err != nil {
+// 			log.Panic(err)
+// 		}
+// 	}
+// 	return
+// }
 
 func ValidateBsv20(height uint32) {
 	rows, err := db.Query(`SELECT DISTINCT tick

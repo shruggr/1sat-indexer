@@ -1,10 +1,9 @@
 package lib
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
+	"log"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -21,16 +20,17 @@ type IndexResult struct {
 	Txid ByteString `json:"txid"`
 	// Height        uint32            `json:"height"`
 	// Idx           uint64            `json:"idx"`
-	Txos          []*Txo            `json:"txos"`
-	Files         []*File           `json:"files"`
-	ParsedScripts []*ParsedScript   `json:"parsed"`
-	Inscriptions  []*ParsedScript   `json:"inscriptions"`
-	Spends        []*Txo            `json:"spends"`
-	Listings      []*OrdLockListing `json:"listings"`
-	Bsv20s        []*Bsv20          `json:"bsv20s"`
+	Txos []*Txo `json:"txos"`
+	// Files         []*File           `json:"files"`
+	// ParsedScripts []*ParsedScript `json:"parsed"`
+	// Inscriptions  []*Inscription    `json:"inscriptions"`
+	Spends []*Txo   `json:"spends"`
+	Events []*Event `json:"events"`
+	// Listings      []*OrdLockListing `json:"listings"`
+	Bsv20s []*Bsv20 `json:"bsv20s"`
 }
 
-func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (fees uint64, err error) {
+func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (fees uint64, err error) {
 	result := &IndexResult{}
 	spendsAcc := map[uint64]*Txo{}
 	txid := tx.TxIDBytes()
@@ -43,18 +43,33 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (fees uint6
 				Spend: txid,
 				InAcc: satsIn,
 				Vin:   uint32(vin),
-				Flags: map[string]bool{},
 			}
-			spend.SaveSpend()
+			row := db.QueryRow(`UPDATE txos
+				SET spend=$3, inacc=$4, vin=$5
+				WHERE txid=$1 AND vout=$2
+				RETURNING lock, satoshis, origin, bsv20, listing`,
+				spend.Txid,
+				spend.Vout,
+				spend.Spend,
+				spend.InAcc,
+				spend.Vin,
+			)
+
+			err := row.Scan(&spend.Lock, &spend.Satoshis, &spend.Origin, &spend.Bsv20, &spend.Listing)
+			if err != nil {
+				log.Panic(err)
+			}
 			spendsAcc[satsIn] = spend
 
 			satsIn += spend.Satoshis
-			// spend.OutAcc = satsIn
-
+			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
+			if spend.Listing {
+				result.Events = append(result.Events, &Event{
+					Channel: "unlist",
+					Data:    outpoint[:],
+				})
+			}
 			result.Spends = append(result.Spends, spend)
-			// outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-			// msg := outpoint.String()
-			// Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
 		}
 	}
 
@@ -65,19 +80,17 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (fees uint6
 		}
 
 		scripthash := sha256.Sum256(*txout.LockingScript)
+		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
 		txo := &Txo{
 			Txid:       txid,
 			Vout:       uint32(vout),
 			Satoshis:   txout.Satoshis,
 			OutAcc:     satsOut,
-			Flags:      map[string]bool{},
 			Scripthash: scripthash[:],
+			Outpoint:   &outpoint,
 		}
 
-		outpoint := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
-		txo.Outpoint = &outpoint
-
-		if txout.Satoshis == 1 {
+		if txout.Satoshis == 1 && (height == 0 || height >= uint32(783968)) {
 			for _, spend := range result.Spends {
 				if spend.Satoshis == 1 && spend.InAcc == txo.OutAcc {
 					txo.Origin = spend.Origin
@@ -85,92 +98,231 @@ func FullIndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (fees uint6
 				}
 			}
 			parsed := ParseScript(*txout.LockingScript, tx, height)
+			txo.Parsed = parsed
+			txo.Lock = parsed.Lock
 
 			if txo.Origin == nil && parsed.Inscription != nil && txo.Satoshis == 1 {
 				txo.Origin = txo.Outpoint
 			}
 
-			if parsed.Listing != nil {
-				txo.Flags["list"] = true
+			txo.Listing = parsed.Listing != nil
+			txo.Bsv20 = parsed.Bsv20 != nil && parsed.Bsv20.Op != "deploy"
+			if parsed.Bsv20 != nil {
+				result.Bsv20s = append(result.Bsv20s, parsed.Bsv20)
 			}
-			// if parsed.Bsv20 != nil {
-			// 	if parsed.Bsv20.Op != "deploy" {
-			// 		txo.Flags["bsv20"] = true
-			// 	}
-			// 	bsv20 := parsed.Bsv20
-			// 	bsv20.Txid = txid
-			// 	bsv20.Vout = uint32(vout)
-			// 	bsv20.Height = height
-			// 	bsv20.Idx = uint64(idx)
-			// 	bsv20.Lock = parsed.Lock
-			// 	bsv20.Map = parsed.Map
-			// 	bsv20.B = parsed.B
-			// 	bsv20.Listing = parsed.Listing != nil
-			// 	result.Bsv20s = append(result.Bsv20s, bsv20)
-			// }
 
-			if parsed.Inscription != nil {
-				// txo.Flags["ord"] = true
-				parsed.Txid = txid
-				parsed.Vout = uint32(vout)
-				parsed.Height = height
-				parsed.Idx = idx
-				result.Inscriptions = append(result.Inscriptions, parsed)
-
-			}
-			result.ParsedScripts = append(result.ParsedScripts, parsed)
-
-			if parsed.Listing != nil {
-				parsed.Listing.Txid = txid
-				parsed.Listing.Vout = uint32(vout)
-				parsed.Listing.Origin = txo.Origin
-				parsed.Listing.Height = height
-				parsed.Listing.Idx = idx
-				parsed.Listing.Outpoint = &outpoint
-				result.Listings = append(result.Listings, parsed.Listing)
-			}
+			// result.ParsedScripts = append(result.ParsedScripts, parsed)
 		}
 
 		result.Txos = append(result.Txos, txo)
 		satsOut += txout.Satoshis
-		// if !dryRun && txo.Satoshis > 0 {
-		// 	txo.Save()
-		// 	if err != nil {
-		// 		return
-		// 	}
-		// 	// Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), msg)
-		// }
 	}
 
 	if !dryRun {
 		for _, txo := range result.Txos {
-			impliedBsv20 := false
-			if len(result.Bsv20s) == 0 && txo.PrevOrd != nil {
-				impliedBsv20 = txo.PrevOrd.Bsv20
-				txo.Bsv20 = txo.PrevOrd.Bsv20
+			// Implied BSV20 transfer
+			if len(result.Bsv20s) == 0 && txo.InOrd != nil && txo.InOrd.Bsv20 {
+				rows, err := db.Query(`SELECT tick, amt
+					FROM bsv20_txos
+					WHERE txid=$1 AND vout=$2 AND op != 'deploy'`,
+					txo.InOrd.Txid,
+					txo.InOrd.Vout,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+				defer rows.Close()
+				if rows.Next() {
+					bsv20 := &Bsv20{
+						Txid:    txo.Txid,
+						Vout:    txo.Vout,
+						Height:  height,
+						Idx:     idx,
+						Op:      "transfer",
+						Lock:    txo.Lock,
+						Implied: true,
+					}
+
+					err := rows.Scan(&bsv20.Ticker, &bsv20.Amt)
+					if err != nil {
+						log.Panic(err)
+					}
+					txo.Parsed.Bsv20 = bsv20
+					txo.Bsv20 = true
+				}
 			}
-			txo.Save()
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+
+			// Save Txo
+			_, err = db.Exec(`INSERT INTO txos(txid, vout, height, idx, satoshis, outacc, scripthash, lock, listing, bsv20)
+				VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				ON CONFLICT DO UPDATE SET 
+					height=EXCLUDED.height,
+					idx=EXCLUDED.idx,
+					lock=EXCLUDED.lock,
+					listing=EXCLUDED.listing,
+					bsv20=EXCLUDED.bsv20`,
+				txo.Txid,
+				txo.Vout,
+				txo.Height,
+				txo.Vout,
+				txo.Satoshis,
+				txo.OutAcc,
+				txo.Scripthash,
+				txo.Lock,
+				txo.Listing,
+				txo.Bsv20,
+			)
+			if err != nil {
+				log.Panicln("insTxo Err:", err)
 			}
-			if impliedBsv20 {
-				saveImpliedBsv20Transfer(txo.PrevOrd.Txid, txo.PrevOrd.Vout, txo)
+
+			if txo.Parsed != nil {
+				if txo.Parsed.Inscription != nil {
+					_, err = db.Exec(`INSERT INTO inscriptions(txid, vout, height, idx, origin, filehash, filesize, filetype, json_content, sigma)
+						VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+						ON CONFLICT(txid, vout) DO UPDATE SET 
+							height=EXCLUDED.height, 
+							idx=EXCLUDED.idx, 
+							origin=EXCLUDED.origin, 
+							sigma=EXCLUDED.sigma`,
+						txo.Txid,
+						txo.Vout,
+						txo.Height,
+						txo.Idx,
+						txo.Origin,
+						txo.Parsed.Inscription.File.Hash,
+						txo.Parsed.Inscription.File.Size,
+						txo.Parsed.Inscription.File.Type,
+						txo.Parsed.Inscription.JsonContent,
+						txo.Parsed.Sigmas,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+				}
+
+				if txo.Parsed.Map != nil {
+					_, err = db.Exec(`INSERT INTO map(txid, vout, height, idx, origin, map)
+						VALUES($1, $2, $3, $4, $5, $6)
+						ON CONFLICT DO UPDATE SET
+							height=EXCLUDED.height,
+							idx=EXCLUDED.idx,
+							origin=EXCLUDED.origin,
+							map=EXCLUDED.map`,
+						txo.Txid,
+						txo.Vout,
+						txo.Height,
+						txo.Idx,
+						txo.Origin,
+						txo.Parsed.Map,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+					MAP := Map{}
+					func() {
+						rows, err := db.Query(`SELECT map FROM map 
+							WHERE origin=$1 
+							ORDER BY height, idx`,
+							txo.Origin,
+						)
+						if err != nil {
+							log.Panic(err)
+						}
+						defer rows.Close()
+						for rows.Next() {
+							var m Map
+							err := rows.Scan(&m)
+							if err != nil {
+								log.Panic(err)
+							}
+							for k, v := range m {
+								MAP[k] = v
+							}
+						}
+					}()
+					_, err = db.Exec(`UPDATE origins
+						SET map=$2
+						WHERE origin=$1`,
+						txo.Origin,
+						MAP,
+					)
+				}
+
+				if txo.Parsed.Listing != nil {
+					_, err = db.Exec(`INSERT INTO ordinal_lock_listings(txid, vout, height, idx, origin, price, payout, num, spend, lock, bsv20, map)
+						SELECT $1, $2, $3, $4, $5, $6, $7, o.num, t.spend, t.lock, t.bsv20, o.map
+						FROM txos t
+						JOIN origins o ON o.origin = t.origin
+						WHERE t.txid=$1 AND t.vout=$2
+						ON CONFLICT(txid, vout) DO UPDATE
+							SET height=EXCLUDED.height, 
+								idx=EXCLUDED.idx, 
+								origin=EXCLUDED.origin,
+								lock=EXCLUDED.lock,
+								bsv20=EXCLUDED.bsv20,
+								map=EXCLUDED.map`,
+						txo.Txid,
+						txo.Vout,
+						txo.Height,
+						txo.Idx,
+						txo.Origin,
+						txo.Parsed.Listing.Price,
+						txo.Parsed.Listing.PayOutput,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+					result.Events = append(result.Events, &Event{
+						Channel: "list",
+						Data:    (*txo.Outpoint)[:],
+					})
+				}
+
+				if txo.Parsed.Bsv20 != nil {
+					b := txo.Parsed.Bsv20
+					if b.Op == "deploy" {
+						_, err := db.Exec(`INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec)
+							VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+							ON CONFLICT(id) DO UPDATE SET
+								height=EXCLUDED.height,
+								idx=EXCLUDED.idx`,
+							txo.Txid,
+							txo.Vout,
+							txo.Outpoint,
+							height,
+							idx,
+							b.Ticker,
+							b.Max,
+							b.Limit,
+							b.Decimals,
+						)
+						if err != nil {
+							log.Panic(err)
+						}
+					}
+
+					_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, orig_amt, amt, lock, implied, spend, listing)
+						SELECT $1, $2, $3, $4, $5, $6, $7, $7, lock, $8, spend, listing
+						FROM txos
+						WHERE txid=$1 AND vout=$2
+						ON CONFLICT(txid, vout) DO UPDATE SET
+							height=EXCLUDED.height,
+							idx=EXCLUDED.idx`,
+						b.Txid,
+						b.Vout,
+						b.Height,
+						b.Idx,
+						b.Ticker,
+						b.Op,
+						b.Amt,
+						b.Implied,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+				}
 			}
-		}
-		for _, inscription := range result.Inscriptions {
-			inscription.SaveInscription()
-		}
-		for _, parsed := range result.ParsedScripts {
-			parsed.Save()
-		}
-		for _, listing := range result.Listings {
-			listing.Save()
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
-			}
-		}
-		for _, bsv20 := range result.Bsv20s {
-			bsv20.Save()
 		}
 	}
 	if !tx.IsCoinbase() {

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
@@ -69,6 +70,15 @@ func (s *Sigmas) Scan(value interface{}) error {
 	return json.Unmarshal(b, &s)
 }
 
+type Inscription struct {
+	Num         uint64          `json:"num"`
+	Txid        ByteString      `json:"txid"`
+	Vout        uint32          `json:"vout"`
+	Height      uint32          `json:"height"`
+	Idx         uint64          `json:"idx"`
+	JsonContent json.RawMessage `json:"content"`
+	File        *File           `json:"file,omitempty"`
+}
 type Sigma struct {
 	Algorithm string `json:"algorithm"`
 	Address   string `json:"address"`
@@ -81,7 +91,7 @@ type ParsedScript struct {
 	Num         uint64          `json:"num"`
 	Txid        ByteString      `json:"txid"`
 	Vout        uint32          `json:"vout"`
-	Inscription *File           `json:"inscription"`
+	Inscription *Inscription    `json:"inscription"`
 	Origin      *Outpoint       `json:"origin"`
 	Ordinal     uint32          `json:"ordinal"`
 	Height      uint32          `json:"height"`
@@ -94,46 +104,46 @@ type ParsedScript struct {
 	Bsv20       *Bsv20          `json:"bsv20,omitempty"`
 }
 
-func (p *ParsedScript) SaveInscription() (err error) {
-	_, err = InsInscription.Exec(
-		p.Txid,
-		p.Vout,
-		p.Height,
-		p.Idx,
-		p.Inscription.Hash,
-		p.Inscription.Size,
-		p.Inscription.Type,
-		p.Map,
-		p.Origin,
-		p.Lock,
-		p.Sigmas,
-	)
-	if err != nil {
-		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
-	}
-	return
-}
+// func (p *ParsedScript) SaveInscription() (err error) {
+// 	_, err = InsInscription.Exec(
+// 		p.Txid,
+// 		p.Vout,
+// 		p.Height,
+// 		p.Idx,
+// 		p.Inscription.Hash,
+// 		p.Inscription.Size,
+// 		p.Inscription.Type,
+// 		p.Map,
+// 		p.Origin,
+// 		p.Lock,
+// 		p.Sigmas,
+// 	)
+// 	if err != nil {
+// 		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
+// 	}
+// 	return
+// }
 
-func (p *ParsedScript) Save() (err error) {
-	if p.Inscription != nil || p.Map != nil || p.B != nil {
-		_, err = InsMetadata.Exec(
-			p.Txid,
-			p.Vout,
-			p.Height,
-			p.Idx,
-			p.Inscription,
-			p.Map,
-			p.B,
-			p.Origin,
-			p.Sigmas,
-		)
-		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
-			log.Panic(err)
-		}
-	}
-	return
-}
+// func (p *ParsedScript) Save() (err error) {
+// 	if p.Inscription != nil || p.Map != nil || p.B != nil {
+// 		_, err = InsMetadata.Exec(
+// 			p.Txid,
+// 			p.Vout,
+// 			p.Height,
+// 			p.Idx,
+// 			p.Inscription,
+// 			p.Map,
+// 			p.B,
+// 			p.Origin,
+// 			p.Sigmas,
+// 		)
+// 		if err != nil {
+// 			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
+// 			log.Panic(err)
+// 		}
+// 	}
+// 	return
+// }
 
 type OpPart struct {
 	OpCode byte
@@ -260,7 +270,7 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 		}
 		return nil
 	case B:
-		p.B = &File{}
+		b := &File{}
 		for i := 0; i < 4; i++ {
 			prevIdx := *idx
 			op, err = ReadOp(script, idx)
@@ -271,18 +281,19 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 
 			switch i {
 			case 0:
-				p.B.Content = op.Data
+				b.Content = op.Data
 			case 1:
-				p.B.Type = string(op.Data)
+				b.Type = string(op.Data)
 			case 2:
-				p.B.Encoding = string(op.Data)
+				b.Encoding = string(op.Data)
 			case 3:
-				p.B.Name = string(op.Data)
+				b.Name = string(op.Data)
 			}
 		}
-		hash := sha256.Sum256(p.B.Content)
-		p.B.Size = uint32(len(p.B.Content))
-		p.B.Hash = hash[:]
+		hash := sha256.Sum256(b.Content)
+		b.Size = uint32(len(b.Content))
+		b.Hash = hash[:]
+		p.B = b
 	case "SIGMA":
 		sigma := &Sigma{}
 		for i := 0; i < 4; i++ {
@@ -391,7 +402,7 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 				// lockParts = lockParts[:len(lockParts)-2]
 				// lockScript = lockScript[:len(lockScript)-2]
 			}
-			p.Inscription = &File{}
+			inscription := &File{}
 		ordLoop:
 			for {
 				op, err = ReadOp(script, &i)
@@ -404,22 +415,42 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 					if err != nil {
 						break ordLoop
 					}
-					p.Inscription.Content = op.Data
+					inscription.Content = op.Data
 				case bscript.Op1:
 					op, err = ReadOp(script, &i)
 					if err != nil {
 						break ordLoop
 					}
-					p.Inscription.Type = string(op.Data)
+					inscription.Type = string(op.Data)
 				case bscript.OpENDIF:
 					break ordLoop
 				}
 			}
-			hash := sha256.Sum256(p.Inscription.Content)
-			p.Inscription.Size = uint32(len(p.Inscription.Content))
-			p.Inscription.Hash = hash[:]
+			hash := sha256.Sum256(inscription.Content)
+			inscription.Size = uint32(len(inscription.Content))
+			inscription.Hash = hash[:]
+			p.Inscription = &Inscription{
+				File: inscription,
+			}
 
-			p.Bsv20, _ = parseBsv20(p.Inscription, height)
+			if inscription.Size <= 1024 && utf8.Valid(inscription.Content) {
+				mime := strings.ToLower(inscription.Type)
+				if strings.HasPrefix(mime, "application/bsv-20") ||
+					strings.HasPrefix(mime, "text/plain") ||
+					strings.HasPrefix(mime, "application/json") {
+
+					var data json.RawMessage
+					err = json.Unmarshal(inscription.Content, &data)
+					if err == nil {
+						p.Inscription.JsonContent = data
+						if strings.HasPrefix(mime, "application/bsv-20") ||
+							(height >= 793000 && strings.HasPrefix(mime, "text/plain")) {
+
+							p.Bsv20, _ = parseBsv20(inscription.Content)
+						}
+					}
+				}
+			}
 		}
 	}
 

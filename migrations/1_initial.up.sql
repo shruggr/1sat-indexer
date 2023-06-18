@@ -36,7 +36,10 @@ CREATE TABLE txos(
     vin INTEGER,
     inacc BIGINT,
     origin BYTEA,
-    PRIMARY KEY(txid, vout)
+    listing BOOLEAN DEFAULT FALSE,
+    bsv20 BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY(txid, vout),
+    FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
 );
 -- CREATE INDEX idx_txos_scripthash_unspent ON txos(scripthash, height, idx)
 --     WHERE spend = '\x';
@@ -53,34 +56,9 @@ CREATE TABLE origins(
     origin BYTEA PRIMARY KEY,
     height INTEGER,
     idx BIGINT,
-    vout INTEGER,
     num BIGINT NOT NULL DEFAULT -1,
-    ordinal NUMERIC NOT NULL DEFAULT -1
-);
-CREATE INDEX idx_origins_num ON origins(num);
-CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
-WHERE num = -1;
-
-CREATE TABLE inscriptions(
-    txid BYTEA,
-    vout INTEGER,
-    height INTEGER,
-    idx INTEGER,
-    origin BYTEA,
-    json_content JSONB,
-    PRIMARY KEY(txid, vout)
-);
-CREATE INDEX IF NOT EXISTS idx_inscriptions_origin ON inscriptions(origin, height, idx);
-CREATE INDEX IF NOT EXISTS idx_inscriptions_json_content ON inscriptions USING GIN(json_content);
-
-CREATE TABLE map(
-    txid BYTEA,
-    vout INTEGER,
-    height INTEGER,
-    idx INTEGER,
-    origin BYTEA,
+    -- ordinal NOT NULL DEFAULT -1,
     map JSONB,
-    sigma JSONB,
     search_text_en TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('english',
             COALESCE(jsonb_extract_path_text(map, 'name'), '') || ' ' || 
@@ -90,22 +68,57 @@ CREATE TABLE map(
         )
     ) STORED,
 );
-CREATE INDEX IF NOT EXISTS idx_map_search_text_en ON map USING GIN(search_text_en);
-CREATE INDEX IF NOT EXISTS idx_map_map ON map USING GIN(map);
-CREATE INDEX IF NOT EXISTS idx_map_sigma ON map USING GIN(sigma);
+CREATE UNIQUE INDEX idx_num_origin ON origins(num, origin);
+CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
+WHERE num = -1;
 
-CREATE TABLE files(
+CREATE TABLE inscriptions(
     txid BYTEA,
     vout INTEGER,
     height INTEGER,
     idx INTEGER,
+    origin BYTEA,
+    num BIGINT NOT NULL DEFAULT -1,
     filehash BYTEA,
     filesize INTEGER,
-    fileenc BYTEA,
     filetype BYTEA,
-    PRIMARY KEY(txid, vout)
+    json_content JSONB,
+    sigma JSONB,
+    PRIMARY KEY(txid, vout),
+    FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
 );
-CREATE INDEX idx_files_filehash ON files(filehash);
+CREATE INDEX IF NOT EXISTS idx_inscriptions_origin ON inscriptions(origin, height, idx);
+CREATE INDEX IF NOT EXISTS idx_inscriptions_json_content ON inscriptions USING GIN(json_content);
+CREATE INDEX IF NOT EXISTS idx_inscriptions_search_text_en ON inscriptions USING GIN(search_text_en);
+CREATE INDEX IF NOT EXISTS idx_inscriptions_map ON inscriptions USING GIN(map);
+CREATE INDEX IF NOT EXISTS idx_inscriptions_sigma ON inscriptions USING GIN(sigma);
+
+CREATE TABLE map(
+    txid BYTEA,
+    vout INTEGER,
+    height INTEGER,
+    idx INTEGER,
+    origin BYTEA,
+    map JSONB,
+    PRIMARY KEY(txid, vout),
+    FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_map_origin ON map(origin, height, idx);
+-- CREATE INDEX IF NOT EXISTS idx_map_search_text_en ON map USING GIN(search_text_en);
+-- CREATE INDEX IF NOT EXISTS idx_map_map ON map USING GIN(map);
+
+-- CREATE TABLE files(
+--     txid BYTEA,
+--     vout INTEGER,
+--     height INTEGER,
+--     idx INTEGER,
+--     filehash BYTEA,
+--     filesize INTEGER,
+--     filetype BYTEA,
+--     fileenc BYTEA,
+--     PRIMARY KEY(txid, vout)
+-- );
+-- CREATE INDEX idx_files_filehash ON files(filehash);
 
 -- CREATE TABLE events(
 --     id BYTEA,

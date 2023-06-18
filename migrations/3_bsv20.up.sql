@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS bsv20 (
     lim NUMERIC NOT NULL,
     dec INT DEFAULT 18,
     supply NUMERIC DEFAULT 0,
-    map JSONB,
-    b JSONB,
     valid BOOL,
     available NUMERIC GENERATED ALWAYS AS (max - supply) STORED,
     pct_minted NUMERIC GENERATED ALWAYS AS (CASE WHEN max = 0 THEN 0 ELSE ROUND(100.0 * supply / max, 1) END) STORED,
-    reason TEXT
+    reason TEXT,
+    PRIMARY KEY(txid, vout),
+    FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_bsv20_tick ON bsv20(tick);
 CREATE INDEX IF NOT EXISTS idx_bsv20_available ON bsv20(available);
@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     vout INT,
     height INT,
     idx BIGINT,
-    op TEXT,
     tick TEXT,
-    id BYTEA,
+    op TEXT,
+    -- id BYTEA,
     orig_amt NUMERIC NOT NULL,
     amt NUMERIC NOT NULL,
     lock BYTEA,
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     reason TEXT,
     PRIMARY KEY(txid, vout),
     FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
+    FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_lock ON bsv20_txos(lock, valid, spend);
