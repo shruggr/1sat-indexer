@@ -178,7 +178,7 @@ func processQueue() {
 			lib.TxCache.Add(msg.Id, tx)
 
 			txn := &indexer.TxnStatus{
-				ID:       msg.Id,
+				HexId:    msg.Id,
 				Tx:       tx,
 				Height:   msg.Height,
 				Idx:      msg.Idx,
@@ -202,7 +202,7 @@ func processQueue() {
 				indexer.M.Lock()
 				if parent, ok := indexer.Txns[inTxid]; ok {
 					parent.Children[msg.Id] = txn
-					txn.Parents[parent.ID] = parent
+					txn.Parents[parent.HexId] = parent
 				}
 				indexer.M.Unlock()
 			}

@@ -156,7 +156,7 @@ func processQueue() {
 		}
 
 		txn := &indexer.TxnStatus{
-			ID:       msg.Id,
+			HexId:    msg.Id,
 			Tx:       tx,
 			Height:   msg.Height,
 			Idx:      msg.Idx,

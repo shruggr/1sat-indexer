@@ -104,47 +104,6 @@ type ParsedScript struct {
 	Bsv20       *Bsv20          `json:"bsv20,omitempty"`
 }
 
-// func (p *ParsedScript) SaveInscription() (err error) {
-// 	_, err = InsInscription.Exec(
-// 		p.Txid,
-// 		p.Vout,
-// 		p.Height,
-// 		p.Idx,
-// 		p.Inscription.Hash,
-// 		p.Inscription.Size,
-// 		p.Inscription.Type,
-// 		p.Map,
-// 		p.Origin,
-// 		p.Lock,
-// 		p.Sigmas,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
-// 	}
-// 	return
-// }
-
-// func (p *ParsedScript) Save() (err error) {
-// 	if p.Inscription != nil || p.Map != nil || p.B != nil {
-// 		_, err = InsMetadata.Exec(
-// 			p.Txid,
-// 			p.Vout,
-// 			p.Height,
-// 			p.Idx,
-// 			p.Inscription,
-// 			p.Map,
-// 			p.B,
-// 			p.Origin,
-// 			p.Sigmas,
-// 		)
-// 		if err != nil {
-// 			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Inscription.Size, p.Inscription.Type, err)
-// 			log.Panic(err)
-// 		}
-// 	}
-// 	return
-// }
-
 type OpPart struct {
 	OpCode byte
 	Data   []byte
@@ -485,8 +444,8 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 	return
 }
 
-func SetInscriptionIds(height uint32) (err error) {
-	rows, err := GetMaxInscriptionNum.Query()
+func SetOriginNums(height uint32) (err error) {
+	rows, err := Db.Query(`SELECT MAX(num) FROM origins`)
 	if err != nil {
 		log.Panic(err)
 		return
@@ -498,31 +457,36 @@ func SetInscriptionIds(height uint32) (err error) {
 		err = rows.Scan(&dbId)
 		if err != nil {
 			log.Panic(err)
-			return
 		}
 		if dbId.Valid {
 			num = uint64(dbId.Int64 + 1)
 		}
-	} else {
-		return
 	}
 
-	rows, err = GetUnnumbered.Query(height)
+	rows, err = Db.Query(`SELECT origin
+		FROM origins
+		WHERE num = -1 AND height <= $1 AND height > 0
+		ORDER BY height, idx, vout`,
+		height,
+	)
 	if err != nil {
 		log.Panic(err)
 		return
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var txid []byte
-		var vout uint32
-		err = rows.Scan(&txid, &vout)
+		var origin []byte
+		err = rows.Scan(&origin)
 		if err != nil {
 			log.Panic(err)
-			return
 		}
-		fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
-		_, err = SetInscriptionId.Exec(txid, vout, num)
+		fmt.Printf("Origin Num %d %x\n", num, origin)
+		_, err = Db.Exec(`UPDATE origins
+			SET num=$2
+			WHERE origin=$1`,
+			origin,
+			num,
+		)
 		if err != nil {
 			log.Panic(err)
 			return

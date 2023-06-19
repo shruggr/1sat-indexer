@@ -197,7 +197,7 @@ func parseBsv20(content []byte) (bsv20 *Bsv20, err error) {
 // }
 
 func ValidateBsv20(height uint32) {
-	rows, err := db.Query(`SELECT DISTINCT tick
+	rows, err := Db.Query(`SELECT DISTINCT tick
 		FROM bsv20_txos
 		WHERE valid IS NULL AND height <= $1 AND height > 0`,
 		height,
@@ -257,7 +257,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		Height: height,
 	}
 
-	tickRows, err := db.Query(`SELECT txid, vout, height, idx, op, orig_amt
+	tickRows, err := Db.Query(`SELECT txid, vout, height, idx, op, orig_amt
 		FROM bsv20_txos
 		WHERE tick=$1 AND valid IS NULL AND height <= $2 AND height > 0
 		ORDER BY op, height, idx`,
@@ -268,7 +268,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		log.Panicln(err)
 	}
 
-	t, err := db.Begin()
+	t, err := Db.Begin()
 	if err != nil {
 		log.Panic(err)
 	}
@@ -447,7 +447,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 }
 
 func loadTicker(tick string) (ticker *Bsv20) {
-	rows, err := db.Query(`SELECT id, height, idx, tick, max, lim, supply
+	rows, err := Db.Query(`SELECT id, height, idx, tick, max, lim, supply
 		FROM bsv20
 		WHERE tick=$1 AND valid=TRUE`,
 		tick,
@@ -524,7 +524,7 @@ func setTokenInvalid(t *sql.Tx, id []byte, reason string) bool {
 }
 
 func setInvalid(t *sql.Tx, txid []byte, vout uint32, reason string) {
-	_, err := db.Exec(`UPDATE bsv20_txos
+	_, err := Db.Exec(`UPDATE bsv20_txos
 		SET valid=FALSE, reason=$3
 		WHERE txid=$1 AND vout=$2`,
 		txid,
