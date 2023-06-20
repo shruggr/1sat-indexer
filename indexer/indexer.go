@@ -82,9 +82,3 @@ func processTxn(txn *lib.Txn) {
 	}
 	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.HexId, len(TxnQueue), len(Txns), InQueue)
 }
-
-func processBlockFees(height uint32) {
-	row := Db.QueryRow(`SELECT MIN(height) FROM `)
-	for
-
-}

@@ -11,7 +11,8 @@ CREATE TABLE blocks(
     fees BIGINT,
     processed TIMESTAMP
 );
-CREATE INDEX idx_blocks_processed ON blocks(processed);
+CREATE INDEX idx_blocks_height_unprocessed ON blocks(height)
+    WHERE processed IS NULL;
 
 CREATE TABLE txns(
     txid BYTEA PRIMARY KEY,
@@ -22,7 +23,8 @@ CREATE TABLE txns(
     feeacc BIGINT,
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX txns_block_id_feeacc_idx ON txns(block_id, feeacc, idx);
+-- CREATE INDEX idx_txns_block_id_feeacc_idx ON txns(block_id, feeacc, idx);
+CREATE INDEX idx_txns_block_id_idx ON txns(block_id, idx);
 CREATE INDEX idx_txns_created_unmined ON txns(created)
     WHERE height = 0;
 
@@ -55,3 +57,47 @@ CREATE INDEX idx_txo_lock_spent ON txos(lock, height, idx)
     WHERE spend != '\x' AND lock IS NOT NULL;
 CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height, idx)
     WHERE origin IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION fn_acc_fees(max_height INTEGER)
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+    blocks CURSOR(max_height INTEGER) FOR
+        SELECT id, height 
+		FROM blocks 
+		WHERE processed IS NULL AND height <= max_height
+		ORDER BY height;
+    txns CURSOR(id BYTEA) FOR
+        SELECT txid, fees
+        FROM txns
+        WHERE block_id=id
+        ORDER BY idx;
+    block_id BYTEA;
+    height INTEGER;
+    accfees BIGINT;
+    currentid BYTEA;
+    fees BIGINT;
+BEGIN
+    OPEN blocks(max_height);
+    LOOP
+        FETCH blocks INTO block_id, height;
+        EXIT WHEN NOT FOUND;
+		accfees = 0;
+        OPEN txns(block_id);
+        LOOP
+            FETCH txns INTO currentid, fees;
+            EXIT WHEN NOT FOUND;
+            UPDATE txns SET feeacc=accfees WHERE txid=currentid;
+            accfees = accfees + fees;
+        END LOOP;
+		CLOSE txns;
+		
+		UPDATE blocks 
+		SET processed=CURRENT_TIMESTAMP
+		WHERE id = block_id;
+        
+		RAISE NOTICE 'Processed Block: % % %', height, block_id, accfees;
+    END LOOP;
+    CLOSE blocks;
+    RETURN height;
+END;
+$$

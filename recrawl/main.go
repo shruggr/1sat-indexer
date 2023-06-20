@@ -21,7 +21,7 @@ import (
 
 const INDEXER = "node"
 
-var THREADS uint64 = 16
+var THREADS uint64 = 8
 
 var db *sql.DB
 var bit *bitcoin.Bitcoind
@@ -219,6 +219,7 @@ func processCompletions() {
 			log.Panic(err)
 		}
 
+		lib.ProcessBlockFees(settled)
 		fmt.Printf("Completed: %d txns: %d\n", settled, ctx.Fees)
 		fmt.Println("Processing inscription ids for height", settled)
 		err = lib.SetOriginNums(settled)
@@ -227,6 +228,5 @@ func processCompletions() {
 		}
 		lib.ValidateBsv20(settled)
 		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", settled))
-
 	}
 }

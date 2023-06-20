@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"fmt"
 	"log"
 
 	"github.com/libsv/go-bt/v2"
@@ -217,13 +218,12 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 			if txo.Parsed != nil {
 				if txo.Outpoint == txo.Origin && t.Height >= uint32(783968) {
 					result.QueryCount++
-					_, err = Db.Exec(`INSERT INTO origins(origin, vout, height, idx, map)
-						VALUES($1, $2, $3, $4, $5)`,
+					_, err = Db.Exec(`INSERT INTO origins(origin, vout, height, idx)
+						VALUES($1, $2, $3, $4)`,
 						txo.Origin,
 						txo.Vout,
 						t.Height,
 						t.Idx,
-						txo.Parsed.Map,
 					)
 				}
 
@@ -271,40 +271,15 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 					if err != nil {
 						log.Panic(err)
 					}
-					if txo.Origin != nil && txo.Outpoint != txo.Origin {
-						MAP := Map{}
-						func() {
-							result.QueryCount++
-							rows, err := Db.Query(`SELECT map FROM map 
-								WHERE origin=$1 
-								ORDER BY height, idx`,
-								txo.Origin,
-							)
-							if err != nil {
-								log.Panic(err)
-							}
-							defer rows.Close()
-							for rows.Next() {
-								var m Map
-								err := rows.Scan(&m)
-								if err != nil {
-									log.Panic(err)
-								}
-								for k, v := range m {
-									MAP[k] = v
-								}
-							}
-						}()
-						result.QueryCount++
-						_, err = Db.Exec(`UPDATE origins
-							SET map=$2
-							WHERE origin=$1`,
-							txo.Origin,
-							MAP,
-						)
-						if err != nil {
-							log.Panic(err)
-						}
+					result.QueryCount++
+					_, err = Db.Exec(`UPDATE origins
+						SET map = COALESCE(map, '{}') || $2
+						WHERE origin=$1`,
+						txo.Origin,
+						MAP,
+					)
+					if err != nil {
+						log.Panic(err)
 					}
 				}
 
@@ -406,4 +381,14 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 		}
 	}
 	return
+}
+
+func ProcessBlockFees(height uint32) {
+	fmt.Printf("Processing Fee Accumulation: %d\n", height)
+	_, err := Db.Exec(`SELECT fn_acc_fees($1)`,
+		height,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
 }
