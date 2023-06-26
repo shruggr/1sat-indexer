@@ -174,8 +174,6 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 					bsv20 := &Bsv20{
 						Txid:    txo.Txid,
 						Vout:    txo.Vout,
-						Height:  t.Height,
-						Idx:     t.Idx,
 						Op:      "transfer",
 						Lock:    txo.Lock,
 						Implied: true,
@@ -202,8 +200,8 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 					bsv20=EXCLUDED.bsv20`,
 				txo.Txid,
 				txo.Vout,
-				txo.Height,
-				txo.Vout,
+				t.Height,
+				t.Idx,
 				txo.Satoshis,
 				txo.OutAcc,
 				txo.Scripthash,
@@ -238,8 +236,8 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 							sigma=EXCLUDED.sigma`,
 						txo.Txid,
 						txo.Vout,
-						txo.Height,
-						txo.Idx,
+						t.Height,
+						t.Idx,
 						txo.Origin,
 						txo.Parsed.Inscription.File.Hash,
 						txo.Parsed.Inscription.File.Size,
@@ -256,27 +254,27 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 					result.QueryCount++
 					_, err = Db.Exec(`INSERT INTO map(txid, vout, height, idx, origin, map)
 						VALUES($1, $2, $3, $4, $5, $6)
-						ON CONFLICT DO UPDATE SET
+						ON CONFLICT(txid, vout) DO UPDATE SET
 							height=EXCLUDED.height,
 							idx=EXCLUDED.idx,
 							origin=EXCLUDED.origin,
 							map=EXCLUDED.map`,
 						txo.Txid,
 						txo.Vout,
-						txo.Height,
-						txo.Idx,
+						t.Height,
+						t.Idx,
 						txo.Origin,
 						txo.Parsed.Map,
 					)
 					if err != nil {
-						log.Panic(err)
+						log.Panicf("%x %v", txo.Txid, err)
 					}
 					result.QueryCount++
 					_, err = Db.Exec(`UPDATE origins
 						SET map = COALESCE(map, '{}') || $2
 						WHERE origin=$1`,
 						txo.Origin,
-						MAP,
+						txo.Parsed.Map,
 					)
 					if err != nil {
 						log.Panic(err)
@@ -286,11 +284,14 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 				if txo.Parsed.B != nil {
 					result.QueryCount++
 					_, err = Db.Exec(`INSERT INTO b(txid, vout, height, idx, filehash, filesize, filetype, fileenc)
-						VALUES($1, $2, $3, $4, $5, $6, $7, $8)`,
+						VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+						ON CONFLICT(txid, vout) DO UPDATE SET
+							height=EXCLUDED.height,
+							idx=EXCLUDED.idx`,
 						txo.Txid,
 						txo.Vout,
-						txo.Height,
-						txo.Idx,
+						t.Height,
+						t.Idx,
 						txo.Parsed.B.Hash,
 						txo.Parsed.B.Size,
 						txo.Parsed.B.Type,
@@ -317,8 +318,8 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 								map=EXCLUDED.map`,
 						txo.Txid,
 						txo.Vout,
-						txo.Height,
-						txo.Idx,
+						t.Height,
+						t.Idx,
 						txo.Origin,
 						txo.Parsed.Listing.Price,
 						txo.Parsed.Listing.PayOutput,
@@ -366,8 +367,8 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 							idx=EXCLUDED.idx`,
 						b.Txid,
 						b.Vout,
-						b.Height,
-						b.Idx,
+						t.Height,
+						t.Idx,
 						b.Ticker,
 						b.Op,
 						b.Amt,

@@ -7,11 +7,11 @@ package lib
 // }
 
 type Txo struct {
-	Txid       ByteString    `json:"txid"`
-	Vout       uint32        `json:"vout"`
-	Outpoint   *Outpoint     `json:"outpoint"`
-	Height     *uint32       `json:"height"`
-	Idx        *uint64       `json:"idx"`
+	Txid     ByteString `json:"txid"`
+	Vout     uint32     `json:"vout"`
+	Outpoint *Outpoint  `json:"outpoint"`
+	// Height     *uint32       `json:"height"`
+	// Idx        *uint64       `json:"idx"`
 	Satoshis   uint64        `json:"satoshis,omitempty"`
 	OutAcc     uint64        `json:"outacc,omitempty"`
 	Scripthash ByteString    `json:"scripthash"`

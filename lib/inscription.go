@@ -31,7 +31,9 @@ func (m Map) Value() (driver.Value, error) {
 	if m == nil {
 		return nil, nil
 	}
-	return json.Marshal(m)
+	val, err := json.Marshal(m)
+	// log.Printf("%s\n", val)
+	return val, err
 }
 
 func (m *Map) Scan(value interface{}) error {
@@ -74,11 +76,10 @@ type Inscription struct {
 	Num         uint64          `json:"num"`
 	Txid        ByteString      `json:"txid"`
 	Vout        uint32          `json:"vout"`
-	Height      uint32          `json:"height"`
-	Idx         uint64          `json:"idx"`
 	JsonContent json.RawMessage `json:"content"`
 	File        *File           `json:"file,omitempty"`
 }
+
 type Sigma struct {
 	Algorithm string `json:"algorithm"`
 	Address   string `json:"address"`
@@ -94,8 +95,6 @@ type ParsedScript struct {
 	Inscription *Inscription    `json:"inscription"`
 	Origin      *Outpoint       `json:"origin"`
 	Ordinal     uint32          `json:"ordinal"`
-	Height      uint32          `json:"height"`
-	Idx         uint64          `json:"idx"`
 	Lock        ByteString      `json:"lock"`
 	Map         Map             `json:"MAP,omitempty"`
 	B           *File           `json:"B,omitempty"`
@@ -209,17 +208,26 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 				*idx = prevIdx
 				break
 			}
-			opKey := string(op.Data)
+			opKey := op.Data
 			prevIdx = *idx
 			op, err = ReadOp(script, idx)
 			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
 				*idx = prevIdx
 				break
 			}
-			// fmt.Println(opKey, op.OpCode, string(op.Data))
-			if utf8.Valid(op.Data) {
-				p.Map[opKey] = string(op.Data)
+
+			if !utf8.Valid(opKey) || !utf8.Valid(op.Data) {
+				continue
 			}
+
+			log.Println(opKey, op.Data)
+			if len(opKey) == 1 && opKey[0] == 0 {
+				opKey = []byte{}
+			}
+			if len(op.Data) == 1 && op.Data[0] == 0 {
+				op.Data = []byte{}
+			}
+			p.Map[string(opKey)] = string(op.Data)
 		}
 		if val, ok := p.Map["subTypeData"]; ok {
 			var subTypeData json.RawMessage

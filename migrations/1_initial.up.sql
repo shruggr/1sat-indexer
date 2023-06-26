@@ -43,7 +43,7 @@ CREATE TABLE txos(
     origin BYTEA,
     listing BOOLEAN DEFAULT FALSE,
     bsv20 BOOLEAN DEFAULT FALSE,
-    PRIMARY KEY(txid, vout),
+    PRIMARY KEY(txid, vout, spend),
     FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE
 );
 -- CREATE INDEX idx_txos_scripthash_unspent ON txos(scripthash, height, idx)

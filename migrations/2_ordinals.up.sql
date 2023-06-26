@@ -62,5 +62,5 @@ CREATE TABLE b(
     filesize INTEGER,
     filetype BYTEA,
     fileenc BYTEA,
-    PRIMARY KEY(txid, vout),
+    PRIMARY KEY(txid, vout)
 )
