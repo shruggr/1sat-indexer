@@ -11,6 +11,7 @@ CREATE TABLE blocks(
     fees BIGINT,
     processed TIMESTAMP
 );
+CREATE INDEX idx_blocks_height ON blocks(height);
 CREATE INDEX idx_blocks_height_unprocessed ON blocks(height)
     WHERE processed IS NULL;
 
