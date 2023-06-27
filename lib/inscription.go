@@ -220,7 +220,6 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 				continue
 			}
 
-			log.Println(opKey, op.Data)
 			if len(opKey) == 1 && opKey[0] == 0 {
 				opKey = []byte{}
 			}
