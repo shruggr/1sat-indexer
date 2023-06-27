@@ -68,7 +68,6 @@ func main() {
 	var accSub uint64
 	row := db.QueryRow(`SELECT encode(id, 'hex'), height, subacc
 		FROM blocks
-		WHERE processed IS NULL
 		ORDER BY height DESC
 		LIMIT 1`,
 	)
