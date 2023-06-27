@@ -113,6 +113,8 @@ func init() {
 	failOnError(err, "Failed to declare a queue")
 }
 
+var queryCount uint64
+
 func main() {
 	txnMsgs, err := ch.Consume(
 		"txns", // queue
@@ -124,6 +126,17 @@ func main() {
 		nil,    // args
 	)
 	failOnError(err, "Failed to register a consumer")
+
+	ticker := time.NewTicker(10 * time.Second)
+	go func() {
+		for t := range ticker.C {
+			// select {
+			// case t := <-ticker.C:
+			log.Println(queryCount, "queries in 10 seconds", t.Format(time.RFC3339))
+			queryCount = 0
+			// }
+		}
+	}()
 
 	forever := make(chan bool)
 	go func() {
@@ -137,6 +150,7 @@ func main() {
 			// log.Printf("Received a message: %v", txn)
 			result, err := txn.Index(false)
 			failOnError(err, "Failed to index txn "+txn.HexId)
+			queryCount += result.QueryCount
 
 			err = ch.PublishWithContext(
 				context.Background(),
@@ -158,101 +172,4 @@ func main() {
 		fmt.Println("Exiting consumer")
 	}()
 	<-forever
-	// var blockId string
-	// row := db.QueryRow(`SELECT encode(id, 'hex')
-	// 	FROM blocks
-	// 	WHERE processed IS NULL
-	// 	ORDER BY height
-	// 	LIMIT 1`,
-	// )
-	// err := row.Scan(&blockId)
-	// failOnError(err, "Failed to query blocks")
-
-	// blockMsgs, err := ch.Consume(
-	// 	txnQ.Name, // queue
-	// 	"",        // consumer
-	// 	false,     // auto-ack
-	// 	false,     // exclusive
-	// 	false,     // no-local
-	// 	false,     // no-wait
-	// 	nil,       // args
-	// )
-	// failOnError(err, "Failed to register a consumer")
-
-	// consumeQueue(blockId)
-	// go func() {
-	// 	for d := range blockMsgs {
-	// 		consumeQueue(string(d.Body))
-	// 		err = d.Ack(false)
-	// 		failOnError(err, "Failed to ack message")
-	// 	}
-	// }()
-
-	// forever := make(chan bool)
-	// fmt.Println(" [*] Waiting for messages. To exit press CTRL+C")
-	// <-forever
 }
-
-// var txnConsumer string
-// var txnMsgs <-chan amqp.Delivery
-
-// func consumeQueue(blockId string) {
-// 	if txnConsumer != "" {
-// 		err := ch.Cancel(txnConsumer, true)
-// 		failOnError(err, "Failed to cancel consumer")
-// 	}
-// 	txnConsumer = blockId
-// 	var err error
-// 	// txnQ, err = ch.QueueDeclare(
-// 	// 	blockId, // name
-// 	// 	false,   // durable
-// 	// 	true,    // delete when unused
-// 	// 	false,   // exclusive
-// 	// 	false,   // no-wait
-// 	// 	amqp.Table{"x-consumer-timeout": 10000},
-// 	// )
-// 	// failOnError(err, "Failed to declare a queue")
-
-// 	txnMsgs, err = ch.Consume(
-// 		blockId, // queue
-// 		blockId, // consumer
-// 		false,   // auto-ack
-// 		false,   // exclusive
-// 		false,   // no-local
-// 		false,   // no-wait
-// 		nil,     // args
-// 	)
-// 	failOnError(err, "Failed to register a consumer")
-
-// 	go func() {
-// 		for d := range txnMsgs {
-// 			// var txn lib.TxnTask
-// 			// dec := gob.NewDecoder(bytes.NewReader(d.Body))
-// 			// err := dec.Decode(&txn)
-// 			// log.Printf("Received a message: %s", d.Body)
-// 			txn, err := lib.NewTxnFromBytes(d.Body)
-// 			failOnError(err, "Failed to decode txn")
-// 			log.Printf("Received a message: %v", txn)
-// 			result, err := txn.Index(false)
-// 			failOnError(err, "Failed to index txn "+txn.HexId)
-
-// 			err = ch.PublishWithContext(
-// 				context.Background(),
-// 				"",
-// 				d.ReplyTo,
-// 				true,
-// 				false,
-// 				amqp.Publishing{
-// 					ContentType:   "text/plain",
-// 					CorrelationId: d.CorrelationId,
-// 					Body:          binary.BigEndian.AppendUint64([]byte{}, result.Fees),
-// 				},
-// 			)
-// 			failOnError(err, "Failed to publish a message")
-
-// 			err = d.Ack(false)
-// 			failOnError(err, "Failed to ack message")
-// 		}
-// 		fmt.Println("Exiting consumer")
-// 	}()
-// }
