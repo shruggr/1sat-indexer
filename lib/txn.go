@@ -13,13 +13,6 @@ import (
 
 const THREADS = 16
 
-// type Status uint
-
-// var (
-// 	Unconfirmed Status = 0
-// 	Confirmed   Status = 1
-// )
-
 type IndexResult struct {
 	Txid          ByteString        `json:"txid"`
 	Height        uint32            `json:"height"`
@@ -39,19 +32,15 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 		Height: height,
 		Idx:    idx,
 		Spends: make([]*Txo, len(tx.Inputs)),
-		// Txos:   make([]*Txo, len(tx.Outputs)),
 	}
 	var accSats uint64
 	if height == 0 {
 		// Set height to max uint32 so that it sorts to the end of the list
 		height = uint32(math.Pow(2, 31) - 1)
 	}
-	// threadLimiter := make(chan struct{}, THREADS)
-	// var wg sync.WaitGroup
+
+	missingInputs := false
 	for vin, txin := range tx.Inputs {
-		// threadLimiter <- struct{}{}
-		// wg.Add(1)
-		// go func(txin *bt.Input, vin int) {
 		spend := &Txo{
 			Txid:  txin.PreviousTxID(),
 			Vout:  txin.PreviousTxOutIndex,
@@ -63,7 +52,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 		exists := spend.SaveSpend()
 		if !exists {
 			tx := bt.NewTx()
-			if height == uint32(math.Pow(2, 31)-1) {
+			if height > 0 && height < uint32(math.Pow(2, 31)-1) {
 				r, err := bit.GetRawTransactionRest(hex.EncodeToString(spend.Txid))
 				if err != nil {
 					log.Panicf("%x: %d %v\n", spend.Txid, height, err)
@@ -72,10 +61,9 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 					log.Panicf("%x: %v\n", spend.Txid, err)
 				}
 			} else {
-				tx, err = LoadTx(spend.Txid)
-				if err != nil {
-					log.Panicf("%x: %v\n", spend.Txid, err)
-				}
+				missingInputs = true
+				log.Printf("Missing Inputs %x\n", spend.Txid)
+				continue
 			}
 			for vout, txout := range tx.Outputs {
 				if vout > int(spend.Vout) {
@@ -101,11 +89,7 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 			}
 
 		}
-		// 	wg.Done()
-		// 	<-threadLimiter
-		// }(txin, vin)
 	}
-	// wg.Wait()
 
 	accSats = 0
 	for vout, txout := range tx.Outputs {
@@ -122,21 +106,19 @@ func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (result *IndexR
 		}
 
 		var accSpendSats uint64
-		for _, spend := range result.Spends {
-			accSpendSats += spend.Satoshis
-			if txo.Satoshis == 1 && spend.Satoshis == 1 && accSpendSats == txo.AccSats {
-				txo.Origin = spend.Origin
-				txo.PrevOrd = spend
+		if !missingInputs {
+			for _, spend := range result.Spends {
+				accSpendSats += spend.Satoshis
+				if txo.Satoshis == 1 && spend.Satoshis == 1 && accSpendSats == txo.AccSats {
+					txo.Origin = spend.Origin
+					txo.PrevOrd = spend
+				}
 			}
 		}
 
-		// threadLimiter <- struct{}{}
-		// wg.Add(1)
-		// go func(txo *Txo, txout *bt.Output, vout int) {
-		// msg := outpoint.String()
 		parsed := ParseScript(*txout.LockingScript, tx, height)
 		txo.Lock = parsed.Lock
-		if txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
+		if !missingInputs && txo.Origin == nil && parsed.Ord != nil && txo.Satoshis == 1 {
 			txo.Origin = txo.Outpoint
 		}
 		if parsed.Listing != nil {

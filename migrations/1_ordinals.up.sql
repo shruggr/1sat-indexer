@@ -29,7 +29,7 @@ CREATE TABLE txos(
     created TIMESTAMP DEFAULT NOW(),
 	PRIMARY KEY(txid, vout)
 );
-CREATE INDEX idx_txos_lock ON txos(lock, spend);
+CREATE INDEX idx_txos_lock_spend_height_idx ON txos(lock, spend, height, idx);
 CREATE INDEX idx_txos_spend_vin ON txos(spend, vin);
 CREATE INDEX idx_txos_listing_spend_height ON txos (listing, spend, height DESC, idx DESC);
 CREATE UNIQUE INDEX idx_txos_txid_vout_spend ON txos(txid, vout, spend);

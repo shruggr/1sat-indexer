@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -149,17 +148,18 @@ func processQueue() {
 		msg := <-msgQueue
 
 		if len(msg.Transaction) == 0 {
-			txid, err := hex.DecodeString(msg.Id)
-			if err != nil {
-				log.Printf("OnTransaction Hex Decode Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-				continue
-			}
-			txData, err := lib.LoadTxData(txid)
-			if err != nil {
-				log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-				continue
-			}
-			msg.Transaction = txData.Transaction
+			// txid, err := hex.DecodeString(msg.Id)
+			// if err != nil {
+			// 	log.Printf("OnTransaction Hex Decode Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+			// 	continue
+			// }
+			// txData, err := lib.LoadTxData(txid)
+			// if err != nil {
+			// 	log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+			// 	continue
+			// }
+			// msg.Transaction = txData.Transaction
+			continue
 		}
 
 		tx, err := bt.NewTxFromBytes(msg.Transaction)
