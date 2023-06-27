@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/bitcoinsv/bsvd/wire"
@@ -84,6 +86,22 @@ func init() {
 func main() {
 	go indexer.ProcessTxns(uint(THREADS))
 	go processCompletions()
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered in f", r)
+			log.Println("Exiting...")
+		}
+	}()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		log.Printf("Caught signal")
+		log.Println("Exiting...")
+		os.Exit(0)
+	}()
 
 	var blockId string
 	var height uint32
