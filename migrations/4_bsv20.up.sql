@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS bsv20 (
     dec INT DEFAULT 18,
     supply NUMERIC DEFAULT 0,
     valid BOOL,
-    available NUMERIC GENERATED ALWAYS AS (max - supply) STORED,
-    pct_minted NUMERIC GENERATED ALWAYS AS (CASE WHEN max = 0 THEN 0 ELSE ROUND(100.0 * supply / max, 1) END) STORED,
+    available NUMERIC, -- GENERATED ALWAYS AS (max - supply) STORED,
+    pct_minted NUMERIC, -- GENERATED ALWAYS AS (CASE WHEN max = 0 THEN 0 ELSE ROUND(100.0 * supply / max, 1) END) STORED,
     reason TEXT,
     PRIMARY KEY(txid, vout),
     FOREIGN KEY (txid) REFERENCES txns(txid) ON DELETE CASCADE

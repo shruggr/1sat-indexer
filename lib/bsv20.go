@@ -184,7 +184,10 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				continue
 			}
 
-			row := t.QueryRow(`UPDATE bsv20 SET valid=TRUE 
+			row := t.QueryRow(`UPDATE bsv20 
+				SET valid=TRUE, 
+					available=max - supply, 
+					pct_minted=CASE WHEN max = 0 THEN 0 ELSE ROUND(100.0 * supply / max, 1) END
 				WHERE id=$1
 				RETURNING id, height, idx, tick, max, lim, supply`,
 				outpoint,
@@ -312,6 +315,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 	if ticker != nil {
 		_, err = t.Exec(`UPDATE bsv20
 			SET supply=$2
+				available=max - supply, 
+				pct_minted=CASE WHEN max = 0 THEN 0 ELSE ROUND(100.0 * supply / max, 1) END
 			WHERE id=$1`,
 			ticker.Id,
 			ticker.Supply,

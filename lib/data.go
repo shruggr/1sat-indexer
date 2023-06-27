@@ -2,9 +2,6 @@ package lib
 
 import (
 	"database/sql"
-	"log"
-	"os"
-	"strconv"
 
 	"github.com/GorillaPool/go-junglebus"
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -50,11 +47,11 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	// 	return
 	// }
 
-	port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)
-	Bit, err = bitcoin.New(os.Getenv("BITCOIN_HOST"), int(port), os.Getenv("BITCOIN_USER"), os.Getenv("BITCOIN_PASS"), false)
-	if err != nil {
-		log.Panic(err)
-	}
+	// port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)
+	// Bit, err = bitcoin.New(os.Getenv("BITCOIN_HOST"), int(port), os.Getenv("BITCOIN_USER"), os.Getenv("BITCOIN_PASS"), false)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 
 	// GetInput, err = db.Prepare(`SELECT txid, vout, satoshis, acc_sats, lock, COALESCE(spend, '\x'::BYTEA), COALESCE(origin, '\x'::BYTEA)
 	// 	FROM txos

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log"
 
@@ -33,6 +34,33 @@ type Txn struct {
 	Children map[string]*Txn
 }
 
+func (t *Txn) Bytes() []byte {
+	rawtx := t.Tx.Bytes()
+	buf := make([]byte, 0, 76+len(rawtx))
+	buf = binary.BigEndian.AppendUint32(buf, t.Height)
+	buf = binary.BigEndian.AppendUint64(buf, t.Idx)
+	buf = append(buf, rawtx...)
+	buf = append(buf, []byte(t.BlockId)...)
+	return buf
+}
+
+func NewTxnFromBytes(b []byte) (txn *Txn, err error) {
+	tx, err := bt.NewTxFromBytes(b[12 : len(b)-64])
+	if err != nil {
+		return
+	}
+	txid := tx.TxIDBytes()
+	txn = &Txn{
+		Height:  binary.BigEndian.Uint32(b[:4]),
+		Idx:     binary.BigEndian.Uint64(b[4:12]),
+		Tx:      tx,
+		BlockId: string(b[len(b)-64:]),
+		Id:      txid,
+		HexId:   hex.EncodeToString(txid),
+	}
+	return
+}
+
 func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 	result = &IndexResult{
 		Txid: t.Id,
@@ -40,6 +68,7 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 	spendsAcc := map[uint64]*Txo{}
 	// t.Id = t.Tx.TxIDBytes()
 	var satsIn uint64
+	// fmt.Printf("Indexing %s %t \n%x\n", t.HexId, t.Tx.IsCoinbase(), t.Tx.Bytes())
 	if !t.Tx.IsCoinbase() {
 		for vin, txin := range t.Tx.Inputs {
 			spend := &Txo{
@@ -118,7 +147,7 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 			txo.Parsed = parsed
 			txo.Lock = parsed.Lock
 
-			if txo.Origin == nil && parsed.Inscription != nil && txo.Satoshis == 1 {
+			if txo.Origin == nil && parsed.Inscription != nil && txo.Satoshis == 1 && t.Height >= uint32(783968) {
 				txo.Origin = txo.Outpoint
 			}
 
@@ -214,14 +243,20 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 			}
 
 			if txo.Parsed != nil {
-				if txo.Outpoint == txo.Origin && t.Height >= uint32(783968) {
+				if txo.Outpoint == txo.Origin {
 					result.QueryCount++
-					_, err = Db.Exec(`INSERT INTO origins(origin, vout, height, idx)
-						VALUES($1, $2, $3, $4)`,
+					_, err = Db.Exec(`INSERT INTO origins(origin, vout, height, idx, map, search_text_en)
+						VALUES($1, $2, $3, $4, $5, search_text_en = to_tsvector('english',
+							COALESCE(jsonb_extract_path_text($5, 'name'), '') || ' ' || 
+							COALESCE(jsonb_extract_path_text($5, 'description'), '') || ' ' || 
+							COALESCE(jsonb_extract_path_text($5, 'subTypeData.description'), '') || ' ' || 
+							COALESCE(jsonb_extract_path_text($5, 'keywords'), '')
+						))`,
 						txo.Origin,
 						txo.Vout,
 						t.Height,
 						t.Idx,
+						txo.Parsed.Map,
 					)
 				}
 
@@ -269,15 +304,18 @@ func (t *Txn) Index(dryRun bool) (result *IndexResult, err error) {
 					if err != nil {
 						log.Panicf("%x %v", txo.Txid, err)
 					}
-					result.QueryCount++
-					_, err = Db.Exec(`UPDATE origins
-						SET map = COALESCE(map, '{}') || $2
-						WHERE origin=$1`,
-						txo.Origin,
-						txo.Parsed.Map,
-					)
-					if err != nil {
-						log.Panic(err)
+
+					if txo.Origin != nil && txo.Outpoint != txo.Origin {
+						result.QueryCount++
+						_, err = Db.Exec(`UPDATE origins
+							SET map = COALESCE(map, '{}') || $2
+							WHERE origin=$1`,
+							txo.Origin,
+							txo.Parsed.Map,
+						)
+						if err != nil {
+							log.Panic(err)
+						}
 					}
 				}
 
@@ -393,3 +431,5 @@ func ProcessBlockFees(height uint32) {
 		log.Panic(err)
 	}
 }
+
+// 64ff810301010354786e01ff820001080102547801ff840001024964010a0001054865784964010c000107426c6f636b4964010c00010648656967687401060001034964780106000107506172656e747301ff8e0001084368696c6472656e01ff8e00000042ff8303010102547801ff840001040106496e7075747301ff880001074f75747075747301ff8c00010756657273696f6e01060001084c6f636b54696d6501060000001aff870201010b5b5d2a62742e496e70757401ff880001ff86000076ff85030102ff86000105011250726576696f757354785361746f73686973010600011050726576696f75735478536372697074010a00010f556e6c6f636b696e67536372697074010a00011250726576696f757354784f7574496e646578010600010e53657175656e63654e756d62657201060000001bff8b0201010c5b5d2a62742e4f757470757401ff8c0001ff8a00002bff89030102ff8a00010201085361746f73686973010600010d4c6f636b696e67536372697074010a00000024ff8d040101136d61705b737472696e675d2a6c69622e54786e01ff8e00010c01ff820000fe0122ff82010101031004143909500317e201062f503253482f01fcffffffff01fcffffffff00010101fb012b6fceb80143410454a6a884f0d7db1ee2f362f731cd47881851360ec7647a538437cbdbfe58a31a67671e2caa7baa328b05f2f242da290f6c6618768526601206ed7916c3c61b6bac0001010001202ee88f71e039f93f7f2e5ad06da1b3c4be9294b24999460b2fbd523fe8d1dde501403265653838663731653033396639336637663265356164303664613162336334626539323934623234393939343630623266626435323366653864316464653501403030303030303030303030303033353332396632306565353139656461643033333036653837613730396439303534343061363132376161366138323361313601fd02e5e600
