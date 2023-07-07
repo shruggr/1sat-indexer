@@ -43,7 +43,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	txid, _ := hex.DecodeString("af7eb9fd54489d39b2c7ebd4e2725865c5878972bb3671c650925c38e70cd626")
+	txid, _ := hex.DecodeString("6e0ac1a1fa66812b2c035d104172207deeca31c92ce0bc7828c0d00963dc50b0")
 	// txData, err := lib.LoadTxData(txid)
 	// if err != nil {
 	// 	log.Panic(err)

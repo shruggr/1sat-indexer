@@ -261,7 +261,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 	if err != nil {
 		log.Panicln(err)
 	}
-
+	defer tickRows.Close()
 	t, err := db.Begin()
 	if err != nil {
 		log.Panic(err)
@@ -420,7 +420,6 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 			setInvalid(t, bsv20.Txid, bsv20.Vout, fmt.Sprintf("invalid op: %s", bsv20.Op))
 		}
 	}
-	tickRows.Close()
 	if ticker != nil {
 		_, err = t.Exec(`UPDATE bsv20
 			SET supply=$2

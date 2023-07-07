@@ -20,7 +20,7 @@ import (
 
 const INDEXER = "recrawl"
 
-var THREADS uint64 = 8
+var THREADS uint64 = 32
 var TRIGGER uint32 = 792552
 
 var db *sql.DB

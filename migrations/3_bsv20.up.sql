@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos (
     listing BOOLEAN DEFAULT FALSE,
     reason TEXT,
     PRIMARY KEY(txid, vout),
-    FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON UPDATE CASCADE
+    FOREIGN KEY(txid, vout, spend) REFERENCES txos(txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_lock ON bsv20_txos(lock, valid, spend);

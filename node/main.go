@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -20,8 +21,9 @@ import (
 )
 
 const INDEXER = "node"
+const TMP = "/opt/tmp"
 
-var THREADS uint64 = 32
+var THREADS uint64 = 64
 
 var db *sql.DB
 var bit *bitcoin.Bitcoind
@@ -46,6 +48,8 @@ func init() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	fmt.Println("BITCOIN", os.Getenv("BITCOIN_PORT"), os.Getenv("BITCOIN_HOST"))
 
 	// fmt.Println("YUGABYTE:", os.Getenv("YUGABYTE"))
 	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
@@ -93,8 +97,30 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("CurrentBlock", info.Blocks)
-		for height <= uint32(info.Blocks) {
-			if err := processBlock(height); err != nil {
+		for height <= uint32(info.Blocks)-3 {
+			fmt.Println("Processing Block", height)
+			block, err := bit.GetBlockByHeight(int(height))
+			if err != nil {
+				log.Panicln(height, err)
+			}
+			// fmt.Printf("Block %s\n", block.Hash)
+			r, err := bit.GetRawBlockRest(block.Hash)
+			if err != nil {
+				log.Panicln(height, err)
+			}
+
+			f, err := os.CreateTemp(TMP, block.Hash)
+			if err != nil {
+				log.Panicln(height, err)
+			}
+
+			fmt.Println("Downloading block", block.Height, block.Hash)
+			_, err = io.Copy(f, r)
+			if err != nil {
+				log.Panicln(height, err)
+			}
+			f.Seek(0, 0)
+			if err := processBlock(block, f); err != nil {
 				panic(err)
 			}
 			height++
@@ -104,27 +130,28 @@ func main() {
 	}
 }
 
-func processBlock(height uint32) (err error) {
-	fmt.Println("Processing Block", height)
-	block, err := bit.GetBlockByHeight(int(height))
-	if err != nil {
-		log.Panicln(height, err)
-	}
-	// fmt.Printf("Block %s\n", block.Hash)
-	r, err := bit.GetRawBlockRest(block.Hash)
-	if err != nil {
-		log.Panicln(height, err)
-	}
+func processBlock(block *bitcoin.Block, f *os.File) (err error) {
+	defer func(f *os.File) {
+		path := f.Name()
+		err := f.Close()
+		if err != nil {
+			log.Println("Failed to close", path)
+		}
+		err = os.Remove(path)
+		if err != nil {
+			log.Println("Failed to remove", path)
+		}
+	}(f)
 	protocolVersion := wire.ProtocolVersion
 	wireBlockHeader := wire.BlockHeader{}
-	err = wireBlockHeader.Bsvdecode(r, protocolVersion, wire.BaseEncoding)
+	err = wireBlockHeader.Bsvdecode(f, protocolVersion, wire.BaseEncoding)
 	if err != nil {
 		err = fmt.Errorf("ERROR: while opening block reader: %w", err)
 		return
 	}
 
 	var txCount uint64
-	txCount, err = wire.ReadVarInt(r, protocolVersion)
+	txCount, err = wire.ReadVarInt(f, protocolVersion)
 	if err != nil {
 		err = fmt.Errorf("ERROR: while reading transaction count: %w", err)
 		return
@@ -147,7 +174,7 @@ func processBlock(height uint32) (err error) {
 			Ctx:      blockCtx,
 		}
 
-		if _, err = txn.Tx.ReadFrom(r); err != nil {
+		if _, err = txn.Tx.ReadFrom(f); err != nil {
 			log.Panicln(height, idx, err)
 		}
 

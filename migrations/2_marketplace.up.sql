@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS ordinal_lock_listings(
     bsv20 BOOLEAN DEFAULT FALSE,
     lock BYTEA,
     PRIMARY KEY (txid, vout),
-    FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON UPDATE CASCADE,
+    FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (origin, num) REFERENCES inscriptions(origin, num) ON UPDATE CASCADE
 );
 
