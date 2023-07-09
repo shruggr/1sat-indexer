@@ -215,6 +215,7 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 		// indexer.M.Lock()
 		// blockCtx.TxFees[idx] = &indexer.TxFee{Txid: txid}
 
+		rdb.Set(context.Background(), txn.ID, txn.Tx.Bytes(), 0).Err()
 		has1Sat := false
 		for _, output := range txn.Tx.Outputs {
 			if output.Satoshis == 1 {

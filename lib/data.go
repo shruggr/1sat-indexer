@@ -212,6 +212,10 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 		return nil, err
 	}
 	_, err = tx.ReadFrom(r)
+	if err != nil {
+		return nil, err
+	}
+	Rdb.Set(context.Background(), txid, tx.Bytes(), 0).Err()
 	return
 }
 

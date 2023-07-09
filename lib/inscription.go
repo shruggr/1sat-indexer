@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
@@ -532,5 +533,6 @@ func SetInscriptionIds(height uint32) (err error) {
 		}
 		num++
 	}
+	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
 	return
 }
