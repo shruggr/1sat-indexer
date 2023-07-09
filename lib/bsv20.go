@@ -468,7 +468,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 func ValidateTransfer(txid []byte) {
 	tickRows, err := db.Query(`SELECT vout, height, idx, op, orig_amt
 		FROM bsv20_txos
-		WHERE txid IN $1
+		WHERE txid = $1
 		ORDER BY tick`,
 		txid,
 	)
@@ -489,12 +489,14 @@ func ValidateTransfer(txid []byte) {
 
 	var ticker *Bsv20
 	for tickRows.Next() {
-		bsv20 := &Bsv20{}
-		err = tickRows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &bsv20.Amt)
+		bsv20 := &Bsv20{
+			Txid: txid,
+		}
+		err = tickRows.Scan(&bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Op, &bsv20.Amt)
 		if err != nil {
 			log.Panic(err)
 		}
-		if ticker.Ticker != bsv20.Ticker {
+		if ticker == nil || ticker.Ticker != bsv20.Ticker {
 			ticker = loadTicker(bsv20.Ticker)
 		}
 		tick := bsv20.Ticker
