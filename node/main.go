@@ -23,7 +23,7 @@ import (
 const INDEXER = "node"
 const TMP = "/opt/tmp"
 
-var THREADS uint64 = 64
+var THREADS uint64 = 128
 
 var db *sql.DB
 var bit *bitcoin.Bitcoind
@@ -31,13 +31,15 @@ var bit *bitcoin.Bitcoind
 // var junglebusClient *junglebus.Client
 // var msgQueue = make(chan *Msg, 1000000)
 
-var height uint32
+// var height uint32
 
 // var sub *junglebus.Subscription
 
 var settle = make(chan *indexer.BlockCtx, 1000)
 
 var rdb *redis.Client
+
+// var indexed = map[string]bool{}
 
 func init() {
 	godotenv.Load("../.env")
@@ -79,58 +81,85 @@ func init() {
 	}
 }
 
+// var block *bitcoin.BlockHeader
+
 func main() {
-	row := db.QueryRow(`SELECT height
-		FROM progress
-		WHERE indexer=$1`,
-		INDEXER,
-	)
-	row.Scan(&height)
-	fmt.Println("FromBlock", height)
+	// row := db.QueryRow(`SELECT height
+	// 	FROM progress
+	// 	WHERE indexer=$1`,
+	// 	INDEXER,
+	// )
+	// row.Scan(&height)
+	// fmt.Println("FromBlock", height)
 
 	go indexer.ProcessTxns(uint(THREADS))
 	go processCompletions()
 
+	var err error
+	var block *bitcoin.BlockHeader
+
 	for {
-		info, err := bit.GetInfo()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("CurrentBlock", info.Blocks)
-		for height <= uint32(info.Blocks)-3 {
-			fmt.Println("Processing Block", height)
-			block, err := bit.GetBlockByHeight(int(height))
+		if block == nil {
+			blockHash, err := bit.GetBestBlockHash()
 			if err != nil {
-				log.Panicln(height, err)
+				panic(err)
 			}
+			block, err = bit.GetBlockHeader(blockHash)
+			if err != nil {
+				panic(err)
+			}
+		}
+		if !isBlockIndexed(block.Hash) {
+			for {
+				if isBlockIndexed(block.PreviousBlockHash) {
+					break
+				}
+				fmt.Println("Crawling Back", block.Height-1, block.PreviousBlockHash)
+				block, err = bit.GetBlockHeader(block.PreviousBlockHash)
+				if err != nil {
+					panic(err)
+				}
+			}
+			fmt.Println("Processing Block", block.Height, block.Hash)
+
 			// fmt.Printf("Block %s\n", block.Hash)
 			r, err := bit.GetRawBlockRest(block.Hash)
 			if err != nil {
-				log.Panicln(height, err)
+				log.Panicln(err)
 			}
 
 			f, err := os.CreateTemp(TMP, block.Hash)
 			if err != nil {
-				log.Panicln(height, err)
+				log.Panicln(err)
 			}
 
 			fmt.Println("Downloading block", block.Height, block.Hash)
 			_, err = io.Copy(f, r)
 			if err != nil {
-				log.Panicln(height, err)
+				log.Panicln(err)
 			}
 			f.Seek(0, 0)
 			if err := processBlock(block, f); err != nil {
 				panic(err)
 			}
-			height++
+
+			if block.NextBlockHash != "" {
+				block, err = bit.GetBlockHeader(block.NextBlockHash)
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				block = nil
+			}
+		} else {
+			block = nil
+			fmt.Println("Waiting for Block")
+			time.Sleep(30 * time.Second)
 		}
-		fmt.Println("Waiting for Block")
-		time.Sleep(30 * time.Second)
 	}
 }
 
-func processBlock(block *bitcoin.Block, f *os.File) (err error) {
+func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 	defer func(f *os.File) {
 		path := f.Name()
 		err := f.Close()
@@ -160,13 +189,15 @@ func processBlock(block *bitcoin.Block, f *os.File) (err error) {
 	fmt.Printf("txcount %d\n", txCount)
 	var idx int
 	blockCtx := &indexer.BlockCtx{
-		Height: height,
-		TxFees: make([]*indexer.TxFee, int(txCount)),
+		Hash:      block.Hash,
+		Height:    uint32(block.Height),
+		TxFees:    make([]*indexer.TxFee, int(txCount)),
+		StartTime: time.Now(),
 	}
 
 	for idx = 0; idx < int(txCount); idx++ {
 		txn := &indexer.TxnStatus{
-			Height:   height,
+			Height:   uint32(block.Height),
 			Idx:      uint64(idx),
 			Parents:  map[string]*indexer.TxnStatus{},
 			Children: map[string]*indexer.TxnStatus{},
@@ -175,7 +206,7 @@ func processBlock(block *bitcoin.Block, f *os.File) (err error) {
 		}
 
 		if _, err = txn.Tx.ReadFrom(f); err != nil {
-			log.Panicln(height, idx, err)
+			log.Panicln(block.Height, idx, err)
 		}
 
 		// fmt.Printf("Eval Txn %d\n", idx)
@@ -183,18 +214,16 @@ func processBlock(block *bitcoin.Block, f *os.File) (err error) {
 		txn.ID = hex.EncodeToString(txid)
 		// indexer.M.Lock()
 		// blockCtx.TxFees[idx] = &indexer.TxFee{Txid: txid}
+
 		has1Sat := false
 		for _, output := range txn.Tx.Outputs {
 			if output.Satoshis == 1 {
 				has1Sat = true
+				break
 			}
 		}
 		if !has1Sat {
 			continue
-		}
-		_, err = lib.SetTxn.Exec(txn.ID, block.Hash, txn.Height, txn.Idx)
-		if err != nil {
-			log.Panicln(txn.ID, err)
 		}
 
 		indexer.M.Lock()
@@ -219,7 +248,12 @@ func processBlock(block *bitcoin.Block, f *os.File) (err error) {
 	rdb.Publish(context.Background(), "indexed", fmt.Sprintf("%d", blockCtx.Height))
 	settle <- blockCtx
 
-	return nil
+	_, err = db.Exec(`INSERT INTO blocks(hash, height)
+		VALUES(decode($1, 'hex'), $2)`,
+		block.Hash,
+		block.Height,
+	)
+	return err
 }
 
 func processCompletions() {
@@ -238,11 +272,25 @@ func processCompletions() {
 
 		fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
 		fmt.Println("Processing inscription ids for height", height)
+		lib.ValidateBsv20(ctx.Height)
+
 		err := lib.SetInscriptionIds(height)
 		if err != nil {
 			log.Panicln("Error processing inscription ids:", err)
 		}
-		lib.ValidateBsv20(height)
 		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
+}
+
+func isBlockIndexed(hash string) bool {
+	rows, err := db.Query(`SELECT 1
+		FROM blocks
+		WHERE hash=decode($1, 'hex')`,
+		hash,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	return rows.Next()
 }

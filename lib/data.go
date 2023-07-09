@@ -3,16 +3,12 @@ package lib
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
-	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
@@ -21,7 +17,7 @@ import (
 
 var TRIGGER = uint32(783968)
 
-var TxCache *lru.Cache[string, *bt.Tx]
+// var TxCache *lru.Cache[string, *bt.Tx]
 
 var db *sql.DB
 var Rdb *redis.Client
@@ -32,13 +28,15 @@ var GetInput *sql.Stmt
 var GetMaxInscriptionNum *sql.Stmt
 var GetUnnumbered *sql.Stmt
 var InsTxo *sql.Stmt
+var InsBareSpend *sql.Stmt
 var InsSpend *sql.Stmt
 var InsInscription *sql.Stmt
 var InsMetadata *sql.Stmt
 var InsListing *sql.Stmt
 var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
-var SetTxn *sql.Stmt
+
+// var SetTxn *sql.Stmt
 
 func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	// db = sdb
@@ -90,12 +88,21 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
 			satoshis=EXCLUDED.satoshis,
+			acc_sats=EXCLUDED.acc_sats,
+			lock=EXCLUDED.lock,
 			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx,
-			lock=EXCLUDED.lock,
 			listing=EXCLUDED.listing,
 			bsv20=EXCLUDED.bsv20
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsBareSpend, err = db.Prepare(`INSERT INTO txos(txid, vout, satoshis, acc_sats, spend, vin)
+		VALUES($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(txid, vout) DO NOTHING
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -105,6 +112,8 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(txid, vout) DO UPDATE SET 
 			satoshis=EXCLUDED.satoshis,
+			acc_sats=EXCLUDED.acc_sats,
+			lock=EXCLUDED.lock,
 			origin=EXCLUDED.origin,
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx,
@@ -160,59 +169,55 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 	SetSpend, err = db.Prepare(`UPDATE txos
 		SET spend=$3, vin=$4
 		WHERE txid=$1 AND vout=$2
-		RETURNING lock, satoshis, listing, bsv20, origin
+		RETURNING COALESCE(lock, '\x'), satoshis, listing, bsv20, origin
 	`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
-		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
-		ON CONFLICT(txid) DO UPDATE SET
-			blockid=EXCLUDED.blockid,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
+	// 	VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
+	// 	ON CONFLICT(txid) DO UPDATE SET
+	// 		blockid=EXCLUDED.blockid,
+	// 		height=EXCLUDED.height,
+	// 		idx=EXCLUDED.idx`,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	SetTxn, err = db.Prepare(`INSERT INTO txns(txid, blockid, height, idx)
-		VALUES(decode($1, 'hex'), decode($2, 'hex'), $3, $4)
-		ON CONFLICT(txid) DO UPDATE SET
-			blockid=EXCLUDED.blockid,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	TxCache, err = lru.New[string, *bt.Tx](16 * (2 ^ 20))
 	return
 }
 
-func LoadTx(txid []byte) (tx *bt.Tx, err error) {
-	key := base64.StdEncoding.EncodeToString(txid)
-	if tx, ok := TxCache.Get(key); ok {
-		return tx, nil
+func LoadTx(txid string) (tx *bt.Tx, err error) {
+	rawtx, _ := Rdb.Get(context.Background(), txid).Bytes()
+
+	if len(rawtx) == 0 {
+		txData, err := LoadTxData(txid)
+		if err != nil {
+			return nil, err
+		}
+		rawtx = txData.Transaction
+		Rdb.Set(context.Background(), txid, rawtx, 0).Err()
 	}
-	txData, err := LoadTxData(txid)
-	if err != nil {
-		return
-	}
-	tx, err = bt.NewTxFromBytes(txData.Transaction)
-	if err != nil {
-		return
-	}
-	TxCache.Add(key, tx)
-	return
+	return bt.NewTxFromBytes(rawtx)
+
+	// if len(rawtx) > 0 {
+	// 	return bt.NewTxFromBytes(rawtx)
+	// }
+
+	// tx = bt.NewTx()
+	// r, err := bit.GetRawTransactionRest(txid)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// _, err = tx.ReadFrom(r)
+	// return
 }
 
-func LoadTxData(txid []byte) (*models.Transaction, error) {
-
-	fmt.Printf("Fetching Tx: %x\n", txid)
-	txData, err := JBClient.GetTransaction(context.Background(), hex.EncodeToString(txid))
+func LoadTxData(txid string) (*models.Transaction, error) {
+	// fmt.Printf("Fetching Tx: %s\n", txid)
+	txData, err := JBClient.GetTransaction(context.Background(), txid)
 	if err != nil {
 		return nil, err
 	}

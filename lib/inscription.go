@@ -524,7 +524,7 @@ func SetInscriptionIds(height uint32) (err error) {
 			log.Panic(err)
 			return
 		}
-		fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
+		// fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
 		_, err = SetInscriptionId.Exec(txid, vout, num)
 		if err != nil {
 			log.Panic(err)

@@ -1,9 +1,10 @@
 package indexer
 
 import (
-	"fmt"
+	"bytes"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/libsv/go-bt/v2"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -21,9 +22,12 @@ type TxFee struct {
 }
 
 type BlockCtx struct {
-	Height uint32
-	TxFees []*TxFee
-	Wg     sync.WaitGroup
+	Hash      string
+	Height    uint32
+	TxFees    []*TxFee
+	Wg        sync.WaitGroup
+	TxCount   int
+	StartTime time.Time
 }
 
 type TxnStatus struct {
@@ -38,11 +42,32 @@ type TxnStatus struct {
 
 func ProcessTxns(THREADS uint) {
 	threadLimiter := make(chan struct{}, THREADS)
+	ticker := time.NewTicker(10 * time.Second)
+	var txCount int
+	var height uint32
+	var idx uint64
+	go func() {
+		for range ticker.C {
+			if txCount > 0 {
+				log.Println("Block", height, idx, txCount/10, "txns/s", len(Txns), InQueue)
+			}
+			// m.Lock()
+			txCount = 0
+			// m.Unlock()
+		}
+	}()
 	for {
 		txn := <-TxnQueue
 		threadLimiter <- struct{}{}
 		go func(txn *TxnStatus) {
 			processTxn(txn)
+			txCount++
+			if txn.Height > height {
+				height = txn.Height
+				idx = txn.Idx
+			} else if txn.Idx > idx {
+				idx = txn.Idx
+			}
 			<-threadLimiter
 		}(txn)
 	}
@@ -50,9 +75,23 @@ func ProcessTxns(THREADS uint) {
 
 func processTxn(txn *TxnStatus) {
 	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
-	_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx, false)
-	if err != nil {
-		log.Panic(err)
+	blacklist := false
+	for _, output := range txn.Tx.Outputs {
+		if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
+			blacklist = true
+			break
+		}
+	}
+
+	if !blacklist {
+		// _, err := lib.SetTxn.Exec(txn.ID, txn.Ctx.Hash, txn.Height, txn.Idx)
+		// if err != nil {
+		// 	log.Panicln(txn.ID, err)
+		// }
+		_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx, false)
+		if err != nil {
+			log.Panic(err)
+		}
 	}
 
 	if txn.Height > 0 {
@@ -75,5 +114,5 @@ func processTxn(txn *TxnStatus) {
 		InQueue--
 		Wg.Done()
 	}
-	fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 }

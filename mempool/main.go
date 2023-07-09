@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
@@ -113,7 +114,7 @@ func subscribe() {
 				if len(txResp.Transaction) == 0 {
 					log.Printf("Empty Transaction: %v\n", txResp.Id)
 				}
-				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+				// log.Printf("[MEMPOOL]: %v\n", txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Height:      txResp.BlockHeight,
@@ -144,28 +145,28 @@ func subscribe() {
 
 func processQueue() {
 	go indexer.ProcessTxns(uint(THREADS))
+	var err error
+	mempoolCtx := &indexer.BlockCtx{
+		StartTime: time.Now(),
+	}
 	for {
 		msg := <-msgQueue
 
+		var tx *bt.Tx
 		if len(msg.Transaction) == 0 {
-			// txid, err := hex.DecodeString(msg.Id)
-			// if err != nil {
-			// 	log.Printf("OnTransaction Hex Decode Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-			// 	continue
-			// }
-			// txData, err := lib.LoadTxData(txid)
-			// if err != nil {
-			// 	log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-			// 	continue
-			// }
+			tx, err = lib.LoadTx(msg.Id)
+			if err != nil {
+				log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+				continue
+			}
 			// msg.Transaction = txData.Transaction
-			continue
-		}
-
-		tx, err := bt.NewTxFromBytes(msg.Transaction)
-		if err != nil {
-			log.Printf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-			continue
+			// continue
+		} else {
+			tx, err = bt.NewTxFromBytes(msg.Transaction)
+			if err != nil {
+				log.Printf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+				continue
+			}
 		}
 
 		txn := &indexer.TxnStatus{
@@ -175,11 +176,7 @@ func processQueue() {
 			Idx:      msg.Idx,
 			Parents:  map[string]*indexer.TxnStatus{},
 			Children: map[string]*indexer.TxnStatus{},
-		}
-
-		_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
-		if err != nil {
-			panic(err)
+			Ctx:      mempoolCtx,
 		}
 
 		indexer.TxnQueue <- txn
