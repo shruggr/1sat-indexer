@@ -192,27 +192,27 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 func LoadTx(txid string) (tx *bt.Tx, err error) {
 	rawtx, _ := Rdb.Get(context.Background(), txid).Bytes()
 
-	if len(rawtx) == 0 {
-		txData, err := LoadTxData(txid)
-		if err != nil {
-			return nil, err
-		}
-		rawtx = txData.Transaction
-		Rdb.Set(context.Background(), txid, rawtx, 0).Err()
+	// if len(rawtx) == 0 {
+	// 	txData, err := LoadTxData(txid)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	rawtx = txData.Transaction
+	// 	Rdb.Set(context.Background(), txid, rawtx, 0).Err()
+	// }
+	// return bt.NewTxFromBytes(rawtx)
+
+	if len(rawtx) > 0 {
+		return bt.NewTxFromBytes(rawtx)
 	}
-	return bt.NewTxFromBytes(rawtx)
 
-	// if len(rawtx) > 0 {
-	// 	return bt.NewTxFromBytes(rawtx)
-	// }
-
-	// tx = bt.NewTx()
-	// r, err := bit.GetRawTransactionRest(txid)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// _, err = tx.ReadFrom(r)
-	// return
+	tx = bt.NewTx()
+	r, err := bit.GetRawTransactionRest(txid)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.ReadFrom(r)
+	return
 }
 
 func LoadTxData(txid string) (*models.Transaction, error) {
