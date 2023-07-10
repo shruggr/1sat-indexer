@@ -5,36 +5,40 @@ CREATE TABLE progress(
 
 CREATE TABLE txns(
     txid BYTEA PRIMARY KEY,
-    blockid BYTEA,
+    block_id BYTEA,
     height INTEGER,
     idx INTEGER,
-    first TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created TIMESTAMP DEFAULT NOW()
 );
-CREATE INDEX txns_blockid_idx ON txns(blockid, idx);
+CREATE INDEX txns_block_id_idx ON txns(block_id, idx);
+CREATE INDEX txns_unmined ON txns(created)
+    WHERE block_id IS NULL;
 
 CREATE TABLE txos(
     txid BYTEA,
     vout INTEGER,
     height INTEGER,
     idx BIGINT,
-	satoshis BIGINT,
-    acc_sats BIGINT,
-	lock BYTEA,
-	spend BYTEA NOT NULL DEFAULT decode('', 'hex'),
-	vin INTEGER,
-	origin BYTEA,
-    ordinal BIGINT,
-    listing BOOLEAN NOT NULL DEFAULT FALSE,
-    bsv20 BOOLEAN NOT NULL DEFAULT FALSE,
-    created TIMESTAMP DEFAULT NOW(),
-	PRIMARY KEY(txid, vout)
+    satoshis BIGINT,
+    outacc BIGINT,
+    pkhash BYTEA,
+    spend BYTEA DEFAULT '\x',
+    vin INTEGER,
+    spend_height INTEGER,
+    spend_idx BIGINT,
+    inacc BIGINT,
+    origin BYTEA,
+    PRIMARY KEY(txid, vout, spend)
 );
-CREATE INDEX idx_txos_lock_spend_height_idx ON txos(lock, spend, height, idx);
-CREATE INDEX idx_txos_spend_vin ON txos(spend, vin);
-CREATE INDEX idx_txos_listing_spend_height ON txos (listing, spend, height DESC, idx DESC);
-CREATE UNIQUE INDEX idx_txos_txid_vout_spend ON txos(txid, vout, spend);
-CREATE INDEX IF NOT EXISTS txos_unmined ON txos(created)
-WHERE height=2147483647;
+CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
+CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
+    WHERE spend = '\x' AND pkhash IS NOT NULL;
+CREATE INDEX idx_txo_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
+    WHERE spend != '\x' AND  pkhash IS NOT NULL;
+CREATE INDEX idx_txo_pkhash_spends ON txos(pkhash, spend_height, spend_idx)
+    WHERE spend != '\x' AND  pkhash IS NOT NULL;
+CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height NULLS LAST, idx)
+    WHERE origin IS NOT NULL;
 
 CREATE TABLE inscriptions(
     txid BYTEA,

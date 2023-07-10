@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -26,4 +28,17 @@ func (s *ByteString) UnmarshalJSON(data []byte) error {
 	}
 
 	return err
+}
+
+func (s *ByteString) Value() (driver.Value, error) {
+	return []byte(*s), nil
+}
+
+func (s *ByteString) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	*s = b
+	return nil
 }

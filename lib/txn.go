@@ -5,48 +5,50 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log"
-	"math"
 
 	"github.com/libsv/go-bt/v2"
 )
 
-const THREADS = 16
+const THREADS = 64
 
 type IndexContext struct {
-	Txid          ByteString        `json:"txid"`
-	Height        uint32            `json:"height"`
-	Idx           uint64            `json:"idx"`
-	Txos          []*Txo            `json:"txos"`
-	ParsedScripts []*ParsedScript   `json:"parsed"`
-	Inscriptions  []*ParsedScript   `json:"inscriptions"`
-	Spends        []*Txo            `json:"spends"`
-	Listings      []*OrdLockListing `json:"listings"`
-	Bsv20s        []*Bsv20          `json:"bsv20s"`
-	MissingInputs bool
+	Txid          []byte          `json:"txid"`
+	BlockId       *string         `json:"blockId"`
+	Height        *uint32         `json:"height"`
+	Idx           uint64          `json:"idx"`
+	Txos          []*Txo          `json:"txos"`
+	ParsedScripts []*ParsedScript `json:"parsed"`
+	Origins       []*Origin       `json:"origin"`
+	Inscriptions  []*Inscription  `json:"inscriptions"`
+	Spends        []*Spend        `json:"spends"`
+	Listings      []*Listing      `json:"listings"`
+	Bsv20s        []*Bsv20        `json:"bsv20s"`
 }
 
 func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 	var accSatsIn uint64
 	var err error
 	for vin, txin := range tx.Inputs {
-		spend := &Txo{
-			Txid:  txin.PreviousTxID(),
-			Vout:  txin.PreviousTxOutIndex,
-			Spend: ctx.Txid,
-			Vin:   uint32(vin),
+		spend := &Spend{
+			Txid:   txin.PreviousTxID(),
+			Vout:   txin.PreviousTxOutIndex,
+			Spend:  ctx.Txid,
+			Vin:    uint32(vin),
+			Height: ctx.Height,
+			Idx:    ctx.Idx,
 		}
 		ctx.Spends = append(ctx.Spends, spend)
 
-		exists := spend.SaveSpend()
+		exists := spend.SetSpent()
 		if !exists {
 			var tx *bt.Tx
 			hexId := hex.EncodeToString(spend.Txid)
 			tx, err = LoadTx(hexId)
 			if err != nil {
-				if ctx.Height > 0 && ctx.Height < uint32(math.Pow(2, 31)-1) {
+				if ctx.Height != nil {
 					log.Panicf("%x: %d %v\n", spend.Txid, ctx.Height, err)
 				}
-				ctx.MissingInputs = true
+				spend.Missing = true
 				log.Printf("Missing Inputs %x\n", spend.Txid)
 				continue
 			}
@@ -54,30 +56,24 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			accSatsOut := uint64(0)
 			for vout, txout := range tx.Outputs {
 				if vout < int(spend.Vout) {
-					spend.AccSats += txout.Satoshis
+					spend.OutAcc += txout.Satoshis
+					continue
 				}
-				if _, err = InsBareSpend.Exec(
-					spend.Txid,
-					spend.Vout,
-					txout.Satoshis,
-					accSatsOut,
-					spend.Spend,
-					spend.Vin,
-				); err != nil {
-					log.Panicf("%x: %d %v\n", spend.Txid, ctx.Height, err)
-				}
+				spend.Satoshis = txout.Satoshis
+				spend.Save()
 				accSatsOut += txout.Satoshis
+				break
 			}
 			spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
 		}
 
+		spend.InAcc = accSatsIn
 		accSatsIn += spend.Satoshis
-		spend.AccSats = accSatsIn
 		if Rdb != nil {
 			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
 			msg := outpoint.String()
-			if len(spend.Lock) > 0 {
-				Rdb.Publish(context.Background(), hex.EncodeToString(spend.Lock), msg)
+			if len(spend.PKHash) > 0 {
+				Rdb.Publish(context.Background(), hex.EncodeToString(spend.PKHash), msg)
 			}
 			if spend.Listing {
 				Rdb.Publish(context.Background(), "unlist", msg)
@@ -89,7 +85,6 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 	accSats := uint64(0)
 	for vout, txout := range tx.Outputs {
-		accSats += txout.Satoshis
 		outpoint := Outpoint(binary.BigEndian.AppendUint32(ctx.Txid, uint32(vout)))
 		txo := &Txo{
 			Txid:     ctx.Txid,
@@ -97,25 +92,44 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			Height:   ctx.Height,
 			Idx:      ctx.Idx,
 			Satoshis: txout.Satoshis,
-			AccSats:  accSats,
+			OutAcc:   accSats,
 			Outpoint: &outpoint,
 		}
 
-		var accSpendSats uint64
-		if !ctx.MissingInputs {
-			for _, spend := range ctx.Spends {
-				accSpendSats += spend.Satoshis
-				if txo.Satoshis == 1 && spend.Satoshis == 1 && accSpendSats == txo.AccSats {
-					txo.Origin = spend.Origin
-					txo.PrevOrd = spend
-				}
-			}
-		}
-
+		// if txo.Satoshis == 0 {
+		// 	parsed := ParseScript(*txout.LockingScript, tx, ctx.Height)
+		// 	ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
+		// }
 		if txo.Satoshis == 1 {
+			for vin, spend := range ctx.Spends {
+				if spend.Missing {
+					log.Printf("Missing Inputs %x\n", txo.Txid)
+					break
+				}
+				if spend.InAcc < txo.OutAcc && len(ctx.Spends) > vin+1 {
+					continue
+				} else if spend.InAcc == txo.OutAcc && spend.Satoshis == 1 {
+					txo.Origin = spend.Origin
+					txo.Spend = spend
+					if ctx.Height != nil && *ctx.Height < 801000 {
+						txo.Bsv20 = spend.Bsv20
+					}
+					break
+				}
+				txo.IsOrigin = true
+			}
 			parsed := ParseScript(*txout.LockingScript, tx, ctx.Height)
-			txo.Lock = parsed.Lock
-			if !ctx.MissingInputs && txo.Origin == nil && parsed.Ord != nil {
+			txo.PKHash = parsed.PKHash
+			if txo.IsOrigin && parsed.Inscription != nil {
+				origin := &Origin{
+					Origin: txo.Outpoint,
+					Txid:   ctx.Txid,
+					Vout:   txo.Vout,
+					Map:    parsed.Map,
+					Height: *ctx.Height,
+					Idx:    ctx.Idx,
+				}
+				ctx.Origins = append(ctx.Origins, origin)
 				txo.Origin = txo.Outpoint
 			}
 			if parsed.Listing != nil {
@@ -125,60 +139,85 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				txo.Bsv20 = parsed.Bsv20.Op != "deploy"
 				bsv20 := parsed.Bsv20
 				bsv20.Txid = ctx.Txid
-				bsv20.Vout = uint32(vout)
+				bsv20.Vout = txo.Vout
 				bsv20.Height = ctx.Height
 				bsv20.Idx = ctx.Idx
-				bsv20.Lock = parsed.Lock
-				bsv20.Map = parsed.Map
-				bsv20.B = parsed.B
+				bsv20.PKHash = parsed.PKHash
 				bsv20.Listing = parsed.Listing != nil
 				ctx.Bsv20s = append(ctx.Bsv20s, bsv20)
+			} else if parsed.Inscription != nil {
+				ins := parsed.Inscription
+				ins.Txid = ctx.Txid
+				ins.Vout = txo.Vout
+				ins.Origin = txo.Origin
+				ins.Height = ctx.Height
+				ins.Idx = ctx.Idx
+				ctx.Inscriptions = append(ctx.Inscriptions, ins)
 			}
+
+			if parsed.Listing != nil {
+				listing := parsed.Listing
+				listing.Txid = ctx.Txid
+				listing.Vout = txo.Vout
+				listing.Height = ctx.Height
+				listing.Idx = ctx.Idx
+				listing.Outpoint = txo.Outpoint
+				ctx.Listings = append(ctx.Listings, listing)
+			}
+			parsed.Txid = ctx.Txid
+			parsed.Vout = txo.Vout
+			parsed.Origin = txo.Origin
+			parsed.Height = ctx.Height
+			parsed.Idx = ctx.Idx
+			parsed.Outpoint = txo.Outpoint
+			ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
+
 			ctx.Txos = append(ctx.Txos, txo)
-
-			if txo.Origin != nil {
-				parsed.Txid = ctx.Txid
-				parsed.Vout = uint32(vout)
-				parsed.Height = ctx.Height
-				parsed.Idx = ctx.Idx
-				parsed.Origin = txo.Origin
-				if txo.Origin == &outpoint {
-					ctx.Inscriptions = append(ctx.Inscriptions, parsed)
-				}
-				ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
-
-				if parsed.Listing != nil {
-					parsed.Listing.Txid = ctx.Txid
-					parsed.Listing.Vout = uint32(vout)
-					parsed.Listing.Origin = txo.Origin
-					parsed.Listing.Height = ctx.Height
-					parsed.Listing.Idx = ctx.Idx
-					parsed.Listing.Outpoint = &outpoint
-					ctx.Listings = append(ctx.Listings, parsed.Listing)
-				}
-			}
+			accSats += txout.Satoshis
 		}
 	}
 	if !dryRun {
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO txns(txid, block_id, height, idx)
+			VALUES($1, decode($2, 'hex'), $3, $4)
+			ON CONFLICT(txid) DO UPDATE SET
+				block_id=EXCLUDED.block_id,
+				height=EXCLUDED.height,
+				idx=EXCLUDED.idx`,
+			ctx.Txid,
+			ctx.BlockId,
+			ctx.Height,
+			ctx.Idx,
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", ctx.Txid, err)
+		}
 		for _, txo := range ctx.Txos {
-			impliedBsv20 := false
-			if len(ctx.Bsv20s) == 0 && txo.PrevOrd != nil {
-				impliedBsv20 = txo.PrevOrd.Bsv20
-				txo.Bsv20 = txo.PrevOrd.Bsv20
-			}
 			txo.Save()
 			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.Lock), txo.Outpoint.String())
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
 			}
-			if impliedBsv20 {
-				saveImpliedBsv20Transfer(txo.PrevOrd.Txid, txo.PrevOrd.Vout, txo)
+			// Implied BSV20 transfer
+			if len(ctx.Bsv20s) == 0 && txo.Spend != nil && txo.Bsv20 {
+				saveImpliedBsv20Transfer(txo.Spend.Txid, txo.Spend.Vout, txo)
 			}
+		}
+		for _, origin := range ctx.Origins {
+			origin.Save()
 		}
 		for _, inscription := range ctx.Inscriptions {
 			inscription.SaveInscription()
 		}
-		for _, parsed := range ctx.ParsedScripts {
-			parsed.Save()
+		for _, p := range ctx.ParsedScripts {
+			if p.Map != nil {
+				p.SaveMap()
+				if ctx.Height != nil && p.Origin != nil && p.Outpoint != p.Origin {
+					p.UpdateMap()
+				}
+			}
+			// if p.B != nil {
+
+			// }
 		}
 		for _, listing := range ctx.Listings {
 			listing.Save()
@@ -194,33 +233,27 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			bsv20.Save()
 		}
 
-		if hasTransfer && ctx.Height == 4294967295 {
+		if hasTransfer && ctx.Height == nil {
 			ValidateTransfer(ctx.Txid)
 		}
 	}
 }
 
-func IndexTxn(tx *bt.Tx, height uint32, idx uint64, dryRun bool) (ctx *IndexContext, err error) {
+func IndexTxn(tx *bt.Tx, blockId *string, height *uint32, idx uint64, dryRun bool) (ctx *IndexContext, err error) {
 	txid := tx.TxIDBytes()
 	ctx = &IndexContext{
-		Txid:   txid,
-		Height: height,
-		Idx:    idx,
-	}
-
-	if height == 0 {
-		// Set height to max uint32 so that it sorts to the end of the list
-		ctx.Height = uint32(math.Pow(2, 31) - 1)
+		Txid:    txid,
+		BlockId: blockId,
+		Height:  height,
+		Idx:     idx,
+		Spends:  make([]*Spend, 0, len(tx.Inputs)),
 	}
 
 	if !tx.IsCoinbase() {
-		ctx.Spends = make([]*Txo, 0, len(tx.Inputs))
 		IndexSpends(tx, ctx, dryRun)
-	} else {
-		ctx.Spends = make([]*Txo, 0)
 	}
+
 	IndexTxos(tx, ctx, dryRun)
 
-	// wg.Wait()
 	return
 }

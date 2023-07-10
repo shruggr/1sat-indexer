@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -9,42 +10,44 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type Bsv20 struct {
-	Txid     ByteString   `json:"txid"`
-	Vout     uint32       `json:"vout"`
-	Height   uint32       `json:"height"`
-	Idx      uint64       `json:"idx"`
-	Protocol string       `json:"p"`
-	Op       string       `json:"op"`
-	Ticker   string       `json:"tick"`
-	Id       *Outpoint    `json:"id"`
-	Max      uint64       `json:"max"`
-	Limit    uint64       `json:"lim"`
-	Decimals uint8        `json:"dec"`
-	Lock     ByteString   `json:"lock"`
-	Amt      uint64       `json:"amt"`
-	Supply   uint64       `json:"supply"`
-	Map      Map          `json:"MAP,omitempty"`
-	B        *File        `json:"B,omitempty"`
-	Implied  bool         `json:"implied"`
-	Listing  bool         `json:"listing"`
-	Valid    sql.NullBool `json:"valid"`
-	Reason   string       `json:"reason"`
+	Txid     []byte    `json:"txid"`
+	Vout     uint32    `json:"vout"`
+	Height   *uint32   `json:"height"`
+	Idx      uint64    `json:"idx"`
+	Protocol string    `json:"p"`
+	Op       string    `json:"op"`
+	Ticker   string    `json:"tick"`
+	Id       *Outpoint `json:"id"`
+	Max      uint64    `json:"max"`
+	Limit    uint64    `json:"lim"`
+	Decimals uint8     `json:"dec"`
+	PKHash   []byte    `json:"pkhash"`
+	Amt      uint64    `json:"amt"`
+	Supply   uint64    `json:"supply"`
+	// Map      Map          `json:"MAP,omitempty"`
+	// B        *File        `json:"B,omitempty"`
+	Implied bool         `json:"implied"`
+	Listing bool         `json:"listing"`
+	Valid   sql.NullBool `json:"valid"`
+	Reason  string       `json:"reason"`
 }
 
-func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
+func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 	mime := strings.ToLower(ord.Type)
 	if !strings.HasPrefix(mime, "application/bsv-20") &&
-		!(height > 0 && height < 793000 && strings.HasPrefix(mime, "text/plain")) {
+		!(height != nil && *height < 793000 && strings.HasPrefix(mime, "text/plain")) {
 		return nil, nil
 	}
 	data := map[string]string{}
 	// fmt.Println("JSON:", string(p.Ord.Content))
 	err = json.Unmarshal(ord.Content, &data)
 	if err != nil {
-		fmt.Println("JSON PARSE ERROR:", err)
+		// fmt.Println("JSON PARSE ERROR:", ord.Content, err)
 		return
 	}
 	if protocol, ok := data["p"]; !ok || protocol != "bsv-20" {
@@ -103,8 +106,9 @@ func (b *Bsv20) Save() {
 	b.Op = strings.ToLower(b.Op)
 	if b.Op == "deploy" {
 		b.Id = NewOutpoint(b.Txid, b.Vout)
-		_, err := db.Exec(`INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec, map, b, valid, reason)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO bsv20(txid, vout, id, height, idx, tick, max, lim, dec, valid, reason)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT(id) DO UPDATE SET
 				height=EXCLUDED.height,
 				idx=EXCLUDED.idx,
@@ -119,8 +123,6 @@ func (b *Bsv20) Save() {
 			strconv.FormatUint(b.Max, 10),
 			b.Limit,
 			b.Decimals,
-			b.Map,
-			b.B,
 			b.Valid,
 			b.Reason,
 		)
@@ -129,22 +131,21 @@ func (b *Bsv20) Save() {
 		}
 	}
 
-	_, err := db.Exec(`INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, orig_amt, lock, implied, spend, valid, reason, listing)
-		SELECT $1, $2, $3, $4, UPPER($5), $6, $7, $7, lock, $8, spend, $9, $10, listing
-		FROM txos
+	_, err := Db.Exec(context.Background(), `
+		INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, orig_amt, pkhash, implied, spend, valid, reason, listing)
+		SELECT $1, $2, t.height, t.idx, UPPER($3), $4, $5, $6, $6, t.pkhash, $8, t.spend, $9, $10, t.listing
+		FROM txos t
 		WHERE txid=$1 AND vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE SET
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx,
 			implied=EXCLUDED.implied,
-			lock=EXCLUDED.lock,
+			lock=EXCLUDED.pkhash,
 			amt=EXCLUDED.amt,
 			orig_amt=EXCLUDED.orig_amt,
 			listing=EXCLUDED.listing`,
 		b.Txid,
 		b.Vout,
-		b.Height,
-		b.Idx,
 		b.Ticker,
 		b.Op,
 		b.Amt,
@@ -158,7 +159,8 @@ func (b *Bsv20) Save() {
 }
 
 func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
-	rows, err := db.Query(`SELECT tick, amt
+	rows, err := Db.Query(context.Background(), `
+		SELECT tick, amt
 		FROM bsv20_txos
 		WHERE txid=$1 AND vout=$2`,
 		txid,
@@ -183,7 +185,7 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 			Op:      "transfer",
 			Ticker:  ticker,
 			Amt:     amt,
-			Lock:    txo.Lock,
+			PKHash:  txo.PKHash,
 			Implied: true,
 		}
 		bsv20.Save()
@@ -191,7 +193,8 @@ func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
 }
 
 func ValidateBsv20(height uint32) {
-	rows, err := db.Query(`SELECT DISTINCT tick
+	rows, err := Db.Query(context.Background(), `
+		SELECT DISTINCT tick
 		FROM bsv20_txos
 		WHERE valid IS NULL AND height <= $1 AND height > 0`,
 		height,
@@ -251,7 +254,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		Height: height,
 	}
 
-	tickRows, err := db.Query(`SELECT txid, vout, height, idx, op, orig_amt
+	tickRows, err := Db.Query(context.Background(), `SELECT txid, vout, height, idx, op, orig_amt
 		FROM bsv20_txos
 		WHERE tick=$1 AND valid IS NULL  AND height > 0
 			AND (
@@ -266,11 +269,11 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		log.Panicln(err)
 	}
 	defer tickRows.Close()
-	t, err := db.Begin()
+	t, err := Db.Begin(context.Background())
 	if err != nil {
 		log.Panic(err)
 	}
-	defer t.Rollback()
+	defer t.Rollback(context.Background())
 
 	invalid := map[string]string{}
 	pending := map[string]struct{}{}
@@ -302,7 +305,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				continue
 			}
 
-			row := t.QueryRow(`UPDATE bsv20 SET valid=TRUE 
+			row := t.QueryRow(context.Background(), `
+				UPDATE bsv20 SET valid=TRUE 
 				WHERE id=$1
 				RETURNING id, height, idx, tick, max, lim, supply`,
 				outpoint,
@@ -330,7 +334,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 
 		switch bsv20.Op {
 		case "mint":
-			if ticker == nil || ticker.Height > bsv20.Height || (ticker.Height == bsv20.Height && ticker.Idx > bsv20.Idx) {
+			if ticker == nil || *ticker.Height > *bsv20.Height || (*ticker.Height == *bsv20.Height && ticker.Idx > bsv20.Idx) {
 				reason = fmt.Sprintf("invalid ticker %s as of %d %d", tick, bsv20.Height, bsv20.Idx)
 			} else if ticker.Supply >= ticker.Max {
 				reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
@@ -348,7 +352,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, bsv20.Amt, ticker.Max)
 				bsv20.Amt = ticker.Max - ticker.Supply
 			}
-			_, err := t.Exec(`UPDATE bsv20_txos
+			_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
 				SET amt=$3, valid=TRUE, reason=$4
 				WHERE txid=$1 AND vout=$2`,
 				bsv20.Txid,
@@ -379,7 +384,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 				continue
 			}
 
-			if ticker == nil || ticker.Height > bsv20.Height || (ticker.Height == bsv20.Height && ticker.Idx > bsv20.Idx) {
+			if ticker == nil || *ticker.Height > *bsv20.Height || (*ticker.Height == *bsv20.Height && ticker.Idx > bsv20.Idx) {
 				setInvalid(t, bsv20.Txid, bsv20.Vout, fmt.Sprintf("invalid ticker %s as of %d %d", tick, bsv20.Height, bsv20.Idx))
 				r.Transfer.Invalid++
 				continue
@@ -392,9 +397,10 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 			} else {
 				isPending := false
 				func() {
-					rows, err := t.Query(`SELECT amt, valid
-							FROM bsv20_txos
-							WHERE spend=$1 AND (valid=TRUE OR valid IS NULL)`,
+					rows, err := t.Query(context.Background(), `
+						SELECT amt, valid
+						FROM bsv20_txos
+						WHERE spend=$1 AND (valid=TRUE OR valid IS NULL)`,
 						bsv20.Txid,
 					)
 					if err != nil {
@@ -422,9 +428,10 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 			}
 			if balance < bsv20.Amt {
 				reason = fmt.Sprintf("insufficient inputs: bal %d < amt %d", balance, bsv20.Amt)
-				_, err := t.Exec(`UPDATE bsv20_txos
-								SET VALID=FALSE, reason=$3
-								WHERE txid=$1 AND tick=$2`,
+				_, err := t.Exec(context.Background(), `
+					UPDATE bsv20_txos
+					SET VALID=FALSE, reason=$3
+					WHERE txid=$1 AND tick=$2`,
 					bsv20.Txid,
 					tick,
 					reason,
@@ -446,7 +453,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 		}
 	}
 	if ticker != nil {
-		_, err = t.Exec(`UPDATE bsv20
+		_, err = t.Exec(context.Background(), `
+			UPDATE bsv20
 			SET supply=$2
 			WHERE id=$1`,
 			ticker.Id,
@@ -456,7 +464,7 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 	if err != nil {
 		log.Panic(err)
 	}
-	err = t.Commit()
+	err = t.Commit(context.Background())
 	// fmt.Printf("BSV20 %s - dep: %d %d mint: %d %d xfer: %d %d\n", tick, r.Deploy.Valid, r.Deploy.Invalid, r.Mint.Valid, r.Mint.Invalid, r.Transfer.Valid, r.Transfer.Invalid)
 	if err != nil {
 		log.Panic(err)
@@ -466,7 +474,8 @@ func ValidateTicker(height uint32, tick string) (r *TickerResults) {
 
 // Not using this in mempool
 func ValidateTransfer(txid []byte) {
-	tickRows, err := db.Query(`SELECT vout, height, idx, op, orig_amt
+	tickRows, err := Db.Query(context.Background(), `
+		SELECT vout, height, idx, op, orig_amt
 		FROM bsv20_txos
 		WHERE txid = $1
 		ORDER BY tick`,
@@ -477,11 +486,11 @@ func ValidateTransfer(txid []byte) {
 	}
 	defer tickRows.Close()
 
-	t, err := db.Begin()
+	t, err := Db.Begin(context.Background())
 	if err != nil {
 		log.Panic(err)
 	}
-	defer t.Rollback()
+	defer t.Rollback(context.Background())
 
 	invalid := map[string]string{}
 	pending := map[string]struct{}{}
@@ -515,7 +524,8 @@ func ValidateTransfer(txid []byte) {
 		} else {
 			isPending := false
 			func() {
-				rows, err := t.Query(`SELECT amt, valid
+				rows, err := t.Query(context.Background(), `
+					SELECT amt, valid
 					FROM bsv20_txos
 					WHERE spend=$1 AND (valid=TRUE OR valid IS NULL)`,
 					bsv20.Txid,
@@ -553,14 +563,15 @@ func ValidateTransfer(txid []byte) {
 		tokensIn[tick] = balance
 		setValid(t, bsv20.Txid, bsv20.Vout, reason)
 	}
-	err = t.Commit()
+	err = t.Commit(context.Background())
 	if err != nil {
 		log.Panic(err)
 	}
 }
 
 func loadTicker(tick string) (ticker *Bsv20) {
-	rows, err := db.Query(`SELECT id, height, idx, tick, max, lim, supply
+	rows, err := Db.Query(context.Background(), `
+		SELECT id, height, idx, tick, max, lim, supply
 		FROM bsv20
 		WHERE tick=$1 AND valid=TRUE`,
 		tick,
@@ -579,8 +590,9 @@ func loadTicker(tick string) (ticker *Bsv20) {
 	return
 }
 
-func setValid(t *sql.Tx, txid []byte, vout uint32, reason string) {
-	_, err := t.Exec(`UPDATE bsv20_txos
+func setValid(t pgx.Tx, txid []byte, vout uint32, reason string) {
+	_, err := t.Exec(context.Background(), `
+		UPDATE bsv20_txos
 		SET valid=TRUE, reason=$3
 		WHERE txid=$1 AND vout=$2`,
 		txid,
@@ -592,8 +604,9 @@ func setValid(t *sql.Tx, txid []byte, vout uint32, reason string) {
 	}
 }
 
-func setTokenInvalid(t *sql.Tx, id []byte, reason string) bool {
-	_, err := t.Exec(`UPDATE bsv20
+func setTokenInvalid(t pgx.Tx, id []byte, reason string) bool {
+	_, err := t.Exec(context.Background(), `
+		UPDATE bsv20
 		SET valid=FALSE, reason=$2
 		WHERE id=$1`,
 		id,
@@ -605,8 +618,9 @@ func setTokenInvalid(t *sql.Tx, id []byte, reason string) bool {
 	return true
 }
 
-func setInvalid(t *sql.Tx, txid []byte, vout uint32, reason string) {
-	_, err := db.Exec(`UPDATE bsv20_txos
+func setInvalid(t pgx.Tx, txid []byte, vout uint32, reason string) {
+	_, err := t.Exec(context.Background(), `
+		UPDATE bsv20_txos
 		SET valid=FALSE, reason=$3
 		WHERE txid=$1 AND vout=$2`,
 		txid,

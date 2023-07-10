@@ -1,34 +1,45 @@
 package lib
 
 import (
+	"context"
 	"log"
 )
 
 type Txo struct {
-	Txid     ByteString `json:"txid"`
-	Vout     uint32     `json:"vout"`
-	Satoshis uint64     `json:"satoshis,omitempty"`
-	AccSats  uint64     `json:"acc_sats,omitempty"`
-	Lock     ByteString `json:"lock"`
-	Spend    ByteString `json:"spend,omitempty"`
-	Vin      uint32     `json:"vin"`
-	Origin   *Outpoint  `json:"origin,omitempty"`
-	Ordinal  uint64     `json:"ordinal"`
-	Height   uint32     `json:"height"`
-	Idx      uint64     `json:"idx"`
-	Listing  bool       `json:"listing,omitempty"`
-	Bsv20    bool       `json:"bsv20,omitempty"`
-	PrevOrd  *Txo       `json:"prevOrd,omitempty"`
-	Outpoint *Outpoint  `json:"outpoint,omitempty"`
+	Txid     []byte    `json:"txid"`
+	Vout     uint32    `json:"vout"`
+	Height   *uint32   `json:"height"`
+	Idx      uint64    `json:"idx"`
+	Satoshis uint64    `json:"satoshis"`
+	OutAcc   uint64    `json:"outacc"`
+	PKHash   []byte    `json:"pkhash"`
+	Spend    *Spend    `json:"spend"`
+	Vin      uint32    `json:"vin"`
+	Origin   *Outpoint `json:"origin"`
+	Listing  bool      `json:"listing"`
+	Bsv20    bool      `json:"bsv20"`
+	Outpoint *Outpoint `json:"outpoint"`
+	IsOrigin bool
 }
 
 func (t *Txo) Save() {
-	_, err := InsTxo.Exec(
+	_, err := Db.Exec(context.Background(), `
+		INSERT INTO txos(txid, vout, satoshis, outacc, pkhash, origin, height, idx, listing, bsv20)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(txid, vout) DO UPDATE SET
+			satoshis=EXCLUDED.satoshis,
+			outacc=EXCLUDED.outacc,
+			pkhash=EXCLUDED.pkhash,
+			origin=EXCLUDED.origin,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx,
+			listing=EXCLUDED.listing,
+			bsv20=EXCLUDED.bsv20`,
 		t.Txid,
 		t.Vout,
 		t.Satoshis,
-		t.AccSats,
-		t.Lock,
+		t.OutAcc,
+		t.PKHash,
 		t.Origin,
 		t.Height,
 		t.Idx,
@@ -38,43 +49,4 @@ func (t *Txo) Save() {
 	if err != nil {
 		log.Panicln("insTxo Err:", err)
 	}
-}
-
-func (t *Txo) SaveWithSpend() {
-	_, err := InsSpend.Exec(
-		t.Txid,
-		t.Vout,
-		t.Satoshis,
-		t.AccSats,
-		t.Lock,
-		t.Origin,
-		t.Height,
-		t.Idx,
-		t.Spend,
-	)
-	if err != nil {
-		log.Panicln("insTxo Err:", err)
-	}
-}
-
-func (t *Txo) SaveSpend() (update bool) {
-	rows, err := SetSpend.Query(
-		t.Txid,
-		t.Vout,
-		t.Spend,
-		t.Vin,
-	)
-	if err != nil {
-		log.Panicln("setSpend Err:", err)
-	}
-	defer rows.Close()
-	if rows.Next() {
-		err = rows.Scan(&t.Lock, &t.Satoshis, &t.Listing, &t.Bsv20, &t.Origin)
-		if err != nil {
-			log.Panic(err)
-		}
-		update = true
-	}
-
-	return
 }

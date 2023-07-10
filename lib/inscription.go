@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
@@ -62,12 +63,12 @@ func init() {
 // }
 
 type File struct {
-	Hash     ByteString `json:"hash"`
-	Size     uint32     `json:"size"`
-	Type     string     `json:"type"`
-	Content  []byte     `json:"-"`
-	Encoding string     `json:"encoding,omitempty"`
-	Name     string     `json:"name,omitempty"`
+	Hash     []byte `json:"hash"`
+	Size     uint32 `json:"size"`
+	Type     string `json:"type"`
+	Content  []byte `json:"-"`
+	Encoding string `json:"encoding,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 func (f File) Value() (driver.Value, error) {
@@ -96,6 +97,48 @@ func (s *Sigmas) Scan(value interface{}) error {
 	return json.Unmarshal(b, &s)
 }
 
+type Inscription struct {
+	Txid        []byte          `json:"txid"`
+	Vout        uint32          `json:"vout"`
+	Height      *uint32         `json:"height"`
+	Idx         uint64          `json:"idx"`
+	Origin      *Outpoint       `json:"origin"`
+	PKHash      []byte          `json:"pkhash"`
+	Sigmas      Sigmas          `json:"sigma,omitempty"`
+	JsonContent json.RawMessage `json:"json_content"`
+	TextContent string          `json:"text_content"`
+	File        *File           `json:"file,omitempty"`
+}
+
+func (i *Inscription) SaveInscription() (err error) {
+	_, err = Db.Exec(context.Background(), `
+		INSERT INTO inscriptions(txid, vout, height, idx, origin, pkhash, filehash, filesize, filetype, json_content, search_text_en, sigma)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, to_tsvector('english', $11), $12)
+		ON CONFLICT(txid, vout) DO UPDATE SET 
+			height=EXCLUDED.height, 
+			idx=EXCLUDED.idx, 
+			origin=EXCLUDED.origin, 
+			pkhash=EXCLUDED.pkhash,
+			sigma=EXCLUDED.sigma`,
+		i.Txid,
+		i.Vout,
+		i.Height,
+		i.Idx,
+		i.Origin,
+		i.PKHash,
+		i.File.Hash,
+		i.File.Size,
+		i.File.Type,
+		i.JsonContent,
+		i.TextContent,
+		i.Sigmas,
+	)
+	if err != nil {
+		log.Panicf("Save Error: %x %d %x %+v\n", i.Txid, i.File.Size, i.File.Type, err)
+	}
+	return
+}
+
 type Sigma struct {
 	Algorithm string `json:"algorithm"`
 	Address   string `json:"address"`
@@ -105,61 +148,100 @@ type Sigma struct {
 }
 
 type ParsedScript struct {
-	Num     uint64          `json:"num"`
-	Txid    ByteString      `json:"txid"`
-	Vout    uint32          `json:"vout"`
-	Ord     *File           `json:"file"`
-	Origin  *Outpoint       `json:"origin"`
-	Ordinal uint32          `json:"ordinal"`
-	Height  uint32          `json:"height"`
-	Idx     uint64          `json:"idx"`
-	Lock    ByteString      `json:"lock"`
-	Map     Map             `json:"MAP,omitempty"`
-	B       *File           `json:"B,omitempty"`
-	Listing *OrdLockListing `json:"listings,omitempty"`
-	Sigmas  Sigmas          `json:"sigma,omitempty"`
-	Bsv20   *Bsv20          `json:"bsv20,omitempty"`
+	Num         uint64       `json:"num"`
+	Txid        []byte       `json:"txid"`
+	Vout        uint32       `json:"vout"`
+	Height      *uint32      `json:"height"`
+	Idx         uint64       `json:"idx"`
+	Origin      *Outpoint    `json:"origin"`
+	Outpoint    *Outpoint    `json:"outpoint"`
+	Inscription *Inscription `json:"inscription"`
+	PKHash      []byte       `json:"pkhash"`
+	Map         Map          `json:"MAP,omitempty"`
+	B           *File        `json:"B,omitempty"`
+	Listing     *Listing     `json:"listings,omitempty"`
+	Sigmas      Sigmas       `json:"sigma,omitempty"`
+	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
 }
 
-func (p *ParsedScript) SaveInscription() (err error) {
-	_, err = InsInscription.Exec(
-		p.Txid,
-		p.Vout,
-		p.Height,
-		p.Idx,
-		p.Ord.Hash,
-		p.Ord.Size,
-		p.Ord.Type,
-		p.Map,
-		p.Origin,
-		p.Lock,
-		p.Sigmas,
-	)
-	if err != nil {
-		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
-	}
-	return
-}
-
-func (p *ParsedScript) Save() (err error) {
-	if p.Ord != nil || p.Map != nil || p.B != nil {
-		_, err = InsMetadata.Exec(
+func (p *ParsedScript) SaveMap() (err error) {
+	if p.Map != nil {
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO map(txid, vout, height, idx, origin, map)
+			VALUES($1, $2, $3, $4, $5, $6)
+			ON CONFLICT(txid, vout) DO UPDATE SET 
+				height=EXCLUDED.height,
+				idx=EXCLUDED.idx,
+				origin=EXCLUDED.origin,
+				map=EXCLUDED.map`,
 			p.Txid,
 			p.Vout,
 			p.Height,
 			p.Idx,
-			p.Ord,
-			p.Map,
-			p.B,
 			p.Origin,
-			p.Sigmas,
+			p.Map,
 		)
+
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
-			log.Panic(err)
+			log.Panicf("Ins Map: %x %+v\n", p.Txid, err)
 		}
 	}
 	return
+}
+
+func (p *ParsedScript) SaveB() (err error) {
+	if p.Map != nil {
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO b(txid, vout, height, idx, filehash, filesize, filetype, fileenc)
+			VALUES($1, $2, $3, $4, $5, $6)`,
+			p.Txid,
+			p.Vout,
+			p.Height,
+			p.Idx,
+			p.B.Hash,
+			p.B.Size,
+			p.B.Type,
+			p.B.Encoding,
+		)
+
+		if err != nil {
+			log.Panicf("Ins Map: %x %+v\n", p.Txid, err)
+		}
+	}
+	return
+}
+
+func (p *ParsedScript) UpdateMap() {
+	rows, err := Db.Query(context.Background(), `
+		SELECT map FROM map 
+		WHERE origin=$1 AND height IS NOT NULL
+		ORDER BY height, idx`,
+		p.Origin,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	agg := Map{}
+	for rows.Next() {
+		mapIns := Map{}
+		err := rows.Scan(&mapIns)
+		if err != nil {
+			panic(err)
+		}
+		for k, v := range mapIns {
+			agg[k] = v
+		}
+	}
+	_, err = Db.Exec(context.Background(), `
+		UPDATE origin
+		SET map=$2
+		WHERE origin=$1`,
+		p.Origin,
+	)
+	if err != nil {
+		panic(err)
+	}
 }
 
 type OpPart struct {
@@ -267,17 +349,25 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 				*idx = prevIdx
 				break
 			}
-			opKey := string(op.Data)
+			opKey := op.Data
 			prevIdx = *idx
 			op, err = ReadOp(script, idx)
 			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
 				*idx = prevIdx
 				break
 			}
-			// fmt.Println(opKey, op.OpCode, string(op.Data))
-			if utf8.Valid(op.Data) {
-				p.Map[opKey] = string(op.Data)
+
+			if !utf8.Valid(opKey) || !utf8.Valid(op.Data) {
+				continue
 			}
+
+			if len(opKey) == 1 && opKey[0] == 0 {
+				opKey = []byte{}
+			}
+			if len(op.Data) == 1 && op.Data[0] == 0 {
+				op.Data = []byte{}
+			}
+			p.Map[string(opKey)] = string(op.Data)
 		}
 		if val, ok := p.Map["subTypeData"]; ok {
 			var subTypeData json.RawMessage
@@ -369,16 +459,22 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 	return
 }
 
-func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScript) {
+func ParseScript(script bscript.Script, tx *bt.Tx, height *uint32) (p *ParsedScript) {
 	p = &ParsedScript{
 		Sigmas: make(Sigmas, 0),
 	}
 
+	start := 0
+	if len(script) >= 25 && bscript.NewFromBytes(script[:25]).IsP2PKH() {
+		p.PKHash = []byte(script[3:23])
+		start = 25
+	}
+
 	var opFalse int
 	var opIf int
-	var endLock int
-	for i := 0; i < len(script); {
-		startIdx := i
+	var opReturn int
+	for i := start; i < len(script); {
+		startI := i
 		op, err := ReadOp(script, &i)
 		if err != nil {
 			break
@@ -386,24 +482,20 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 		// fmt.Println(prevI, i, op)
 		switch op.OpCode {
 		case bscript.Op0:
-			opFalse = startIdx
+			opFalse = startI
 		case bscript.OpIF:
-			opIf = startIdx
+			opIf = startI
 		case bscript.OpRETURN:
-			// fmt.Println("RETURN", startIdx, op.Data)
-			if endLock == 0 {
-				endLock = startIdx
+			if opReturn == 0 {
+				opReturn = startI
 			}
-			if endLock > 0 {
-				err = ParseBitcom(script, &i, p, tx)
-				if err != nil {
-					log.Println("Error parsing bitcom", err)
-					continue
-				}
+			err = ParseBitcom(script, &i, p, tx)
+			if err != nil {
+				log.Println("Error parsing bitcom", err)
+				continue
 			}
 		case bscript.OpDATA1:
-			// fmt.Println("DATA1", startIdx, op.Data)
-			if op.Data[0] == '|' && endLock > 0 {
+			if op.Data[0] == '|' && opReturn > 0 {
 				err = ParseBitcom(script, &i, p, tx)
 				if err != nil {
 					log.Println("Error parsing bitcom", err)
@@ -412,13 +504,10 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 			}
 		}
 
-		if bytes.Equal(op.Data, []byte("ord")) && opIf == startIdx-1 && opFalse == startIdx-2 {
-			if endLock == 0 {
-				endLock = startIdx - 2
-				// lockParts = lockParts[:len(lockParts)-2]
-				// lockScript = lockScript[:len(lockScript)-2]
+		if bytes.Equal(op.Data, []byte("ord")) && opIf == startI-1 && opFalse == startI-2 {
+			ins := &Inscription{
+				File: &File{},
 			}
-			p.Ord = &File{}
 		ordLoop:
 			for {
 				op, err = ReadOp(script, &i)
@@ -431,66 +520,71 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 					if err != nil {
 						break ordLoop
 					}
-					p.Ord.Content = op.Data
+					ins.File.Content = op.Data
 				case bscript.Op1:
 					op, err = ReadOp(script, &i)
 					if err != nil {
 						break ordLoop
 					}
-					p.Ord.Type = string(op.Data)
+					ins.File.Type = string(op.Data)
 				case bscript.OpENDIF:
 					break ordLoop
 				}
 			}
-			hash := sha256.Sum256(p.Ord.Content)
-			p.Ord.Size = uint32(len(p.Ord.Content))
-			p.Ord.Hash = hash[:]
+			ins.File.Size = uint32(len(ins.File.Content))
+			hash := sha256.Sum256(ins.File.Content)
+			ins.File.Hash = hash[:]
+			p.Inscription = ins
+			if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
+				mime := strings.ToLower(ins.File.Type)
+				if strings.HasPrefix(mime, "application/bsv-20") ||
+					strings.HasPrefix(mime, "text/plain") ||
+					strings.HasPrefix(mime, "application/json") {
 
-			p.Bsv20, _ = parseBsv20(p.Ord, height)
+					var data json.RawMessage
+					err = json.Unmarshal(ins.File.Content, &data)
+					if err == nil {
+						ins.JsonContent = data
+						if strings.HasPrefix(mime, "application/bsv-20") {
+							p.Bsv20, _ = parseBsv20(ins.File, height)
+						}
+						if height != nil && *height < 793000 &&
+							strings.HasPrefix(mime, "text/plain") {
+							p.Bsv20, _ = parseBsv20(ins.File, height)
+						}
+					}
+				}
+				if strings.HasPrefix(mime, "text") {
+					ins.TextContent = string(ins.File.Content)
+				}
+			}
 		}
 	}
-
-	var lockScript bscript.Script
-	// fmt.Println("endLock", endLock)
-	if endLock > 0 {
-		lockScript = script[:endLock]
-	} else {
-		lockScript = script
-	}
-	// asm, err := lockScript.ToASM()
-	// if err != nil {
-	// 	fmt.Println("Error converting to asm", err)
-	// }
-	// fmt.Printf("lockScript: %s\n", asm)
 
 	ordLockPrefixIndex := bytes.Index(script, OrdLockPrefix)
 	ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
 	if ordLockPrefixIndex > -1 && ordLockSuffixIndex > len(OrdLockPrefix) {
 		ordLock := script[ordLockPrefixIndex+len(OrdLockPrefix) : ordLockSuffixIndex]
 		if ordLockParts, err := bscript.DecodeParts(ordLock); err == nil {
-			pkh := ordLockParts[0]
+			p.PKHash = ordLockParts[0]
 			payOutput := &bt.Output{}
 			_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
 			if err == nil {
-				if owner, err := bscript.NewP2PKHFromPubKeyHash(pkh); err == nil {
-					lockScript = *owner
-					p.Listing = &OrdLockListing{
-						Price:     payOutput.Satoshis,
-						PayOutput: payOutput.Bytes(),
-					}
+				p.Listing = &Listing{
+					Price:     payOutput.Satoshis,
+					PayOutput: payOutput.Bytes(),
 				}
 			}
 		}
 	}
 
-	hash := sha256.Sum256(lockScript)
-	p.Lock = bt.ReverseBytes(hash[:])
-
 	return
 }
 
 func SetInscriptionIds(height uint32) (err error) {
-	rows, err := GetMaxInscriptionNum.Query()
+	rows, err := Db.Query(context.Background(),
+		"SELECT MAX(num) FROM origins",
+	)
 	if err != nil {
 		log.Panic(err)
 		return
@@ -498,20 +592,26 @@ func SetInscriptionIds(height uint32) (err error) {
 	defer rows.Close()
 	var num uint64
 	if rows.Next() {
-		var dbId sql.NullInt64
-		err = rows.Scan(&dbId)
+		var dbNum sql.NullInt64
+		err = rows.Scan(&dbNum)
 		if err != nil {
 			log.Panic(err)
 			return
 		}
-		if dbId.Valid {
-			num = uint64(dbId.Int64 + 1)
+		if dbNum.Valid {
+			num = uint64(dbNum.Int64 + 1)
 		}
 	} else {
 		return
 	}
 
-	rows, err = GetUnnumbered.Query(height)
+	rows, err = Db.Query(context.Background(), `
+		SELECT txid, vout
+		FROM origins
+		WHERE num = -1 AND height <= $1 AND height IS NOT NULL
+		ORDER BY height, idx, vout`,
+		height,
+	)
 	if err != nil {
 		log.Panic(err)
 		return
@@ -526,7 +626,12 @@ func SetInscriptionIds(height uint32) (err error) {
 			return
 		}
 		// fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
-		_, err = SetInscriptionId.Exec(txid, vout, num)
+		_, err = Db.Exec(context.Background(), `
+			UPDATE origins
+			SET num=$3
+			WHERE txid=$1 AND vout=$2`,
+			txid, vout, num,
+		)
 		if err != nil {
 			log.Panic(err)
 			return
