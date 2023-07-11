@@ -2,6 +2,8 @@ package lib
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"log"
 )
 
@@ -17,7 +19,7 @@ type Spend struct {
 	Height   *uint32   `json:"height"`
 	Idx      uint64    `json:"idx"`
 	Origin   *Outpoint `json:"origin,omitempty"`
-	Data     TxoData   `json:"data,omitempty"`
+	Data     *TxoData  `json:"data,omitempty"`
 	Outpoint *Outpoint `json:"outpoint,omitempty"`
 	Missing  bool      `json:"missing"`
 }
@@ -39,10 +41,18 @@ func (s *Spend) SetSpent() (exists bool) {
 		log.Panicln("setSpend Err:", err)
 	}
 	defer rows.Close()
+	var data sql.NullString
 	if rows.Next() {
-		err = rows.Scan(&s.PKHash, &s.Satoshis, &s.Data, &s.Origin)
+		err = rows.Scan(&s.PKHash, &s.Satoshis, &data, &s.Origin)
 		if err != nil {
 			log.Panic(err)
+		}
+		if data.Valid {
+			s.Data = &TxoData{}
+			err = json.Unmarshal([]byte(data.String), s.Data)
+			if err != nil {
+				log.Panic(err)
+			}
 		}
 		exists = true
 	}

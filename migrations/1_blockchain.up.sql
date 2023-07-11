@@ -42,7 +42,7 @@ CREATE TABLE txos(
     data JSONB,
     PRIMARY KEY(txid, vout)
 );
-CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
+-- CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
 CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
     WHERE spend IS NULL AND pkhash IS NOT NULL;
 CREATE INDEX idx_txo_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
@@ -75,3 +75,11 @@ CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
 	WHERE height IS NOT NULL AND num = -1;
 CREATE INDEX idx_origins_search_text_en ON origins USING GIN(search_text_en);
 CREATE INDEX idx_origins_map ON origins USING GIN(map);
+
+-- DROP TABLE IF EXISTS blocks;
+-- DROP TABLE IF EXISTS origins;
+-- DROP TABLE IF EXISTS schema_migrations;
+-- DROP TABLE IF EXISTS txns;
+-- DROP TABLE IF EXISTS txos;
+-- DROP TABLE IF EXISTS progress;
+

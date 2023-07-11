@@ -5,7 +5,8 @@ import (
 )
 
 type Inscription struct {
-	JsonContent json.RawMessage `json:"json_content"`
-	TextContent string          `json:"text_content"`
-	File        *File           `json:"file,omitempty"`
+	Json  json.RawMessage `json:"json,omitempty"`
+	Text  string          `json:"text,omitempty"`
+	Words []string        `json:"words,omitempty"`
+	File  *File           `json:"file,omitempty"`
 }

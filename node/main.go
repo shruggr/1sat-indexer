@@ -282,11 +282,11 @@ func processCompletions() {
 		}
 
 		fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
-		fmt.Println("Validating bsv20 for height", *ctx.Height)
-		lib.ValidateBsv20(*ctx.Height)
+		// fmt.Println("Validating bsv20 for height", *ctx.Height)
+		// lib.ValidateBsv20(*ctx.Height)
 
 		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
+		err := lib.SetOriginNum(height)
 		if err != nil {
 			log.Panicln("Error processing inscription ids:", err)
 		}

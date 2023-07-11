@@ -75,7 +75,7 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			if len(spend.PKHash) > 0 {
 				Rdb.Publish(context.Background(), hex.EncodeToString(spend.PKHash), msg)
 			}
-			if spend.Data.Listing != nil {
+			if spend.Data != nil && spend.Data.Listing != nil {
 				Rdb.Publish(context.Background(), "unlist", msg)
 			}
 		}
@@ -87,6 +87,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 	for vout, txout := range tx.Outputs {
 		outpoint := Outpoint(binary.BigEndian.AppendUint32(ctx.Txid, uint32(vout)))
 		txo := &Txo{
+			Tx:       tx,
 			Txid:     ctx.Txid,
 			Vout:     uint32(vout),
 			Height:   ctx.Height,
@@ -112,7 +113,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					txo.Origin = spend.Origin
 					txo.Spend = spend
 					if ctx.Height != nil && *ctx.Height < 801000 {
-						if spend.Data.Bsv20 != nil &&
+						if spend.Data != nil && spend.Data.Bsv20 != nil &&
 							(spend.Data.Bsv20.Op == "mint" || spend.Data.Bsv20.Op == "transfer") {
 							txo.ImpliedBsv20 = true
 						}
@@ -122,7 +123,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				txo.IsOrigin = true
 			}
 			ParseScript(txo)
-			if txo.IsOrigin && txo.Data.Inscription != nil {
+			if txo.IsOrigin && txo.Data != nil && txo.Data.Inscription != nil {
 				origin := &Origin{
 					Origin: txo.Outpoint,
 					Txid:   ctx.Txid,
@@ -138,7 +139,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			// 	txo.Listing = true
 			// }
 			if txo.Data.Bsv20 != nil {
-				txo.Data.Types = append(txo.Data.Types, "bsv20")
+				// txo.Data.Types = append(txo.Data.Types, "bsv20")
 				// txo.Bsv20 = parsed.Bsv20.Op != "deploy"
 				// bsv20 := parsed.Bsv20
 				// bsv20.Txid = ctx.Txid
@@ -148,16 +149,17 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				// bsv20.PKHash = parsed.PKHash
 				// bsv20.Listing = parsed.Listing != nil
 				ctx.Bsv20s = append(ctx.Bsv20s, txo)
-			} else if txo.Data.Inscription != nil {
-				txo.Data.Types = append(txo.Data.Types, "file")
-				// ins := parsed.Inscription
-				// ins.Txid = ctx.Txid
-				// ins.Vout = txo.Vout
-				// ins.Origin = txo.Origin
-				// ins.Height = ctx.Height
-				// ins.Idx = ctx.Idx
-				// ctx.Inscriptions = append(ctx.Inscriptions, ins)
 			}
+			// else if txo.Data.Inscription != nil {
+			// 	txo.Data.Types = append(txo.Data.Types, "file")
+			// 	// ins := parsed.Inscription
+			// 	// ins.Txid = ctx.Txid
+			// 	// ins.Vout = txo.Vout
+			// 	// ins.Origin = txo.Origin
+			// 	// ins.Height = ctx.Height
+			// 	// ins.Idx = ctx.Idx
+			// 	// ctx.Inscriptions = append(ctx.Inscriptions, ins)
+			// }
 
 			// if parsed.Listing != nil {
 			// 	listing := parsed.Listing
@@ -240,17 +242,17 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		// 		Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
 		// 	}
 		// }
-		hasTransfer := false
-		for _, txo := range ctx.Bsv20s {
-			if txo.Data.Bsv20.Op == "transfer" {
-				hasTransfer = true
-			}
-			txo.Data.Bsv20.Save()
-		}
+		// hasTransfer := false
+		// for _, txo := range ctx.Bsv20s {
+		// 	if txo.Data.Bsv20.Op == "transfer" {
+		// 		hasTransfer = true
+		// 	}
+		// 	txo.Data.Bsv20.Save()
+		// }
 
-		if hasTransfer && ctx.Height == nil {
-			ValidateTransfer(ctx.Txid)
-		}
+		// if hasTransfer && ctx.Height == nil {
+		// 	ValidateTransfer(ctx.Txid)
+		// }
 	}
 }
 
