@@ -15,26 +15,24 @@ import (
 )
 
 type Bsv20 struct {
-	Txid     []byte    `json:"txid"`
-	Vout     uint32    `json:"vout"`
-	Height   *uint32   `json:"height"`
-	Idx      uint64    `json:"idx"`
-	Protocol string    `json:"p"`
-	Op       string    `json:"op"`
-	Ticker   string    `json:"tick"`
-	Id       *Outpoint `json:"id"`
-	Max      uint64    `json:"max"`
-	Limit    uint64    `json:"lim"`
-	Decimals uint8     `json:"dec"`
-	PKHash   []byte    `json:"pkhash"`
-	Amt      uint64    `json:"amt"`
-	Supply   uint64    `json:"supply"`
-	// Map      Map          `json:"MAP,omitempty"`
-	// B        *File        `json:"B,omitempty"`
-	Implied bool         `json:"implied"`
-	Listing bool         `json:"listing"`
-	Valid   sql.NullBool `json:"valid"`
-	Reason  string       `json:"reason"`
+	Txid     []byte       `json:"-"`
+	Vout     uint32       `json:"-"`
+	Height   *uint32      `json:"-"`
+	Idx      uint64       `json:"-"`
+	Id       *Outpoint    `json:"id"`
+	Protocol string       `json:"p"`
+	Op       string       `json:"op"`
+	Ticker   string       `json:"tick"`
+	Max      uint64       `json:"-"`
+	Limit    uint64       `json:"-"`
+	Decimals uint8        `json:"-"`
+	PKHash   []byte       `json:"-"`
+	Amt      uint64       `json:"amt"`
+	Supply   uint64       `json:"-"`
+	Implied  bool         `json:"implied"`
+	Listing  bool         `json:"-"`
+	Valid    sql.NullBool `json:"-"`
+	Reason   string       `json:"-"`
 }
 
 func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
@@ -159,6 +157,8 @@ func (b *Bsv20) Save() {
 }
 
 func saveImpliedBsv20Transfer(txid []byte, vout uint32, txo *Txo) {
+	txo.Data.Bsv20.Op = "transfer"
+	txo.Data.Bsv20.Implied = true
 	rows, err := Db.Query(context.Background(), `
 		SELECT tick, amt
 		FROM bsv20_txos

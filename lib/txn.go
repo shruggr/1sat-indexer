@@ -12,17 +12,17 @@ import (
 const THREADS = 64
 
 type IndexContext struct {
-	Txid          []byte          `json:"txid"`
-	BlockId       *string         `json:"blockId"`
-	Height        *uint32         `json:"height"`
-	Idx           uint64          `json:"idx"`
-	Txos          []*Txo          `json:"txos"`
-	ParsedScripts []*ParsedScript `json:"parsed"`
-	Origins       []*Origin       `json:"origin"`
-	Inscriptions  []*Inscription  `json:"inscriptions"`
-	Spends        []*Spend        `json:"spends"`
-	Listings      []*Listing      `json:"listings"`
-	Bsv20s        []*Bsv20        `json:"bsv20s"`
+	Txid    []byte  `json:"txid"`
+	BlockId *string `json:"blockId"`
+	Height  *uint32 `json:"height"`
+	Idx     uint64  `json:"idx"`
+	Txos    []*Txo  `json:"txos"`
+	// ParsedScripts []*ParsedScript `json:"parsed"`
+	Origins []*Origin `json:"origin"`
+	// Inscriptions  []*Inscription  `json:"inscriptions"`
+	Spends []*Spend `json:"spends"`
+	// Listings      []*Listing      `json:"listings"`
+	Bsv20s []*Txo `json:"bsv20s"`
 }
 
 func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
@@ -75,7 +75,7 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			if len(spend.PKHash) > 0 {
 				Rdb.Publish(context.Background(), hex.EncodeToString(spend.PKHash), msg)
 			}
-			if spend.Listing {
+			if spend.Data.Listing != nil {
 				Rdb.Publish(context.Background(), "unlist", msg)
 			}
 		}
@@ -112,65 +112,69 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					txo.Origin = spend.Origin
 					txo.Spend = spend
 					if ctx.Height != nil && *ctx.Height < 801000 {
-						txo.Bsv20 = spend.Bsv20
+						if spend.Data.Bsv20 != nil &&
+							(spend.Data.Bsv20.Op == "mint" || spend.Data.Bsv20.Op == "transfer") {
+							txo.ImpliedBsv20 = true
+						}
 					}
 					break
 				}
 				txo.IsOrigin = true
 			}
-			parsed := ParseScript(*txout.LockingScript, tx, ctx.Height)
-			txo.PKHash = parsed.PKHash
-			if txo.IsOrigin && parsed.Inscription != nil {
+			ParseScript(txo)
+			if txo.IsOrigin && txo.Data.Inscription != nil {
 				origin := &Origin{
 					Origin: txo.Outpoint,
 					Txid:   ctx.Txid,
 					Vout:   txo.Vout,
-					Map:    parsed.Map,
+					Map:    txo.Data.Map,
 					Height: *ctx.Height,
 					Idx:    ctx.Idx,
 				}
 				ctx.Origins = append(ctx.Origins, origin)
 				txo.Origin = txo.Outpoint
 			}
-			if parsed.Listing != nil {
-				txo.Listing = true
-			}
-			if parsed.Bsv20 != nil {
-				txo.Bsv20 = parsed.Bsv20.Op != "deploy"
-				bsv20 := parsed.Bsv20
-				bsv20.Txid = ctx.Txid
-				bsv20.Vout = txo.Vout
-				bsv20.Height = ctx.Height
-				bsv20.Idx = ctx.Idx
-				bsv20.PKHash = parsed.PKHash
-				bsv20.Listing = parsed.Listing != nil
-				ctx.Bsv20s = append(ctx.Bsv20s, bsv20)
-			} else if parsed.Inscription != nil {
-				ins := parsed.Inscription
-				ins.Txid = ctx.Txid
-				ins.Vout = txo.Vout
-				ins.Origin = txo.Origin
-				ins.Height = ctx.Height
-				ins.Idx = ctx.Idx
-				ctx.Inscriptions = append(ctx.Inscriptions, ins)
+			// if txo.Data.Listing != nil {
+			// 	txo.Listing = true
+			// }
+			if txo.Data.Bsv20 != nil {
+				txo.Data.Types = append(txo.Data.Types, "bsv20")
+				// txo.Bsv20 = parsed.Bsv20.Op != "deploy"
+				// bsv20 := parsed.Bsv20
+				// bsv20.Txid = ctx.Txid
+				// bsv20.Vout = txo.Vout
+				// bsv20.Height = ctx.Height
+				// bsv20.Idx = ctx.Idx
+				// bsv20.PKHash = parsed.PKHash
+				// bsv20.Listing = parsed.Listing != nil
+				ctx.Bsv20s = append(ctx.Bsv20s, txo)
+			} else if txo.Data.Inscription != nil {
+				txo.Data.Types = append(txo.Data.Types, "file")
+				// ins := parsed.Inscription
+				// ins.Txid = ctx.Txid
+				// ins.Vout = txo.Vout
+				// ins.Origin = txo.Origin
+				// ins.Height = ctx.Height
+				// ins.Idx = ctx.Idx
+				// ctx.Inscriptions = append(ctx.Inscriptions, ins)
 			}
 
-			if parsed.Listing != nil {
-				listing := parsed.Listing
-				listing.Txid = ctx.Txid
-				listing.Vout = txo.Vout
-				listing.Height = ctx.Height
-				listing.Idx = ctx.Idx
-				listing.Outpoint = txo.Outpoint
-				ctx.Listings = append(ctx.Listings, listing)
-			}
-			parsed.Txid = ctx.Txid
-			parsed.Vout = txo.Vout
-			parsed.Origin = txo.Origin
-			parsed.Height = ctx.Height
-			parsed.Idx = ctx.Idx
-			parsed.Outpoint = txo.Outpoint
-			ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
+			// if parsed.Listing != nil {
+			// 	listing := parsed.Listing
+			// 	listing.Txid = ctx.Txid
+			// 	listing.Vout = txo.Vout
+			// 	listing.Height = ctx.Height
+			// 	listing.Idx = ctx.Idx
+			// 	listing.Outpoint = txo.Outpoint
+			// 	ctx.Listings = append(ctx.Listings, listing)
+			// }
+			// parsed.Txid = ctx.Txid
+			// parsed.Vout = txo.Vout
+			// parsed.Origin = txo.Origin
+			// parsed.Height = ctx.Height
+			// parsed.Idx = ctx.Idx
+			// parsed.Outpoint = txo.Outpoint
+			// ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
 
 			ctx.Txos = append(ctx.Txos, txo)
 			accSats += txout.Satoshis
@@ -198,39 +202,50 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
 			}
 			// Implied BSV20 transfer
-			if len(ctx.Bsv20s) == 0 && txo.Spend != nil && txo.Bsv20 {
-				saveImpliedBsv20Transfer(txo.Spend.Txid, txo.Spend.Vout, txo)
+			if len(ctx.Bsv20s) == 0 && txo.ImpliedBsv20 {
+				txo.Data.Bsv20 = &Bsv20{
+					Txid:   txo.Txid,
+					Vout:   txo.Vout,
+					Height: txo.Height,
+					Idx:    txo.Idx,
+					PKHash: txo.PKHash,
+					Ticker: txo.Spend.Data.Bsv20.Ticker,
+					Op:     "transfer",
+					Amt:    txo.Spend.Data.Bsv20.Amt,
+				}
+
+				// saveImpliedBsv20Transfer(txo.Txid, txo.Vout, txo)
 			}
 		}
 		for _, origin := range ctx.Origins {
 			origin.Save()
 		}
-		for _, inscription := range ctx.Inscriptions {
-			inscription.SaveInscription()
-		}
-		for _, p := range ctx.ParsedScripts {
-			if p.Map != nil {
-				p.SaveMap()
-				if ctx.Height != nil && p.Origin != nil && p.Outpoint != p.Origin {
-					p.UpdateMap()
-				}
-			}
-			// if p.B != nil {
+		// for _, inscription := range ctx.Inscriptions {
+		// 	inscription.SaveInscription()
+		// }
+		// for _, p := range ctx.ParsedScripts {
+		// 	if p.Map != nil {
+		// 		p.SaveMap()
+		// 		if ctx.Height != nil && p.Origin != nil && p.Outpoint != p.Origin {
+		// 			p.UpdateMap()
+		// 		}
+		// 	}
+		// 	// if p.B != nil {
 
-			// }
-		}
-		for _, listing := range ctx.Listings {
-			listing.Save()
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
-			}
-		}
+		// 	// }
+		// }
+		// for _, listing := range ctx.Listings {
+		// 	listing.Save()
+		// 	if Rdb != nil {
+		// 		Rdb.Publish(context.Background(), "list", listing.Outpoint.String())
+		// 	}
+		// }
 		hasTransfer := false
-		for _, bsv20 := range ctx.Bsv20s {
-			if bsv20.Op == "transfer" {
+		for _, txo := range ctx.Bsv20s {
+			if txo.Data.Bsv20.Op == "transfer" {
 				hasTransfer = true
 			}
-			bsv20.Save()
+			txo.Data.Bsv20.Save()
 		}
 
 		if hasTransfer && ctx.Height == nil {

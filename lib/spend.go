@@ -17,8 +17,7 @@ type Spend struct {
 	Height   *uint32   `json:"height"`
 	Idx      uint64    `json:"idx"`
 	Origin   *Outpoint `json:"origin,omitempty"`
-	Listing  bool      `json:"listing,omitempty"`
-	Bsv20    bool      `json:"bsv20,omitempty"`
+	Data     TxoData   `json:"data,omitempty"`
 	Outpoint *Outpoint `json:"outpoint,omitempty"`
 	Missing  bool      `json:"missing"`
 }
@@ -28,7 +27,7 @@ func (s *Spend) SetSpent() (exists bool) {
 		UPDATE txos
 		SET spend=$3, vin=$4, spend_height=$5, spend_idx=$6
 		WHERE txid=$1 AND vout=$2
-		RETURNING COALESCE(pkhash, '\x'), satoshis, listing, bsv20, origin`,
+		RETURNING COALESCE(pkhash, '\x'), satoshis, data, origin`,
 		s.Txid,
 		s.Vout,
 		s.Spend,
@@ -41,7 +40,7 @@ func (s *Spend) SetSpent() (exists bool) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		err = rows.Scan(&s.PKHash, &s.Satoshis, &s.Listing, &s.Bsv20, &s.Origin)
+		err = rows.Scan(&s.PKHash, &s.Satoshis, &s.Data, &s.Origin)
 		if err != nil {
 			log.Panic(err)
 		}

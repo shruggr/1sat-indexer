@@ -3,13 +3,12 @@ package lib
 import "context"
 
 type Listing struct {
-	Txid      []byte    `json:"txid"`
-	Vout      uint32    `json:"vout"`
-	Height    *uint32   `json:"height"`
-	Idx       uint64    `json:"idx"`
-	Price     uint64    `json:"price"`
-	PayOutput []byte    `json:"pay_output"`
-	Outpoint  *Outpoint `json:"outpoint"`
+	Txid   []byte  `json:"-"`
+	Vout   uint32  `json:"-"`
+	Height *uint32 `json:"-"`
+	Idx    uint64  `json:"-"`
+	Price  uint64  `json:"price"`
+	PayOut []byte  `json:"payout"`
 }
 
 func (l *Listing) Save() (err error) {
@@ -28,7 +27,7 @@ func (l *Listing) Save() (err error) {
 		l.Height,
 		l.Idx,
 		l.Price,
-		l.PayOutput,
+		l.PayOut,
 	)
 
 	if err != nil {
