@@ -457,10 +457,13 @@ func ParseScript(txo *Txo) {
 							strings.HasPrefix(mime, "text/plain") {
 							d.Bsv20, _ = parseBsv20(ins.File, txo.Height)
 						}
+						if d.Bsv20 != nil {
+							txo.Data.Types = append(txo.Data.Types, "bsv20")
+						}
 					}
 				}
 				if strings.HasPrefix(mime, "text") {
-					if insType != "json" {
+					if insType == "file" {
 						insType = "text"
 					}
 					ins.Text = string(ins.File.Content)

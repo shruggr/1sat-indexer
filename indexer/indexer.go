@@ -49,7 +49,7 @@ func ProcessTxns(THREADS uint) {
 	go func() {
 		for range ticker.C {
 			if txCount > 0 {
-				log.Println("Block", height, idx, txCount/10, "txns/s", len(Txns), InQueue)
+				log.Printf("Blk %d I %d - %d txs %d/s Q %d %d\n", height, idx, txCount, txCount/10, len(Txns), InQueue)
 			}
 			// m.Lock()
 			txCount = 0
