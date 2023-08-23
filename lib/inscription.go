@@ -136,7 +136,7 @@ func (p *ParsedScript) SaveInscription() (err error) {
 		p.Sigmas,
 	)
 	if err != nil {
-		log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+		log.Panicf("Save Error: %x %d %+v\n", p.Txid, p.Ord.Size, err)
 	}
 	return
 }
@@ -155,7 +155,7 @@ func (p *ParsedScript) Save() (err error) {
 			p.Sigmas,
 		)
 		if err != nil {
-			log.Panicf("Save Error: %x %d %x %+v\n", p.Txid, p.Ord.Size, p.Ord.Type, err)
+			log.Panicf("Save Error: %x %d %+v\n", p.Txid, p.Ord.Size, err)
 			log.Panic(err)
 		}
 	}
@@ -437,7 +437,12 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 					if err != nil {
 						break ordLoop
 					}
-					p.Ord.Type = string(op.Data)
+					if utf8.Valid(op.Data) {
+						if len(op.Data) > 256 {
+							op.Data = op.Data[:256]
+						}
+						p.Ord.Type = string(op.Data)
+					}
 				case bscript.OpENDIF:
 					break ordLoop
 				}

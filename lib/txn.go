@@ -162,7 +162,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 	if !dryRun {
 		for _, txo := range ctx.Txos {
 			impliedBsv20 := false
-			if len(ctx.Bsv20s) == 0 && txo.PrevOrd != nil {
+			if len(ctx.Bsv20s) == 0 && txo.PrevOrd != nil && txo.Height < 806500 && txo.Height > 0 {
 				impliedBsv20 = txo.PrevOrd.Bsv20
 				txo.Bsv20 = txo.PrevOrd.Bsv20
 			}
