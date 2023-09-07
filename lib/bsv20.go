@@ -58,24 +58,18 @@ func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
 	if amt, ok := data["amt"]; ok {
 		bsv20.Amt, err = strconv.ParseUint(amt, 10, 64)
 		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "amt parse"
 			return nil, nil
 		}
 	}
 	if max, ok := data["max"]; ok {
 		bsv20.Max, err = strconv.ParseUint(max, 10, 64)
 		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "max parse"
 			return nil, nil
 		}
 	}
 	if limit, ok := data["lim"]; ok {
 		bsv20.Limit, err = strconv.ParseUint(limit, 10, 64)
 		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "lim parse"
 			return nil, nil
 		}
 	}
@@ -83,12 +77,8 @@ func parseBsv20(ord *File, height uint32) (bsv20 *Bsv20, err error) {
 		var val uint64
 		val, err = strconv.ParseUint(dec, 10, 8)
 		if err != nil {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = "dec parse"
 			return nil, nil
 		} else if val > 18 {
-			// bsv20.Valid = sql.NullBool{Bool: false, Valid: true}
-			// bsv20.Reason = fmt.Sprintf("dec %s > 18", dec)
 			return nil, nil
 		}
 		bsv20.Decimals = uint8(val)

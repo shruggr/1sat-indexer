@@ -2,12 +2,14 @@ package main
 
 import (
 	"database/sql"
-	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -40,17 +42,18 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	txid, _ := hex.DecodeString("f41086bce491aab317ca6265c7bcdf9bdf94381f5e86f23d50515d65ba73965c")
+	// txid, _ := hex.DecodeString("52dca5d6004f66339de14861c0339e41941c9db58f9242a7c598f080f324e646")
 
-	lib.ValidateTransfer(txid)
-	// txData, err := lib.LoadTxData(txid)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// tx, err := bt.NewTxFromBytes(txData.Transaction)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	txid := "52dca5d6004f66339de14861c0339e41941c9db58f9242a7c598f080f324e646"
+	// lib.ValidateTransfer(txid)
+	txData, err := lib.LoadTxData(txid)
+	if err != nil {
+		log.Panic(err)
+	}
+	tx, err := bt.NewTxFromBytes(txData.Transaction)
+	if err != nil {
+		log.Panic(err)
+	}
 
 	// tx := bt.NewTx()
 	// r, err := bit.GetRawTransactionRest(hex.EncodeToString(txid))
@@ -71,15 +74,15 @@ func main() {
 	// if err != nil {
 	// 	log.Panic(err)
 	// }
-	// result, err := lib.IndexTxn(tx, 0, 0, true)
+	result, err := lib.IndexTxn(tx, 0, 0, true)
 
 	// result := lib.ValidateTicker(793390, "1")
 	// if err != nil {
 	// 	log.Panic(err)
 	// }
-	// out, err := json.MarshalIndent(result, "", "  ")
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Println(string(out))
+	out, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(string(out))
 }

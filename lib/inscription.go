@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
@@ -24,6 +25,8 @@ import (
 var PATTERN []byte
 var MAP = "1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5"
 var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
+
+// var REG = "1regEua3EpFKCSuYGgB77rbEUDFNGJP3P"
 
 type Map map[string]interface{}
 
@@ -96,6 +99,11 @@ func (s *Sigmas) Scan(value interface{}) error {
 	return json.Unmarshal(b, &s)
 }
 
+type Claim struct {
+	Namespace string `json:"sub"`
+	Type      string `json:"type"`
+	Target    []byte `json:"target"`
+}
 type Sigma struct {
 	Algorithm string `json:"algorithm"`
 	Address   string `json:"address"`
@@ -119,6 +127,7 @@ type ParsedScript struct {
 	Listing *OrdLockListing `json:"listings,omitempty"`
 	Sigmas  Sigmas          `json:"sigma,omitempty"`
 	Bsv20   *Bsv20          `json:"bsv20,omitempty"`
+	Claims  []*Claim        `json:"claims,omitempty"`
 }
 
 func (p *ParsedScript) SaveInscription() (err error) {
@@ -157,6 +166,12 @@ func (p *ParsedScript) Save() (err error) {
 		if err != nil {
 			log.Panicf("Save Error: %x %d %+v\n", p.Txid, p.Ord.Size, err)
 			log.Panic(err)
+		}
+	}
+	for _, claim := range p.Claims {
+		_, err = InsClaim.Exec(p.Txid, p.Vout, p.Height, p.Idx, p.Origin, claim.Namespace, claim.Type, claim.Target)
+		if err != nil {
+			log.Panicf("Save Claim Error: %x %+v\n", p.Txid, err)
 		}
 	}
 	return
@@ -259,7 +274,9 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 		if string(op.Data) != "SET" {
 			return nil
 		}
-		p.Map = map[string]interface{}{}
+		if p.Map == nil {
+			p.Map = map[string]interface{}{}
+		}
 		for {
 			prevIdx := *idx
 			op, err = ReadOp(script, idx)
@@ -275,8 +292,27 @@ func ParseBitcom(script []byte, idx *int, p *ParsedScript, tx *bt.Tx) (err error
 				break
 			}
 			// fmt.Println(opKey, op.OpCode, string(op.Data))
-			if utf8.Valid(op.Data) {
+			if len(op.Data) < 256 && utf8.Valid(op.Data) {
 				p.Map[opKey] = string(op.Data)
+			}
+			if strings.HasPrefix(opKey, "opns") {
+				parts := strings.Split(opKey, ".")
+				if len(parts) == 3 {
+					claim := &Claim{
+						Namespace: parts[1],
+						Type:      parts[2],
+					}
+					if len(op.Data) > 0 && op.Data[0] == '_' {
+						outpoint, err := NewOutpointFromString(fmt.Sprintf("%s%s", tx.TxID(), op.Data))
+						if err != nil {
+							continue
+						}
+						claim.Target = *outpoint
+					} else {
+						claim.Target = op.Data
+					}
+					p.Claims = append(p.Claims, claim)
+				}
 			}
 		}
 		if val, ok := p.Map["subTypeData"]; ok {
@@ -450,8 +486,15 @@ func ParseScript(script bscript.Script, tx *bt.Tx, height uint32) (p *ParsedScri
 			hash := sha256.Sum256(p.Ord.Content)
 			p.Ord.Size = uint32(len(p.Ord.Content))
 			p.Ord.Hash = hash[:]
-
 			p.Bsv20, _ = parseBsv20(p.Ord, height)
+			if p.Ord.Type == "bitcoin/bitcom" {
+				var subI int
+				err = ParseBitcom(p.Ord.Content, &subI, p, tx)
+				if err != nil {
+					log.Println("Error parsing bitcom", err)
+					continue
+				}
+			}
 		}
 	}
 

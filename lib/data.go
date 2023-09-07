@@ -35,6 +35,7 @@ var InsMetadata *sql.Stmt
 var InsListing *sql.Stmt
 var SetSpend *sql.Stmt
 var SetInscriptionId *sql.Stmt
+var InsClaim *sql.Stmt
 
 // var SetTxn *sql.Stmt
 
@@ -171,6 +172,18 @@ func Initialize(postgres *sql.DB, rdb *redis.Client) (err error) {
 		WHERE txid=$1 AND vout=$2
 		RETURNING COALESCE(lock, '\x'), satoshis, listing, bsv20, origin
 	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	InsClaim, err = db.Prepare(`INSERT INTO claims(txid, vout, height, idx, origin, sub, type, value)
+		VALUES($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(txid, vout, sub, type) DO UPDATE
+			SET height=EXCLUDED.height,
+				idx=EXCLUDED.idx,
+				origin=EXCLUDED.origin,
+				value=EXCLUDED.value`,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
