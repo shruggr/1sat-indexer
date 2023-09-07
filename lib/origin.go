@@ -62,7 +62,7 @@ func SetOriginNum(height uint32) (err error) {
 	}
 
 	rows, err = Db.Query(context.Background(), `
-		SELECT txid, vout
+		SELECT origin
 		FROM origins
 		WHERE num IS NULL AND height <= $1 AND height IS NOT NULL
 		ORDER BY height, idx, vout`,
@@ -74,19 +74,18 @@ func SetOriginNum(height uint32) (err error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var txid []byte
-		var vout uint32
-		err = rows.Scan(&txid, &vout)
+		origin := &Outpoint{}
+		err = rows.Scan(&origin)
 		if err != nil {
 			log.Panic(err)
 			return
 		}
-		// fmt.Printf("Inscription ID %d %x %d\n", num, txid, vout)
+		fmt.Printf("Origin Num %d %s\n", num, origin)
 		_, err = Db.Exec(context.Background(), `
 			UPDATE origins
-			SET num=$3
-			WHERE txid=$1 AND vout=$2`,
-			txid, vout, num,
+			SET num=$2
+			WHERE origin=$1`,
+			origin, num,
 		)
 		if err != nil {
 			log.Panic(err)

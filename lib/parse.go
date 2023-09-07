@@ -37,108 +37,6 @@ func init() {
 	OrdLockSuffix, _ = hex.DecodeString("615179547a75537a537a537a0079537a75527a527a7575615579008763567901c161517957795779210ac407f0e4bd44bfc207355a778b046225a7068fc59ee7eda43ad905aadbffc800206c266b30e6a1319c66dc401e5bd6b432ba49688eecd118297041da8074ce081059795679615679aa0079610079517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01007e81517a75615779567956795679567961537956795479577995939521414136d08c5ed2bf3ba048afe6dcaebafeffffffffffffffffffffffffffffff00517951796151795179970079009f63007952799367007968517a75517a75517a7561527a75517a517951795296a0630079527994527a75517a6853798277527982775379012080517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01205279947f7754537993527993013051797e527e54797e58797e527e53797e52797e57797e0079517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a756100795779ac517a75517a75517a75517a75517a75517a75517a75517a75517a7561517a75517a756169587951797e58797eaa577961007982775179517958947f7551790128947f77517a75517a75618777777777777777777767557951876351795779a9876957795779ac777777777777777767006868")
 }
 
-// type Inscription struct {
-// 	Content []byte
-// 	Type    string
-// }
-
-// type ParsedScript struct {
-// 	Num         uint64       `json:"num"`
-// 	Txid        []byte       `json:"txid"`
-// 	Vout        uint32       `json:"vout"`
-// 	Height      *uint32      `json:"height"`
-// 	Idx         uint64       `json:"idx"`
-// 	Origin      *Outpoint    `json:"origin"`
-// 	Outpoint    *Outpoint    `json:"outpoint"`
-// 	Inscription *Inscription `json:"inscription"`
-// 	PKHash      []byte       `json:"pkhash"`
-// 	Map         Map          `json:"MAP,omitempty"`
-// 	B           *File        `json:"B,omitempty"`
-// 	Listing     *Listing     `json:"listings,omitempty"`
-// 	Sigmas      Sigmas       `json:"sigma,omitempty"`
-// 	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
-// }
-
-// func (p *ParsedScript) SaveMap() (err error) {
-// 	if p.Map != nil {
-// 		_, err := Db.Exec(context.Background(), `
-// 			INSERT INTO map(txid, vout, height, idx, origin, map)
-// 			VALUES($1, $2, $3, $4, $5, $6)
-// 			ON CONFLICT(txid, vout) DO UPDATE SET
-// 				height=EXCLUDED.height,
-// 				idx=EXCLUDED.idx,
-// 				origin=EXCLUDED.origin,
-// 				map=EXCLUDED.map`,
-// 			p.Txid,
-// 			p.Vout,
-// 			p.Height,
-// 			p.Idx,
-// 			p.Origin,
-// 			p.Map,
-// 		)
-
-// 		if err != nil {
-// 			log.Panicf("Ins Map: %x %+v\n", p.Txid, err)
-// 		}
-// 	}
-// 	return
-// }
-
-// func (p *ParsedScript) SaveB() (err error) {
-// 	if p.Map != nil {
-// 		_, err := Db.Exec(context.Background(), `
-// 			INSERT INTO b(txid, vout, height, idx, filehash, filesize, filetype, fileenc)
-// 			VALUES($1, $2, $3, $4, $5, $6)`,
-// 			p.Txid,
-// 			p.Vout,
-// 			p.Height,
-// 			p.Idx,
-// 			p.B.Hash,
-// 			p.B.Size,
-// 			p.B.Type,
-// 			p.B.Encoding,
-// 		)
-
-// 		if err != nil {
-// 			log.Panicf("Ins Map: %x %+v\n", p.Txid, err)
-// 		}
-// 	}
-// 	return
-// }
-
-// func (p *ParsedScript) UpdateMap() {
-// 	rows, err := Db.Query(context.Background(), `
-// 		SELECT map FROM map
-// 		WHERE origin=$1 AND height IS NOT NULL
-// 		ORDER BY height, idx`,
-// 		p.Origin,
-// 	)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer rows.Close()
-// 	agg := Map{}
-// 	for rows.Next() {
-// 		mapIns := Map{}
-// 		err := rows.Scan(&mapIns)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		for k, v := range mapIns {
-// 			agg[k] = v
-// 		}
-// 	}
-// 	_, err = Db.Exec(context.Background(), `
-// 		UPDATE origin
-// 		SET map=$2
-// 		WHERE origin=$1`,
-// 		p.Origin,
-// 	)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// }
-
 type OpPart struct {
 	OpCode byte
 	Data   []byte
@@ -429,7 +327,13 @@ func ParseScript(txo *Txo) {
 					if err != nil {
 						break ordLoop
 					}
-					ins.File.Type = string(op.Data)
+					if utf8.Valid(op.Data) {
+						if len(op.Data) <= 256 {
+							ins.File.Type = string(op.Data)
+						} else {
+							ins.File.Type = string(op.Data[:256])
+						}
+					}
 				case bscript.OpENDIF:
 					break ordLoop
 				}
@@ -468,9 +372,19 @@ func ParseScript(txo *Txo) {
 					}
 					ins.Text = string(ins.File.Content)
 					re := regexp.MustCompile(`\W`)
-					words := re.Split(ins.Text, -1)
+
+					words := map[string]struct{}{}
+					for _, word := range re.Split(ins.Text, -1) {
+						if len(word) > 1 {
+							words[word] = struct{}{}
+						}
+					}
+
 					if len(words) > 1 {
-						ins.Words = words
+						ins.Words = make([]string, 0, len(words))
+						for word := range words {
+							ins.Words = append(ins.Words, word)
+						}
 					}
 				}
 			}

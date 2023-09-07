@@ -2,6 +2,9 @@ package lib
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/libsv/go-bt/v2"
@@ -31,8 +34,8 @@ type Txo struct {
 	Origin       *Outpoint `json:"origin"`
 	Data         *TxoData  `json:"data"`
 	Outpoint     *Outpoint `json:"outpoint"`
-	IsOrigin     bool
-	ImpliedBsv20 bool
+	IsOrigin     bool      `json:"-"`
+	ImpliedBsv20 bool      `json:"-"`
 }
 
 func (t *Txo) Save() {
@@ -58,6 +61,10 @@ func (t *Txo) Save() {
 		t.Data,
 	)
 	if err != nil {
+		log.Println(hex.EncodeToString(t.Txid),
+			t.Origin, t.Height, t.Idx, t.Data)
+		val, _ := json.MarshalIndent(t.Data, "", " ")
+		fmt.Printf("%s\n", val)
 		log.Panicln("insTxo Err:", err)
 	}
 }
