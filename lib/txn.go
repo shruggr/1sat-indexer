@@ -12,14 +12,15 @@ import (
 const THREADS = 64
 
 type IndexContext struct {
-	Txid    []byte    `json:"txid"`
-	BlockId *string   `json:"blockId"`
-	Height  *uint32   `json:"height"`
-	Idx     uint64    `json:"idx"`
-	Txos    []*Txo    `json:"txos"`
-	Origins []*Origin `json:"origin"`
-	Spends  []*Spend  `json:"spends"`
-	Bsv20s  []*Txo    `json:"bsv20s"`
+	Txid     []byte     `json:"txid"`
+	BlockId  *string    `json:"blockId"`
+	Height   *uint32    `json:"height"`
+	Idx      uint64     `json:"idx"`
+	Txos     []*Txo     `json:"txos"`
+	Origins  []*Origin  `json:"origin"`
+	Spends   []*Spend   `json:"spends"`
+	Bsv20s   []*Txo     `json:"bsv20s"`
+	Listings []*Listing `json:"listings"`
 }
 
 func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
@@ -34,6 +35,7 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			Height: ctx.Height,
 			Idx:    ctx.Idx,
 		}
+		spend.Outpoint = NewOutpoint(spend.Txid, spend.Vout)
 		ctx.Spends = append(ctx.Spends, spend)
 
 		exists := spend.SetSpent()
@@ -94,10 +96,6 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			Outpoint: &outpoint,
 		}
 
-		// if txo.Satoshis == 0 {
-		// 	parsed := ParseScript(*txout.LockingScript, tx, ctx.Height)
-		// 	ctx.ParsedScripts = append(ctx.ParsedScripts, parsed)
-		// }
 		if txo.Satoshis == 1 {
 			for vin, spend := range ctx.Spends {
 				if spend.Missing {
@@ -122,12 +120,13 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			ParseScript(txo)
 			if txo.IsOrigin && txo.Data != nil && txo.Data.Inscription != nil {
 				origin := &Origin{
-					Origin: txo.Outpoint,
-					Txid:   ctx.Txid,
-					Vout:   txo.Vout,
-					Map:    txo.Data.Map,
-					Height: *ctx.Height,
-					Idx:    ctx.Idx,
+					Origin:      txo.Outpoint,
+					Txid:        ctx.Txid,
+					Vout:        txo.Vout,
+					Map:         txo.Data.Map,
+					Height:      *ctx.Height,
+					Idx:         ctx.Idx,
+					Inscription: txo.Data.Inscription,
 				}
 				ctx.Origins = append(ctx.Origins, origin)
 				txo.Origin = txo.Outpoint
@@ -157,6 +156,11 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		if err != nil {
 			log.Panicf("%x %v\n", ctx.Txid, err)
 		}
+
+		for _, origin := range ctx.Origins {
+			origin.Save()
+		}
+
 		for _, txo := range ctx.Txos {
 			if Rdb != nil {
 				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
@@ -173,9 +177,13 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				// saveImpliedBsv20Transfer(txo.Txid, txo.Vout, txo)
 			}
 			txo.Save()
-		}
-		for _, origin := range ctx.Origins {
-			origin.Save()
+
+			if txo.Data.Listing != nil {
+				err = SaveListing(txo)
+				if err != nil {
+					log.Panicf("%x %v\n", ctx.Txid, err)
+				}
+			}
 		}
 
 		hasTransfer := false
@@ -186,7 +194,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			SaveBsv20(txo)
 		}
 
-		if hasTransfer && ctx.Height == nil {
+		if hasTransfer {
 			ValidateTransfer(ctx.Txid)
 		}
 	}

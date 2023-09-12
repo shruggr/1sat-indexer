@@ -1,12 +1,20 @@
 package main
 
 import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"regexp"
+	"log"
+	"os"
+	"strconv"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/lib"
 )
 
 var rdb *redis.Client
@@ -15,46 +23,46 @@ var bit *bitcoin.Bitcoind
 func main() {
 	godotenv.Load("../.env")
 
-	re := regexp.MustCompile("\\W")
-	split := re.Split("1234.asdf the is the.thing", -1)
-	fmt.Println(split)
-	// db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES"))
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	// re := regexp.MustCompile("\\W")
+	// split := re.Split("1234.asdf the is the.thing", -1)
+	// fmt.Println(split)
+	db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES"))
+	if err != nil {
+		log.Panic(err)
+	}
 
-	// port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)
-	// bit, err = bitcoin.New(os.Getenv("BITCOIN_HOST"), int(port), os.Getenv("BITCOIN_USER"), os.Getenv("BITCOIN_PASS"), false)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)
+	bit, err = bitcoin.New(os.Getenv("BITCOIN_HOST"), int(port), os.Getenv("BITCOIN_USER"), os.Getenv("BITCOIN_PASS"), false)
+	if err != nil {
+		log.Panic(err)
+	}
 
-	// rdb = redis.NewClient(&redis.Options{
-	// 	Addr:     "localhost:6379",
-	// 	Password: "", // no password set
-	// 	DB:       0,  // use default DB
-	// })
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	// err = lib.Initialize(db, rdb)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// hexId := "e17d7856c375640427943395d2341b6ed75f73afc8b22bb3681987278978a584"
-	// txid, _ := hex.DecodeString(hexId)
+	err = lib.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
+	hexId := "43e102ac018627c2b6c7462d76ec05ea8201e40a7f70f9768fb15b35502d475a"
+	txid, _ := hex.DecodeString(hexId)
 
-	// tx := bt.NewTx()
-	// r, err := bit.GetRawTransactionRest(hexId)
-	// if err != nil {
-	// 	log.Panicf("%x: %v\n", txid, err)
-	// }
-	// if _, err = tx.ReadFrom(r); err != nil {
-	// 	log.Panicf("%x: %v\n", txid, err)
-	// }
-	// height := uint32(783968)
-	// result, err := lib.IndexTxn(tx, nil, &height, 0, false)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	tx := bt.NewTx()
+	r, err := bit.GetRawTransactionRest(hexId)
+	if err != nil {
+		log.Panicf("%x: %v\n", txid, err)
+	}
+	if _, err = tx.ReadFrom(r); err != nil {
+		log.Panicf("%x: %v\n", txid, err)
+	}
+	height := uint32(783968)
+	result, err := lib.IndexTxn(tx, nil, &height, 0, false)
+	if err != nil {
+		log.Panic(err)
+	}
 
 	// log.Println("Origins:", len(result.Origins))
 
@@ -69,9 +77,9 @@ func main() {
 	// }
 	// result, err := lib.IndexTxn(tx, 0, 0, true)
 
-	// out, err := json.MarshalIndent(result, "", "  ")
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// fmt.Println(string(out))
+	out, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(string(out))
 }

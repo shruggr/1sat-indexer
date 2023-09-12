@@ -18,6 +18,7 @@ type TxoData struct {
 	Sigmas      []*Sigma     `json:"sigma,omitempty"`
 	Listing     *Listing     `json:"list,omitempty"`
 	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
+	Claims      []*Claim     `json:"claims,omitempty"`
 }
 
 type Txo struct {
@@ -40,9 +41,9 @@ type Txo struct {
 
 func (t *Txo) Save() {
 	_, err := Db.Exec(context.Background(), `
-		INSERT INTO txos(txid, vout, satoshis, outacc, pkhash, origin, height, idx, data)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT(txid, vout) DO UPDATE SET
+		INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, pkhash, origin, height, idx, data)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(outpoint) DO UPDATE SET
 			satoshis=EXCLUDED.satoshis,
 			outacc=EXCLUDED.outacc,
 			pkhash=EXCLUDED.pkhash,
@@ -52,6 +53,7 @@ func (t *Txo) Save() {
 			data=EXCLUDED.data`,
 		t.Txid,
 		t.Vout,
+		t.Outpoint,
 		t.Satoshis,
 		t.OutAcc,
 		t.PKHash,

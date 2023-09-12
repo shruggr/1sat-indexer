@@ -2,7 +2,6 @@ package lib
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -20,14 +19,6 @@ const (
 	Pending Bsv20Status = 0
 	Valid   Bsv20Status = 1
 )
-
-// type Bsv20Deploy struct {
-// 	Protocol string      `json:"p"`
-// 	Op       string      `json:"op"`
-// 	Ticker   string      `json:"tick"`
-// 	Status   Bsv20Status `json:"status"`
-// 	Reason   string      `json:"reason"`
-// }
 
 type Bsv20 struct {
 	Txid     []byte      `json:"-"`
@@ -87,34 +78,6 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 		}
 	}
 
-	switch bsv20.Op {
-	case "deploy":
-		if max, ok := data["max"]; ok {
-			bsv20.Max, err = strconv.ParseUint(max, 10, 64)
-			if err != nil {
-				return nil, nil
-			}
-		}
-		if limit, ok := data["lim"]; ok {
-			bsv20.Limit, err = strconv.ParseUint(limit, 10, 64)
-			if err != nil {
-				return nil, nil
-			}
-		}
-	case "deploy+mint":
-		bsv20.Status = Valid
-	case "mint":
-		if bsv20.Ticker == nil {
-			return nil, nil
-		}
-	case "transfer":
-		if bsv20.Ticker == nil && bsv20.Id == nil {
-			return nil, nil
-		}
-	default:
-		return nil, nil
-	}
-
 	if amt, ok := data["amt"]; ok {
 		amt, err := strconv.ParseUint(amt, 10, 64)
 		if err != nil {
@@ -130,6 +93,40 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 			return nil, nil
 		}
 		bsv20.Decimals = uint8(val)
+	}
+
+	switch bsv20.Op {
+	case "deploy":
+		if max, ok := data["max"]; ok {
+			bsv20.Max, err = strconv.ParseUint(max, 10, 64)
+			if err != nil {
+				return nil, nil
+			}
+		}
+		if limit, ok := data["lim"]; ok {
+			bsv20.Limit, err = strconv.ParseUint(limit, 10, 64)
+			if err != nil {
+				return nil, nil
+			}
+		}
+	case "deploy+mint":
+		if bsv20.Amt == nil {
+			return nil, nil
+		}
+		bsv20.Status = Valid
+	case "mint":
+		if bsv20.Ticker == nil || bsv20.Amt == nil {
+			return nil, nil
+		}
+	case "transfer":
+		if bsv20.Amt == nil {
+			return nil, nil
+		}
+		if bsv20.Ticker == nil && bsv20.Id == nil {
+			return nil, nil
+		}
+	default:
+		return nil, nil
 	}
 
 	return bsv20, nil
@@ -173,7 +170,7 @@ func SaveBsv20(t *Txo) {
 			b.Amt,
 		)
 		if err != nil {
-			log.Panic(err)
+			log.Panicf("%x %v", t.Txid, err)
 		}
 	}
 }
@@ -442,17 +439,13 @@ func validateBsv20Transfers(height uint32) {
 
 func ValidateTransfer(txid []byte) {
 	invalid := map[string]string{}
-	pending := map[string]struct{}{}
 	tokensIn := map[string]uint64{}
+	tickTokens := map[string][]uint32{}
 
-	// fmt.Printf("Validating transfer %x\n", txid)
 	inRows, err := Db.Query(context.Background(), `
-		SELECT COALESCE(data->'bsv20'->>'tick', data->'bsv20'->>'id') as tick, 
-			CAST(data->'bsv20'->>'status' as INT) as status, 
-			SUM(CAST(data->'bsv20'->>'amt' as numeric))
+		SELECT data
 		FROM txos
-		WHERE spend=$1 AND data IS NOT NULL
-		GROUP BY tick, status`,
+		WHERE spend=$1 AND data->'bsv20'->>'amt' IS NOT NULL`,
 		txid,
 	)
 	if err != nil {
@@ -461,33 +454,41 @@ func ValidateTransfer(txid []byte) {
 	defer inRows.Close()
 
 	for inRows.Next() {
-		var tick sql.NullString
-		var status Bsv20Status
-		var amt uint64
-		err = inRows.Scan(&tick, &status, &amt)
+		data := &TxoData{}
+		err = inRows.Scan(&data)
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
 
-		if !tick.Valid {
+		var tick string
+		if data.Bsv20.Ticker != nil {
+			tick = *data.Bsv20.Ticker
+		} else if data.Bsv20.Id != nil {
+			tick = data.Bsv20.Id.String()
+		} else {
 			log.Panicf("%x - missing tick\n", txid)
 		}
-		switch status {
+
+		switch data.Bsv20.Status {
 		case -1:
-			invalid[tick.String] = "invalid"
+			invalid[tick] = "invalid"
 		case 0:
-			pending[tick.String] = struct{}{}
+			// fmt.Println("PENDING", tick)
+			return
 		case 1:
-			tokensIn[tick.String] = amt
+			if amt, ok := tokensIn[tick]; !ok {
+				tokensIn[tick] = amt
+			} else {
+				tokensIn[tick] += amt
+			}
 		}
 	}
+	inRows.Close()
 
 	outRows, err := Db.Query(context.Background(), `
-		SELECT COALESCE(data->'bsv20'->>'tick', data->'bsv20'->>'id') as tick, 
-			SUM(CAST(data->'bsv20'->>'amt' as numeric))
+		SELECT vout, data
 		FROM txos
-		WHERE txid=$1 AND data IS NOT NULL
-		GROUP BY tick`,
+		WHERE txid=$1 AND data->'bsv20' IS NOT NULL`,
 		txid,
 	)
 	if err != nil {
@@ -496,19 +497,33 @@ func ValidateTransfer(txid []byte) {
 	defer outRows.Close()
 
 	for outRows.Next() {
-		var tick string
-		var amt uint64
-		err = outRows.Scan(&tick, &amt)
+		data := &TxoData{}
+		var vout uint32
+		err = outRows.Scan(&vout, &data)
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
 
+		var tick string
+		if data.Bsv20.Ticker != nil {
+			tick = *data.Bsv20.Ticker
+		} else if data.Bsv20.Id != nil {
+			tick = data.Bsv20.Id.String()
+		} else {
+			log.Panicf("%x - missing tick\n", txid)
+		}
+
+		if _, ok := tickTokens[tick]; !ok {
+			tickTokens[tick] = []uint32{}
+		}
+		tickTokens[tick] = append(tickTokens[tick], vout)
 		if balance, ok := tokensIn[tick]; ok {
-			if amt > balance {
+			if *data.Bsv20.Amt > balance {
 				invalid[tick] = "insufficient balance"
+			} else {
+				balance -= *data.Bsv20.Amt
+				tokensIn[tick] = balance
 			}
-			balance -= amt
-			tokensIn[tick] = balance
 		} else {
 			invalid[tick] = "missing input"
 		}
@@ -522,38 +537,25 @@ func ValidateTransfer(txid []byte) {
 
 	for tick := range tokensIn {
 		var sql string
-		if _, ok := pending[tick]; ok {
-			continue
-		} else if reason, ok := invalid[tick]; ok {
-			sql = fmt.Sprintf(`
-				UPDATE txos
+		vouts := tickTokens[tick]
+		if reason, ok := invalid[tick]; ok {
+			sql = fmt.Sprintf(`UPDATE txos
 				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
-				WHERE txid = $1 AND (
-					data @> '{"bsv20": {"tick":"%s"}}' OR
-					data @> '{"bsv20": {"id":"%s"}}'
-				)`,
+				WHERE txid = $1 AND vout = ANY ($2)`,
 				reason,
-				tick,
-				tick,
 			)
 		} else {
-			sql = fmt.Sprintf(`
-				UPDATE txos
+			sql = `UPDATE txos
 				SET data = jsonb_set(data, '{bsv20,status}', '1')
-				WHERE txid = $1 AND (
-					data @> '{"bsv20": {"tick":"%s"}}' OR
-					data @> '{"bsv20": {"id":"%s"}}'
-				)`,
-				tick,
-				tick,
-			)
+				WHERE txid = $1 AND vout = ANY ($2)`
 		}
 		_, err := t.Exec(context.Background(),
 			sql,
 			txid,
+			vouts,
 		)
 		if err != nil {
-			log.Panic(err)
+			log.Panicf("%x %s %v\n", txid, sql, err)
 		}
 	}
 

@@ -1,3 +1,10 @@
+-- DROP TABLE IF EXISTS blocks;
+-- DROP TABLE IF EXISTS origins;
+-- DROP TABLE IF EXISTS schema_migrations;
+-- DROP TABLE IF EXISTS txns;
+-- DROP TABLE IF EXISTS txos;
+-- DROP TABLE IF EXISTS progress;
+
 CREATE TABLE progress(
     indexer VARCHAR(32) PRIMARY KEY,
     height INTEGER
@@ -26,6 +33,7 @@ CREATE INDEX idx_txns_created_unmined ON txns(created)
     WHERE height IS NULL;
 
 CREATE TABLE txos(
+    outpoint BYTEA PRIMARY KEY,
     txid BYTEA,
     vout INTEGER,
     height INTEGER,
@@ -33,14 +41,13 @@ CREATE TABLE txos(
     satoshis BIGINT,
     outacc BIGINT,
     pkhash BYTEA,
-    spend BYTEA,
+    spend BYTEA DEFAULT '\x',
     vin INTEGER,
     spend_height INTEGER,
     spend_idx BIGINT,
     inacc BIGINT,
     origin BYTEA,
-    data JSONB,
-    PRIMARY KEY(txid, vout)
+    data JSONB
 );
 CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
 CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
@@ -65,6 +72,7 @@ CREATE TABLE origins(
     height INTEGER,
     idx BIGINT,
     map JSONB,
+    insc JSONB,
     search_text_en TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('english',
             COALESCE(jsonb_extract_path_text(map, 'name'), '') || ' ' || 
@@ -77,6 +85,7 @@ CREATE TABLE origins(
         jsonb_extract_path_text(map, 'geohash')
     ) STORED
 );
+CREATE UNIQUE INDEX idx_origins_origin_num ON origins(origin, num);
 CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
 	WHERE height IS NOT NULL AND num = -1;
 CREATE INDEX idx_origins_search_text_en ON origins USING GIN(search_text_en);
@@ -84,11 +93,4 @@ CREATE INDEX idx_origins_map ON origins USING GIN(map);
 CREATE INDEX idx_origins_num ON origins(num);
 CREATE INDEX idx_origins_geohash ON origins(geohash text_pattern_ops)
     WHERE geohash IS NOT NULL;
-
--- DROP TABLE IF EXISTS blocks;
--- DROP TABLE IF EXISTS origins;
--- DROP TABLE IF EXISTS schema_migrations;
--- DROP TABLE IF EXISTS txns;
--- DROP TABLE IF EXISTS txos;
--- DROP TABLE IF EXISTS progress;
 

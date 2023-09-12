@@ -62,11 +62,12 @@ func (s *Spend) SetSpent() (exists bool) {
 
 func (s *Spend) Save() {
 	if _, err := Db.Exec(context.Background(), `
-		INSERT INTO txos(txid, vout, satoshis, outacc, spend, vin, spend_height, spend_idx)
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT(txid, vout) DO NOTHING`,
+		INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, spend, vin, spend_height, spend_idx)
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT(outpoint) DO NOTHING`,
 		s.Txid,
 		s.Vout,
+		s.Outpoint,
 		s.Satoshis,
 		s.OutAcc,
 		s.Spend,
