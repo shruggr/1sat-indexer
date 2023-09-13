@@ -9,10 +9,20 @@ CREATE TABLE IF NOT EXISTS listings(
     num BIGINT,
     spend BYTEA DEFAULT '\x',
     pkhash BYTEA,
-    map JSONB,
+    data JSONB,
     bsv20 BOOLEAN,
-    filetype TEXT,
-    search_text_en TSVECTOR,
+    filetype TEXT GENERATED ALWAYS AS (
+        data->'insc'->'file'->>'type'
+    ) STORED,
+    search_text_en TSVECTOR GENERATED ALWAYS AS (
+        to_tsvector('english',
+            COALESCE(data->'insc'->>'text', '') || ' ' || 
+            COALESCE(data->'map'->>'name', '') || ' ' || 
+            COALESCE(data->'map'->>'description', '') || ' ' || 
+            COALESCE(data->'map'->'subTypeData'->>'description', '') || ' ' || 
+            COALESCE(data->'map'->>'keywords', '')
+        )
+    ) STORED,
     PRIMARY KEY (txid, vout),
     FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (origin, num) REFERENCES origins(origin, num) ON UPDATE CASCADE
@@ -30,4 +40,8 @@ WHERE spend = '\x';
 CREATE INDEX idx_listings_filetype ON listings(filetype, height, idx)
 WHERE spend = '\x' AND bsv20 = false;
 
-CREATE INDEX idx_listings_search_text_en ON listings USING GIN(search_text_en);
+CREATE INDEX idx_listings_search_text_en ON listings USING GIN(search_text_en)
+WHERE spend = '\x' AND bsv20 = false;
+
+CREATE INDEX idx_listings_data ON listings USING GIN(data)
+WHERE spend = '\x' AND bsv20 = false;

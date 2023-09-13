@@ -9,11 +9,9 @@ type Listing struct {
 
 func SaveListing(t *Txo) (err error) {
 	_, err = Db.Exec(context.Background(), `
-		INSERT INTO listings(txid, vout, height, idx, price, payout, origin, num, spend, pkhash, map, bsv20, filetype, search_text_en)
-		SELECT $1, $2, $3, $4, $5, $6, t.origin, o.num, t.spend, t.pkhash, o.map,
-			CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END,
-			o.insc->'file'->>'type',
-			o.search_text_en
+		INSERT INTO listings(txid, vout, height, idx, price, payout, origin, num, spend, pkhash, data, bsv20)
+		SELECT $1, $2, $3, $4, $5, $6, t.origin, o.num, t.spend, t.pkhash, o.data,
+			CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END
 		FROM txos t
 		JOIN origins o ON o.origin = t.origin
 		WHERE t.txid=$1 AND t.vout=$2

@@ -120,13 +120,12 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			ParseScript(txo)
 			if txo.IsOrigin && txo.Data != nil && txo.Data.Inscription != nil {
 				origin := &Origin{
-					Origin:      txo.Outpoint,
-					Txid:        ctx.Txid,
-					Vout:        txo.Vout,
-					Map:         txo.Data.Map,
-					Height:      *ctx.Height,
-					Idx:         ctx.Idx,
-					Inscription: txo.Data.Inscription,
+					Origin: txo.Outpoint,
+					Txid:   ctx.Txid,
+					Vout:   txo.Vout,
+					Height: *ctx.Height,
+					Idx:    ctx.Idx,
+					Data:   txo.Data,
 				}
 				ctx.Origins = append(ctx.Origins, origin)
 				txo.Origin = txo.Outpoint
@@ -134,6 +133,10 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 
 			if txo.Data.Bsv20 != nil {
 				ctx.Bsv20s = append(ctx.Bsv20s, txo)
+			}
+
+			if txo.Data.Listing != nil {
+				ctx.Listings = append(ctx.Listings, txo.Data.Listing)
 			}
 
 			ctx.Txos = append(ctx.Txos, txo)

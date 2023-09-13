@@ -404,19 +404,19 @@ func ParseScript(txo *Txo) {
 				var pos int
 				for {
 					claim := &Claim{}
-					op, err := ReadOp(script, &pos)
+					op, err := ReadOp(ins.File.Content, &pos)
 					if err != nil {
 						break
 					}
 					claim.SubDomain = string(op.Data)
 
-					op, err = ReadOp(script, &pos)
+					op, err = ReadOp(ins.File.Content, &pos)
 					if err != nil {
 						break
 					}
 					claim.Type = string(op.Data)
 
-					op, err = ReadOp(script, &pos)
+					op, err = ReadOp(ins.File.Content, &pos)
 					if err != nil {
 						break
 					}

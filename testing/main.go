@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	hexId := "43e102ac018627c2b6c7462d76ec05ea8201e40a7f70f9768fb15b35502d475a"
+	hexId := "11f7907a50bb77a58599d5de41a8e300591ae42cdf892553493a9dbbde716579"
 	txid, _ := hex.DecodeString(hexId)
 
 	tx := bt.NewTx()

@@ -71,25 +71,25 @@ CREATE TABLE origins(
     num BIGINT,
     height INTEGER,
     idx BIGINT,
-    map JSONB,
-    insc JSONB,
+    data JSONB,
     search_text_en TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('english',
-            COALESCE(jsonb_extract_path_text(map, 'name'), '') || ' ' || 
-            COALESCE(jsonb_extract_path_text(map, 'description'), '') || ' ' || 
-            COALESCE(jsonb_extract_path_text(map, 'subTypeData.description'), '') || ' ' || 
-            COALESCE(jsonb_extract_path_text(map, 'keywords'), '')
+            COALESCE(jsonb_extract_path_text(data, 'insc.text'), '') || ' ' || 
+            COALESCE(jsonb_extract_path_text(data, 'map.name'), '') || ' ' || 
+            COALESCE(jsonb_extract_path_text(data, 'map.description'), '') || ' ' || 
+            COALESCE(jsonb_extract_path_text(data, 'map.subTypeData.description'), '') || ' ' || 
+            COALESCE(jsonb_extract_path_text(data, 'map.keywords'), '')
         )
     ) STORED,
     geohash TEXT GENERATED ALWAYS AS (
-        jsonb_extract_path_text(map, 'geohash')
+        jsonb_extract_path_text(data, 'map.geohash')
     ) STORED
 );
 CREATE UNIQUE INDEX idx_origins_origin_num ON origins(origin, num);
 CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
 	WHERE height IS NOT NULL AND num = -1;
 CREATE INDEX idx_origins_search_text_en ON origins USING GIN(search_text_en);
-CREATE INDEX idx_origins_map ON origins USING GIN(map);
+CREATE INDEX idx_origins_data ON origins USING GIN(data);
 CREATE INDEX idx_origins_num ON origins(num);
 CREATE INDEX idx_origins_geohash ON origins(geohash text_pattern_ops)
     WHERE geohash IS NOT NULL;

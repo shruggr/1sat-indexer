@@ -8,31 +8,29 @@ import (
 )
 
 type Origin struct {
-	Origin      *Outpoint    `json:"origin"`
-	Num         uint64       `json:"num"`
-	Txid        []byte       `json:"txid"`
-	Vout        uint32       `json:"vout"`
-	Height      uint32       `json:"height"`
-	Idx         uint64       `json:"idx"`
-	Map         Map          `json:"MAP,omitempty"`
-	Inscription *Inscription `json:"insc,omitempty"`
+	Origin *Outpoint `json:"origin"`
+	Num    uint64    `json:"num"`
+	Txid   []byte    `json:"txid"`
+	Vout   uint32    `json:"vout"`
+	Height uint32    `json:"height"`
+	Idx    uint64    `json:"idx"`
+	Data   *TxoData  `json:"data,omitempty"`
 }
 
 func (o *Origin) Save() {
 	_, err := Db.Exec(context.Background(), `
-		INSERT INTO origins(origin, txid, vout, height, idx, map, insc)
-		VALUES($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO origins(origin, txid, vout, height, idx, data)
+		VALUES($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(origin) DO UPDATE SET
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx,
-			map=EXCLUDED.map`,
+			data=EXCLUDED.data`,
 		o.Origin,
 		o.Txid,
 		o.Vout,
 		o.Height,
 		o.Idx,
-		o.Map,
-		o.Inscription,
+		o.Data,
 	)
 	if err != nil {
 		log.Panicf("Save Error: %s %+v\n", o.Origin, err)
