@@ -83,14 +83,16 @@ CREATE TABLE origins(
     ) STORED,
     geohash TEXT GENERATED ALWAYS AS (
         jsonb_extract_path_text(data, 'map.geohash')
-    ) STORED
+    ) STORED,
+    filetype TEXT GENERATED ALWAYS AS (
+        data->'insc'->'file'->>'type'
+    ) STORED,
 );
 CREATE UNIQUE INDEX idx_origins_origin_num ON origins(origin, num);
 CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
 	WHERE height IS NOT NULL AND num = -1;
 CREATE INDEX idx_origins_search_text_en ON origins USING GIN(search_text_en);
 CREATE INDEX idx_origins_data ON origins USING GIN(data);
-CREATE INDEX idx_origins_num ON origins(num);
 CREATE INDEX idx_origins_geohash ON origins(geohash text_pattern_ops)
     WHERE geohash IS NOT NULL;
 

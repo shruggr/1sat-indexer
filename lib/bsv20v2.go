@@ -409,7 +409,7 @@ func validateBsv20Transfers(height uint32) {
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM txos
-		WHERE data @> '{"bsv20": {"op":"transfer", "status":0}}' AND height <= $1`,
+		WHERE bsv20_xfer=0 AND height <= $1`,
 		height,
 	)
 	if err != nil {

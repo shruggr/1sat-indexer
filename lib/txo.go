@@ -19,6 +19,7 @@ type TxoData struct {
 	Listing     *Listing     `json:"list,omitempty"`
 	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
 	Claims      []*Claim     `json:"claims,omitempty"`
+	OpNS        *string      `json:"opns,omitempty"`
 }
 
 type Txo struct {

@@ -1,3 +1,13 @@
+ALTER TABLE txos ADD COLUMN bsv20_xfer INTEGER GENERATED ALWAYS AS (
+    CASE WHEN data->'bsv20'->>'op' = 'transfer' 
+    THEN CAST(data->'bsv20'->>'status' as INTEGER)
+    ELSE NULL
+    END
+) STORED;
+
+CREATE INDEX idx_bsv20_transfers_height_idx ON txos(status, height, idx)
+WHERE bsv20_xfer IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS bsv20 (
     txid BYTEA,
     vout INT,
@@ -35,3 +45,6 @@ CREATE TABLE IF NOT EXISTS bsv20_mints (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_mints_status ON bsv20_mints(status, height, idx, vout);
+
+CREATE INDEX IF NOT EXISTS idx_bsv20_mints_to_validate ON bsv20_mints(height, idx, vout)
+    WHERE status = 0;
