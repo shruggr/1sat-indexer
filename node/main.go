@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bitcoinsv/bsvd/wire"
@@ -282,17 +283,26 @@ func processCompletions() {
 		}
 
 		fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
-		fmt.Println("Validating bsv20 for height", *ctx.Height)
-		lib.ValidateBsv20(*ctx.Height)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func(height uint32) {
+			fmt.Println("Processing inscription ids for height", height)
+			err := lib.SetOriginNum(height)
+			if err != nil {
+				log.Panicln("Error processing inscription ids:", err)
+			}
+			wg.Done()
+		}(height)
 
-		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetOriginNum(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
+		go func(height uint32) {
+			fmt.Println("Validating bsv20 for height", height)
+			lib.ValidateBsv20(height)
+			wg.Done()
+		}(*ctx.Height)
+
+		wg.Wait()
 		// fmt.Println("Done processing inscription ids")
 		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
-
 	}
 }
 
