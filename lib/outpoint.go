@@ -1,9 +1,11 @@
 package lib
 
 import (
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -66,4 +68,17 @@ func (o *Outpoint) UnmarshalJSON(data []byte) error {
 	}
 
 	return err
+}
+
+func (o Outpoint) Value() (driver.Value, error) {
+	return []byte(o), nil
+}
+
+func (o *Outpoint) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	*o = b
+	return nil
 }

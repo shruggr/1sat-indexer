@@ -1,0 +1,39 @@
+BITCOIN 8332 192.168.1.79
+Crawling Forward 800432 00000000000000000731e82d222ee874c8a76f506d7209765cbe11ef68afeeba
+Crawling Forward 800433 00000000000000000cf5059ac5049b39b35ff1a6cecf564ea129d09c229385b4
+Crawling Forward 800434 000000000000000007ee0fd68df515bf2611373f9abf3781bc98cf3275b00511
+Crawling Forward 800435 000000000000000007dd59749ec00669e62b48dab4dce041cd33f5cdb0b239e7
+Crawling Forward 800436 00000000000000000b8037459ae7290d652df9de31bb48adab3dd61435c63cab
+Crawling Forward 800437 00000000000000000876c7beca171ac1f4250e3e8ff8d538d188aaa54e74db08
+Crawling Forward 800438 0000000000000000037fabe4d362cc2ad8af73b740b53f057281e2b5e17b6e19
+Crawling Forward 800439 0000000000000000028a2482c6a386a0a104c1f46883b6dd5229ab3013852ecb
+Crawling Forward 800440 000000000000000002fd2f6a0afc4857a0b960cb3ebaf850386f74ca5c76bf2e
+Crawling Forward 800441 000000000000000009efbb8733ed526ec046ff0b08f1927d174d1f9a7cb4be72
+Crawling Forward 800442 0000000000000000003cb7811abcd9786ca0e97bfa6bb1d68279c8af07c0e79b
+Crawling Forward 800443 00000000000000000cf14350ab75a161a20d022c4850529d57e5678146e55d68
+Crawling Forward 800444 000000000000000002a376696fdee21a611b87c5c75d9d1cc1601672ee78e3ab
+Processing Block 800444 000000000000000002a376696fdee21a611b87c5c75d9d1cc1601672ee78e3ab
+txcount 11467
+{
+ "types": [
+  "file"
+ ],
+ "insc": {
+  "file": {
+   "hash": "lkhavLZyHr5L9XLIk1erhM7Qo0bverIpapS1UJ2bAb0=",
+   "size": 9,
+   "type": "u\ufffdZ\ufffdf\ufffd{\ufffdg\ufffd\ufffd\ufffd{\ufffd\"T\u0013\ufffd\ufffdB\ufffd\ufffd\ufffd\u0000\u0000\u0003RR\u0011\u0014\ufffd\u0000\u0001,\u0000\u0000\u0000\ufffd\ufffd\u0001\ufffd\u0000\u0000\u0013\ufffd\u001e\ufffd\u0000\u0003\ufffd\ufffd\ufffdQ\u0010U\u001e';/Z\ufffd\ufffd1\ufffd\ufffd\u0016P\u000f\\\u003e\ufffd\ufffd\\B\ufffdMsd6\ufffd\u0006\\\ufffd\ufffd\ufffd_\\@u\u001a\ufffd\ufffdLMM\ufffd\ufffd\u0013\u0005\u003e\u003e\u0011\ufffdM\ufffd\ufffdTMM|\ufffd\ufffd\u0011\ufffd,\ufffd\ufffd\ufffdi\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd_\ufffd\ufffd\ufffdS\ufffd\u001b`qכ,\ufffd?\ufffd\ufffd\ufffd2ˀƁ[l\u0002=w\ufffdI\ufffd\u000ft\u0002\ufffd\ufffd!ߘ\ufffd\ufffd\ufffd\u001auF\u0017\ufffd1?)\ufffd\ufffdk\ufffds\u0002WyF\ufffd\u001fu\u000c\ufffd\ufffd\ufffd}2hY\ufffd\ufffdF5.\u0002ޓ\ufffd\u0006\ufffd\ufffdw\ufffd\ufffdU\ufffds\ufffd\ufffd\ufffdk\ufffds7\u0008\ufffd\u001f\ufffd\ufffd^\u0001cN\ufffd\ufffdr\ufffd\ufffdRnU\ufffd\u0018\ufffd\ufffd8q\ufffd\u0017\u0001\ufffd4\ufffd\ufffdE"
+  }
+ },
+ "map": {
+  "app": "pow.co",
+  "name": "1LoveOrd_d379251c8921709b0850d2c2aa94c6f7705998ff35008adc96e7b4b2aa7f84fe",
+  "previewURL": "https://cloud-functions.twetch.app/api/t/d379251c8921709b0850d2c2aa94c6f7705998ff35008adc96e7b4b2aa7f84fe/unfurl",
+  "royalties": "[{\"type\":\"paymail\",\"destination\":\"3@twetch.me\",\"percentage\":0.0218}]",
+  "subTypeData": {
+   "collectionId": "4c801d4acfc3cddddedba9407bc823045f3275f1caba5478e288c61a522ddc07"
+  },
+  "subtype": "collectionItem",
+  "type": "ord"
+ }
+}

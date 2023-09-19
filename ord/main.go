@@ -283,7 +283,7 @@ func processInscriptionIds() {
 	for {
 		height := <-settled
 		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetInscriptionIds(height)
+		err := lib.SetOriginNum(height)
 		if err != nil {
 			log.Panicln("Error processing inscription ids:", err)
 		}

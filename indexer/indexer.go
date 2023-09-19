@@ -23,7 +23,7 @@ type TxFee struct {
 
 type BlockCtx struct {
 	Hash      string
-	Height    uint32
+	Height    *uint32
 	TxFees    []*TxFee
 	Wg        sync.WaitGroup
 	TxCount   int
@@ -33,7 +33,7 @@ type BlockCtx struct {
 type TxnStatus struct {
 	ID       string
 	Tx       *bt.Tx
-	Height   uint32
+	Height   *uint32
 	Idx      uint64
 	Parents  map[string]*TxnStatus
 	Children map[string]*TxnStatus
@@ -49,7 +49,7 @@ func ProcessTxns(THREADS uint) {
 	go func() {
 		for range ticker.C {
 			if txCount > 0 {
-				log.Println("Block", height, idx, txCount/10, "txns/s", len(Txns), InQueue)
+				log.Printf("Blk %d I %d - %d txs %d/s Q %d %d\n", height, idx, txCount, txCount/10, len(Txns), InQueue)
 			}
 			// m.Lock()
 			txCount = 0
@@ -62,8 +62,8 @@ func ProcessTxns(THREADS uint) {
 		go func(txn *TxnStatus) {
 			processTxn(txn)
 			txCount++
-			if txn.Height > height {
-				height = txn.Height
+			if txn.Height != nil && *txn.Height > height {
+				height = *txn.Height
 				idx = txn.Idx
 			} else if txn.Idx > idx {
 				idx = txn.Idx
@@ -84,17 +84,13 @@ func processTxn(txn *TxnStatus) {
 	}
 
 	if !blacklist {
-		// _, err := lib.SetTxn.Exec(txn.ID, txn.Ctx.Hash, txn.Height, txn.Idx)
-		// if err != nil {
-		// 	log.Panicln(txn.ID, err)
-		// }
-		_, err := lib.IndexTxn(txn.Tx, txn.Height, txn.Idx, false)
+		_, err := lib.IndexTxn(txn.Tx, &txn.Ctx.Hash, txn.Height, txn.Idx, false)
 		if err != nil {
 			log.Panic(err)
 		}
 	}
 
-	if txn.Height > 0 {
+	if txn.Height != nil {
 		orphans := make([]*TxnStatus, 0)
 		M.Lock()
 		delete(Txns, txn.ID)

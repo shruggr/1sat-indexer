@@ -2,16 +2,17 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bitcoinsv/bsvd/wire"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
@@ -21,25 +22,16 @@ import (
 )
 
 const INDEXER = "node"
-const TMP = "/opt/tmp"
+const TMP = "/tmp"
 
-var THREADS uint64 = 128
+var THREADS uint64 = 32
 
-var db *sql.DB
+var db *pgxpool.Pool
 var bit *bitcoin.Bitcoind
-
-// var junglebusClient *junglebus.Client
-// var msgQueue = make(chan *Msg, 1000000)
-
-// var height uint32
-
-// var sub *junglebus.Subscription
 
 var settle = make(chan *indexer.BlockCtx, 1000)
 
 var rdb *redis.Client
-
-// var indexed = map[string]bool{}
 
 func init() {
 	godotenv.Load("../.env")
@@ -53,14 +45,13 @@ func init() {
 
 	fmt.Println("BITCOIN", os.Getenv("BITCOIN_PORT"), os.Getenv("BITCOIN_HOST"))
 
-	// fmt.Println("YUGABYTE:", os.Getenv("YUGABYTE"))
-	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
+	db, err = pgxpool.New(
+		context.Background(),
+		os.Getenv("POSTGRES"),
+	)
 	if err != nil {
 		log.Panic(err)
 	}
-	db.SetConnMaxIdleTime(time.Millisecond * 100)
-	db.SetMaxOpenConns(400)
-	db.SetMaxIdleConns(25)
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -81,22 +72,32 @@ func init() {
 	}
 }
 
-// var block *bitcoin.BlockHeader
-
 func main() {
-	// row := db.QueryRow(`SELECT height
-	// 	FROM progress
-	// 	WHERE indexer=$1`,
-	// 	INDEXER,
-	// )
-	// row.Scan(&height)
-	// fmt.Println("FromBlock", height)
-
 	go indexer.ProcessTxns(uint(THREADS))
 	go processCompletions()
 
 	var err error
 	var block *bitcoin.BlockHeader
+
+	row := db.QueryRow(context.Background(), `
+		SELECT height
+		FROM progress
+		WHERE indexer = $1`,
+		INDEXER,
+	)
+	var height uint32
+	row.Scan(&height)
+	if height < lib.TRIGGER {
+		height = lib.TRIGGER
+	}
+	blk, err := bit.GetBlockByHeight(int(height))
+	if err != nil {
+		panic(err)
+	}
+	block, err = bit.GetBlockHeader(blk.Hash)
+	if err != nil {
+		panic(err)
+	}
 
 	for {
 		if block == nil {
@@ -111,7 +112,7 @@ func main() {
 		}
 		if !isBlockIndexed(block.Hash) {
 			for {
-				if isBlockIndexed(block.PreviousBlockHash) {
+				if isBlockIndexed(block.PreviousBlockHash) || block.Height <= uint64(lib.TRIGGER) {
 					break
 				}
 				fmt.Println("Crawling Back", block.Height-1, block.PreviousBlockHash)
@@ -133,7 +134,6 @@ func main() {
 				log.Panicln(err)
 			}
 
-			fmt.Println("Downloading block", block.Height, block.Hash)
 			_, err = io.Copy(f, r)
 			if err != nil {
 				log.Panicln(err)
@@ -144,6 +144,7 @@ func main() {
 			}
 
 			if block.NextBlockHash != "" {
+				fmt.Println("Crawling Forward", block.Height+1, block.NextBlockHash)
 				block, err = bit.GetBlockHeader(block.NextBlockHash)
 				if err != nil {
 					panic(err)
@@ -152,7 +153,14 @@ func main() {
 				block = nil
 			}
 		} else {
-			block = nil
+			if block.NextBlockHash != "" {
+				fmt.Println("Crawling Forward", block.Height+1, block.NextBlockHash)
+				block, err = bit.GetBlockHeader(block.NextBlockHash)
+				if err == nil {
+					continue
+				}
+				log.Println("GetBlockHeader", err)
+			}
 			fmt.Println("Waiting for Block")
 			time.Sleep(30 * time.Second)
 		}
@@ -188,16 +196,17 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 
 	fmt.Printf("txcount %d\n", txCount)
 	var idx int
+	height := uint32(block.Height)
 	blockCtx := &indexer.BlockCtx{
 		Hash:      block.Hash,
-		Height:    uint32(block.Height),
+		Height:    &height,
 		TxFees:    make([]*indexer.TxFee, int(txCount)),
 		StartTime: time.Now(),
 	}
 
 	for idx = 0; idx < int(txCount); idx++ {
 		txn := &indexer.TxnStatus{
-			Height:   uint32(block.Height),
+			Height:   &height,
 			Idx:      uint64(idx),
 			Parents:  map[string]*indexer.TxnStatus{},
 			Children: map[string]*indexer.TxnStatus{},
@@ -249,7 +258,8 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 	rdb.Publish(context.Background(), "indexed", fmt.Sprintf("%d", blockCtx.Height))
 	settle <- blockCtx
 
-	_, err = db.Exec(`INSERT INTO blocks(hash, height)
+	_, err = db.Exec(context.Background(), `
+		INSERT INTO blocks(id, height)
 		VALUES(decode($1, 'hex'), $2)`,
 		block.Hash,
 		block.Height,
@@ -259,12 +269,13 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 
 func processCompletions() {
 	for ctx := range settle {
-		height := ctx.Height - 6
-		if _, err := db.Exec(`INSERT INTO progress(indexer, height)
-				VALUES($1, $2)
-				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2
-					WHERE progress.height < $2`,
+		height := *ctx.Height - 6
+		if _, err := db.Exec(context.Background(), `
+			INSERT INTO progress(indexer, height)
+			VALUES($1, $2)
+			ON CONFLICT(indexer) DO UPDATE
+				SET height=$2
+				WHERE progress.height < $2`,
 			INDEXER,
 			height,
 		); err != nil {
@@ -272,21 +283,34 @@ func processCompletions() {
 		}
 
 		fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
-		fmt.Println("Processing inscription ids for height", height)
-		lib.ValidateBsv20(ctx.Height)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func(height uint32) {
+			fmt.Println("Processing inscription ids for height", height)
+			err := lib.SetOriginNum(height)
+			if err != nil {
+				log.Panicln("Error processing inscription ids:", err)
+			}
+			wg.Done()
+		}(height)
 
-		err := lib.SetInscriptionIds(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
+		go func(height uint32) {
+			fmt.Println("Validating bsv20 for height", height)
+			lib.ValidateBsv20(height)
+			wg.Done()
+		}(*ctx.Height)
+
+		wg.Wait()
+		// fmt.Println("Done processing inscription ids")
 		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
 }
 
 func isBlockIndexed(hash string) bool {
-	rows, err := db.Query(`SELECT 1
+	rows, err := db.Query(context.Background(), `
+		SELECT 1
 		FROM blocks
-		WHERE hash=decode($1, 'hex')`,
+		WHERE id=decode($1, 'hex')`,
 		hash,
 	)
 	if err != nil {
