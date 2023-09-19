@@ -272,141 +272,173 @@ func validateBsv20Deploy(height uint32) {
 func validateBsv20Mint(height uint32) {
 	fmt.Println("Validating BSV20 mint", height)
 
-	rows, err := Db.Query(context.Background(), `
-		SELECT txid, vout, height, idx, tick, amt
+	tickRows, err := Db.Query(context.Background(), `
+		SELECT DISTINCT tick
 		FROM bsv20_mints
-		WHERE status=0 AND height <= $1 AND height > 0
-		ORDER BY height ASC, idx ASC, vout ASC`,
+		WHERE status=0 AND height <= $1 AND height > 0`,
 		height,
 	)
 	if err != nil {
 		log.Panic(err)
 	}
-	defer rows.Close()
+	defer tickRows.Close()
 
-	tickers := map[string]*Bsv20{}
-	for rows.Next() {
-		bsv20 := &Bsv20{}
-		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt)
+	limiter := make(chan struct{}, THREADS)
+	var wg sync.WaitGroup
+
+	for tickRows.Next() {
+		var tick string
+		err = tickRows.Scan(&tick)
 		if err != nil {
 			log.Panic(err)
 		}
-		var ticker *Bsv20
-		var ok bool
-		tick := *bsv20.Ticker
-		if ticker, ok = tickers[tick]; !ok {
-			ticker = loadTicker(tick)
-			tickers[tick] = ticker
-		}
 
-		// fmt.Println("TICKER:", *ticker.Ticker, ticker.Supply, *bsv20.Amt)
+		limiter <- struct{}{}
+		wg.Add(1)
 
-		var reason string
-		if ticker == nil || *ticker.Height > *bsv20.Height || (*ticker.Height == *bsv20.Height && ticker.Idx > bsv20.Idx) {
-			reason = fmt.Sprintf("invalid ticker %s as of %d %d", tick, *bsv20.Height, bsv20.Idx)
-		} else if ticker.Supply >= ticker.Max {
-			reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
-		} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
-			reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
-		}
+		ticker := loadTicker(tick)
 
-		func() {
-			t, err := Db.Begin(context.Background())
-			if err != nil {
-				log.Panic(err)
-			}
-			defer t.Rollback(context.Background())
+		go func(tick string) {
+			fmt.Println("Validating BSV20 mint", tick, "to height", height)
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
 
-			if reason != "" {
-				_, err = t.Exec(context.Background(), `
-					UPDATE bsv20_mints
-					SET status=-1, reason=$3
-					WHERE txid = $1 AND vout=$2`,
-					bsv20.Txid,
-					bsv20.Vout,
-					reason,
-				)
-				if err != nil {
-					log.Panic(err)
-				}
-				sql := fmt.Sprintf(`
-					UPDATE txos
-					SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
-					WHERE txid = $1 AND vout = $2`,
-					reason,
-				)
-				_, err := t.Exec(context.Background(),
-					sql,
-					bsv20.Txid,
-					bsv20.Vout,
-				)
-				if err != nil {
-					log.Panic(err)
-				}
-				err = t.Commit(context.Background())
-				if err != nil {
-					log.Panic(err)
-				}
-				return
-			}
-
-			var sql string
-			var reason string
-			if ticker.Max-ticker.Supply < *bsv20.Amt {
-				*bsv20.Amt = ticker.Max - ticker.Supply
-				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
-				sql = fmt.Sprintf(`
-					UPDATE txos
-					SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":"%s", "amt":%d}')
-					WHERE txid = $1 AND vout = $2`,
-					reason,
-					*bsv20.Amt,
-				)
-			} else {
-				sql = `UPDATE txos
-					SET data = jsonb_set(data, '{bsv20, status}', '1')
-					WHERE txid = $1 AND vout = $2`
-			}
-			// fmt.Println("SQL:", sql)
-			_, err = t.Exec(context.Background(),
-				sql,
-				bsv20.Txid,
-				bsv20.Vout,
+			rows, err := Db.Query(context.Background(), `
+				SELECT txid, vout, height, idx, tick, amt
+				FROM bsv20_mints
+				WHERE tick=$1 AND status=0 AND height <= $2 AND height > 0
+				ORDER BY height ASC, idx ASC, vout ASC`,
+				tick,
+				height,
 			)
 			if err != nil {
 				log.Panic(err)
 			}
+			defer rows.Close()
 
-			_, err = t.Exec(context.Background(), `
-				UPDATE bsv20_mints
-				SET status=1
-				WHERE txid = $1 AND vout=$2`,
-				bsv20.Txid,
-				bsv20.Vout,
-			)
-			if err != nil {
-				log.Panic(err)
+			mints := make([]*Bsv20, 0, 1000)
+			for rows.Next() {
+				bsv20 := &Bsv20{}
+				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt)
+				if err != nil {
+					log.Panic(err)
+				}
+				mints = append(mints, bsv20)
 			}
 
-			ticker.Supply += *bsv20.Amt
-			_, err = t.Exec(context.Background(), `
-				UPDATE bsv20
-				SET supply=$3
-				WHERE txid = $1 AND vout=$2`,
-				ticker.Txid,
-				ticker.Vout,
-				ticker.Supply,
-			)
-			if err != nil {
-				log.Panic(err)
-			}
+			for _, bsv20 := range mints {
+				// fmt.Printf("Validating BSV20 mint %s %x\n", tick, bsv20.Txid)
 
-			err = t.Commit(context.Background())
-			if err != nil {
-				log.Panic(err)
+				var reason string
+				if ticker == nil || *ticker.Height > *bsv20.Height || (*ticker.Height == *bsv20.Height && ticker.Idx > bsv20.Idx) {
+					reason = fmt.Sprintf("invalid ticker %s as of %d %d", tick, *bsv20.Height, bsv20.Idx)
+				} else if ticker.Supply >= ticker.Max {
+					reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
+				} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
+					reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
+				}
+				func() {
+					t, err := Db.Begin(context.Background())
+					if err != nil {
+						log.Panic(err)
+					}
+					defer t.Rollback(context.Background())
+
+					if reason != "" {
+						_, err = t.Exec(context.Background(), `
+							UPDATE bsv20_mints
+							SET status=-1, reason=$3
+							WHERE txid = $1 AND vout=$2`,
+							bsv20.Txid,
+							bsv20.Vout,
+							reason,
+						)
+						if err != nil {
+							log.Panic(err)
+						}
+						sql := fmt.Sprintf(`
+							UPDATE txos
+							SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
+							WHERE txid = $1 AND vout = $2`,
+							reason,
+						)
+						_, err := t.Exec(context.Background(),
+							sql,
+							bsv20.Txid,
+							bsv20.Vout,
+						)
+						if err != nil {
+							log.Panic(err)
+						}
+						err = t.Commit(context.Background())
+						if err != nil {
+							log.Panic(err)
+						}
+						return
+					}
+
+					var sql string
+					var reason string
+					if ticker.Max-ticker.Supply < *bsv20.Amt {
+						*bsv20.Amt = ticker.Max - ticker.Supply
+						reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
+						sql = fmt.Sprintf(`
+						UPDATE txos
+						SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":"%s", "amt":%d}')
+						WHERE txid = $1 AND vout = $2`,
+							reason,
+							*bsv20.Amt,
+						)
+					} else {
+						sql = `UPDATE txos
+						SET data = jsonb_set(data, '{bsv20, status}', '1')
+						WHERE txid = $1 AND vout = $2`
+					}
+					// fmt.Println("SQL:", sql)
+					_, err = t.Exec(context.Background(),
+						sql,
+						bsv20.Txid,
+						bsv20.Vout,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+
+					_, err = t.Exec(context.Background(), `
+						UPDATE bsv20_mints
+						SET status=1
+						WHERE txid = $1 AND vout=$2`,
+						bsv20.Txid,
+						bsv20.Vout,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+
+					ticker.Supply += *bsv20.Amt
+					_, err = t.Exec(context.Background(), `
+						UPDATE bsv20
+						SET supply=$3
+						WHERE txid = $1 AND vout=$2`,
+						ticker.Txid,
+						ticker.Vout,
+						ticker.Supply,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+
+					err = t.Commit(context.Background())
+					if err != nil {
+						log.Panic(err)
+					}
+				}()
 			}
-		}()
+		}(tick)
 	}
+	wg.Wait()
 }
 
 func validateBsv20Transfers(height uint32) {

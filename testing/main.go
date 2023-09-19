@@ -45,7 +45,7 @@ func main() {
 		log.Panic(err)
 	}
 	// 	// fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
-	height := uint32(806489)
+	height := uint32(810142)
 	fmt.Println("Validating bsv20 for height", height)
 	lib.ValidateBsv20(height)
 
