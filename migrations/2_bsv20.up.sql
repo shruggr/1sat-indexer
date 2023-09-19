@@ -46,5 +46,5 @@ CREATE TABLE IF NOT EXISTS bsv20_mints (
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_mints_status ON bsv20_mints(status, height, idx, vout);
 
-CREATE INDEX IF NOT EXISTS idx_bsv20_mints_to_validate ON bsv20_mints(height, idx, vout)
+CREATE INDEX IF NOT EXISTS idx_bsv20_mints_tick_validate ON bsv20_mints(tick, height, idx, vout)
     WHERE status = 0;
