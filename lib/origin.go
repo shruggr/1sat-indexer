@@ -12,7 +12,7 @@ type Origin struct {
 	Num    uint64    `json:"num"`
 	Txid   []byte    `json:"txid"`
 	Vout   uint32    `json:"vout"`
-	Height uint32    `json:"height"`
+	Height *uint32   `json:"height"`
 	Idx    uint64    `json:"idx"`
 	Data   *TxoData  `json:"data,omitempty"`
 }

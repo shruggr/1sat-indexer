@@ -123,7 +123,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					Origin: txo.Outpoint,
 					Txid:   ctx.Txid,
 					Vout:   txo.Vout,
-					Height: *ctx.Height,
+					Height: ctx.Height,
 					Idx:    ctx.Idx,
 					Data:   txo.Data,
 				}
