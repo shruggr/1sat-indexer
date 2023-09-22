@@ -2,18 +2,15 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"strconv"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
@@ -23,7 +20,7 @@ import (
 
 var THREADS uint64 = 16
 
-var db *sql.DB
+var db *pgxpool.Pool
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
 var fromBlock uint32
@@ -44,7 +41,10 @@ func init() {
 	godotenv.Load("../.env")
 
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
+	db, err = pgxpool.New(
+		context.Background(),
+		os.Getenv("POSTGRES"),
+	)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -79,28 +79,58 @@ func main() {
 	}
 
 	go processQueue()
-	subscribe()
-	defer func() {
-		if r := recover(); r != nil {
-			sub.Unsubscribe()
-			fmt.Println("Recovered in f", r)
-			fmt.Println("Unsubscribing and exiting...")
+	// subscribe()
+	go func() {
+		sub := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
+		ch := sub.Subscribe(context.Background(), "submit").Channel()
+		for msg := range ch {
+			txid := msg.Payload
+			for i := 0; i < 4; i++ {
+				tx, err := lib.LoadTx(txid)
+				if err == nil {
+					msgQueue <- &Msg{
+						Id:          txid,
+						Transaction: tx.Bytes(),
+					}
+					log.Printf("Indexing %s\n", txid)
+					break
+				}
+				log.Printf("Retry %d: %s\n", i, txid)
+				switch i {
+				case 0:
+					time.Sleep(2 * time.Second)
+				case 1:
+					time.Sleep(10 * time.Second)
+				default:
+					time.Sleep(30 * time.Second)
+				}
+			}
+
 		}
 	}()
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		sub.Unsubscribe()
+	// 		fmt.Println("Recovered in f", r)
+	// 		fmt.Println("Unsubscribing and exiting...")
+	// 	}
+	// }()
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigs
-		fmt.Printf("Caught signal")
-		fmt.Println("Unsubscribing and exiting...")
-		sub.Unsubscribe()
-		os.Exit(0)
-	}()
+	// sigs := make(chan os.Signal, 1)
+	// signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	// go func() {
+	// 	<-sigs
+	// 	fmt.Printf("Caught signal")
+	// 	fmt.Println("Unsubscribing and exiting...")
+	// 	sub.Unsubscribe()
+	// 	os.Exit(0)
+	// }()
 
-	var wg2 sync.WaitGroup
-	wg2.Add(1)
-	wg2.Wait()
+	<-make(chan struct{})
 }
 
 func subscribe() {
@@ -117,8 +147,6 @@ func subscribe() {
 				// log.Printf("[MEMPOOL]: %v\n", txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         txResp.BlockIndex,
 					Transaction: txResp.Transaction,
 				}
 
@@ -172,8 +200,6 @@ func processQueue() {
 		txn := &indexer.TxnStatus{
 			ID:       msg.Id,
 			Tx:       tx,
-			Height:   msg.Height,
-			Idx:      msg.Idx,
 			Parents:  map[string]*indexer.TxnStatus{},
 			Children: map[string]*indexer.TxnStatus{},
 			Ctx:      mempoolCtx,

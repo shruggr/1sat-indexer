@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -444,8 +445,13 @@ func validateBsv20Mint(height uint32) {
 func validateBsv20Transfers(height uint32) {
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
-		FROM txos
-		WHERE bsv20_xfer=0 AND height <= $1`,
+		FROM (
+			SELECT txid, MIN(height) as height
+			FROM txos
+			WHERE bsv20_xfer=0 AND height <= $1
+			GROUP by txid
+		) t
+		ORDER BY height ASC`,
 		height,
 	)
 	if err != nil {
@@ -469,8 +475,10 @@ func validateBsv20Transfers(height uint32) {
 				wg.Done()
 			}()
 			ValidateTransfer(txid)
+			// time.Sleep(10 * time.Second)
 		}()
 	}
+	wg.Wait()
 }
 
 func ValidateTransfer(txid []byte) {
@@ -496,6 +504,7 @@ func ValidateTransfer(txid []byte) {
 			log.Panicf("%x - %v\n", txid, err)
 		}
 
+		fmt.Println("IN:", hex.EncodeToString(txid), *data.Bsv20.Ticker, *data.Bsv20.Amt, data.Bsv20.Status)
 		var tick string
 		if data.Bsv20.Ticker != nil {
 			tick = *data.Bsv20.Ticker
@@ -507,15 +516,14 @@ func ValidateTransfer(txid []byte) {
 
 		switch data.Bsv20.Status {
 		case -1:
-			invalid[tick] = "invalid"
+			invalid[tick] = "invalid inputs"
 		case 0:
-			// fmt.Println("PENDING", tick)
 			return
 		case 1:
-			if amt, ok := tokensIn[tick]; !ok {
-				tokensIn[tick] = amt
+			if _, ok := tokensIn[tick]; !ok {
+				tokensIn[tick] = *data.Bsv20.Amt
 			} else {
-				tokensIn[tick] += amt
+				tokensIn[tick] += *data.Bsv20.Amt
 			}
 		}
 	}
@@ -539,6 +547,7 @@ func ValidateTransfer(txid []byte) {
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
+		// fmt.Println("OUT:", hex.EncodeToString(txid), *data.Bsv20.Ticker, *data.Bsv20.Amt)
 
 		var tick string
 		if data.Bsv20.Ticker != nil {
@@ -555,13 +564,15 @@ func ValidateTransfer(txid []byte) {
 		tickTokens[tick] = append(tickTokens[tick], vout)
 		if balance, ok := tokensIn[tick]; ok {
 			if *data.Bsv20.Amt > balance {
-				invalid[tick] = "insufficient balance"
+				invalid[tick] = fmt.Sprintf("insufficient balance %d < %d", balance, *data.Bsv20.Amt)
 			} else {
 				balance -= *data.Bsv20.Amt
 				tokensIn[tick] = balance
 			}
 		} else {
-			invalid[tick] = "missing input"
+			if _, ok := invalid[tick]; !ok {
+				invalid[tick] = "missing inputs"
+			}
 		}
 	}
 
@@ -571,16 +582,18 @@ func ValidateTransfer(txid []byte) {
 	}
 	defer t.Rollback(context.Background())
 
-	for tick := range tokensIn {
+	for tick := range tickTokens {
 		var sql string
 		vouts := tickTokens[tick]
 		if reason, ok := invalid[tick]; ok {
+			fmt.Println("INVALID:", hex.EncodeToString(txid), tick, reason)
 			sql = fmt.Sprintf(`UPDATE txos
 				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
 				WHERE txid = $1 AND vout = ANY ($2)`,
 				reason,
 			)
 		} else {
+			// fmt.Println("VALID:", hex.EncodeToString(txid), tick)
 			sql = `UPDATE txos
 				SET data = jsonb_set(data, '{bsv20,status}', '1')
 				WHERE txid = $1 AND vout = ANY ($2)`
