@@ -15,11 +15,12 @@ type Origin struct {
 	Height uint32    `json:"height"`
 	Idx    uint64    `json:"idx"`
 	Data   *TxoData  `json:"data,omitempty"`
+	Map    Map       `json:"map,omitempty"`
 }
 
 func (o *Origin) Save() {
 	_, err := Db.Exec(context.Background(), `
-		INSERT INTO origins(origin, txid, vout, height, idx, data)
+		INSERT INTO origins(origin, txid, vout, height, idx, data, map)
 		VALUES($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(origin) DO UPDATE SET
 			height=EXCLUDED.height,
@@ -31,10 +32,49 @@ func (o *Origin) Save() {
 		o.Height,
 		o.Idx,
 		o.Data,
+		o.Map,
 	)
 	if err != nil {
 		log.Panicf("Save Error: %s %+v\n", o.Origin, err)
 	}
+}
+
+func SaveMap(origin *Outpoint) {
+	rows, err := Db.Query(context.Background(), `
+		SELECT data->>'map'
+		FROM txos
+		WHERE origin=$1
+		ORDER BY height ASC, idx ASC, vout ASC`,
+		origin,
+	)
+	if err != nil {
+		log.Panicf("BuildMap Error: %s %+v\n", origin, err)
+	}
+	rows.Close()
+
+	m := map[string]interface{}{}
+	for rows.Next() {
+		var data Map
+		err = rows.Scan(&data)
+		if err != nil {
+			panic(err)
+		}
+		for k, v := range data {
+			m[k] = v
+		}
+	}
+
+	_, err = Db.Exec(context.Background(), `
+		UPDATE origins
+		SET map=$2
+		WHERE origin=$1`,
+		origin,
+		m,
+	)
+	if err != nil {
+		log.Panicf("Save Error: %s %+v\n", o.Origin, err)
+	}
+	return
 }
 
 func SetOriginNum(height uint32) (err error) {

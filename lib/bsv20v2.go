@@ -504,7 +504,7 @@ func ValidateTransfer(txid []byte) {
 			log.Panicf("%x - %v\n", txid, err)
 		}
 
-		fmt.Println("IN:", hex.EncodeToString(txid), *data.Bsv20.Ticker, *data.Bsv20.Amt, data.Bsv20.Status)
+		// fmt.Println("IN:", hex.EncodeToString(txid), *data.Bsv20.Ticker, *data.Bsv20.Amt, data.Bsv20.Status)
 		var tick string
 		if data.Bsv20.Ticker != nil {
 			tick = *data.Bsv20.Ticker
@@ -593,7 +593,7 @@ func ValidateTransfer(txid []byte) {
 				reason,
 			)
 		} else {
-			// fmt.Println("VALID:", hex.EncodeToString(txid), tick)
+			fmt.Println("VALID:", hex.EncodeToString(txid), tick)
 			sql = `UPDATE txos
 				SET data = jsonb_set(data, '{bsv20,status}', '1')
 				WHERE txid = $1 AND vout = ANY ($2)`
