@@ -47,30 +47,6 @@ CREATE TABLE txos(
     spend_idx BIGINT,
     inacc BIGINT,
     origin BYTEA,
-    data JSONB
-);
-CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
-CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
-    WHERE spend IS NULL AND pkhash IS NOT NULL;
-CREATE INDEX idx_txo_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
-    WHERE spend IS NOT NULL AND pkhash IS NOT NULL;
--- CREATE INDEX idx_txo_pkhash_spends ON txos(pkhash, spend_height, spend_idx)
---     WHERE spend IS NULL AND pkhash IS NOT NULL;
-CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height NULLS LAST, idx)
-    WHERE origin IS NOT NULL;
--- CREATE INDEX idx_txos_data ON txos USING GIN(data)
---     WHERE spend IS NULL AND data IS NOT NULL;
-CREATE INDEX idx_txos_spend ON txos(spend);
-CREATE INDEX idx_txos_height_idx_vout ON txos(height, idx, vout);
-
-
-CREATE TABLE origins(
-    origin BYTEA PRIMARY KEY,
-    txid BYTEA,
-    vout INTEGER,
-    num BIGINT,
-    height INTEGER,
-    idx BIGINT,
     data JSONB,
     search_text_en TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('english',
@@ -86,13 +62,38 @@ CREATE TABLE origins(
     ) STORED,
     filetype TEXT GENERATED ALWAYS AS (
         data->'insc'->'file'->>'type'
-    ) STORED,
+    ) STORED
+);
+
+CREATE UNIQUE INDEX idx_txos_txid_vout_spend ON txos(txid, vout, spend);
+CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
+    WHERE spend IS NULL AND pkhash IS NOT NULL;
+CREATE INDEX idx_txos_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
+    WHERE spend IS NOT NULL AND pkhash IS NOT NULL;
+-- CREATE INDEX idx_txo_pkhash_spends ON txos(pkhash, spend_height, spend_idx)
+--     WHERE spend IS NULL AND pkhash IS NOT NULL;
+CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height NULLS LAST, idx)
+    WHERE origin IS NOT NULL;
+-- CREATE INDEX idx_txos_data ON txos USING GIN(data)
+--     WHERE spend IS NULL AND data IS NOT NULL;
+CREATE INDEX idx_txos_spend ON txos(spend);
+CREATE INDEX idx_txos_height_idx_vout ON txos(height, idx, vout);
+
+CREATE INDEX idx_txos_search_text_en ON txos USING GIN(search_text_en);
+CREATE INDEX idx_txos_data ON txos USING GIN(data)
+    WHERE data IS NOT NULL;
+CREATE INDEX idx_txos_geohash ON txos(geohash text_pattern_ops)
+    WHERE geohash IS NOT NULL;
+
+CREATE TABLE origins(
+    origin BYTEA PRIMARY KEY,
+    txid BYTEA,
+    vout INTEGER,
+    num BIGINT,
+    height INTEGER,
+    idx BIGINT
 );
 CREATE UNIQUE INDEX idx_origins_origin_num ON origins(origin, num);
 CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, vout)
 	WHERE height IS NOT NULL AND num = -1;
-CREATE INDEX idx_origins_search_text_en ON origins USING GIN(search_text_en);
-CREATE INDEX idx_origins_data ON origins USING GIN(data);
-CREATE INDEX idx_origins_geohash ON origins(geohash text_pattern_ops)
-    WHERE geohash IS NOT NULL;
 
