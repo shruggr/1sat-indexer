@@ -20,18 +20,16 @@ type Origin struct {
 
 func (o *Origin) Save() {
 	_, err := Db.Exec(context.Background(), `
-		INSERT INTO origins(origin, txid, vout, height, idx, data, map)
+		INSERT INTO origins(origin, txid, vout, height, idx, map)
 		VALUES($1, $2, $3, $4, $5, $6)
 		ON CONFLICT(origin) DO UPDATE SET
 			height=EXCLUDED.height,
-			idx=EXCLUDED.idx,
-			data=EXCLUDED.data`,
+			idx=EXCLUDED.idx`,
 		o.Origin,
 		o.Txid,
 		o.Vout,
 		o.Height,
 		o.Idx,
-		o.Data,
 		o.Map,
 	)
 	if err != nil {
@@ -43,7 +41,7 @@ func SaveMap(origin *Outpoint) {
 	rows, err := Db.Query(context.Background(), `
 		SELECT data->>'map'
 		FROM txos
-		WHERE origin=$1
+		WHERE origin=$1 AND data->>'map' IS NOT NULL
 		ORDER BY height ASC, idx ASC, vout ASC`,
 		origin,
 	)
@@ -72,9 +70,8 @@ func SaveMap(origin *Outpoint) {
 		m,
 	)
 	if err != nil {
-		log.Panicf("Save Error: %s %+v\n", o.Origin, err)
+		log.Panicf("Save Error: %s %+v\n", origin, err)
 	}
-	return
 }
 
 func SetOriginNum(height uint32) (err error) {

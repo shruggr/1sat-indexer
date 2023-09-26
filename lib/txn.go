@@ -178,8 +178,6 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					Amt:     txo.Spend.Data.Bsv20.Amt,
 					Implied: true,
 				}
-
-				// saveImpliedBsv20Transfer(txo.Txid, txo.Vout, txo)
 			}
 			txo.Save()
 
@@ -190,7 +188,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				}
 			}
 
-			if txo.Data.Map != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
+			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
 				SaveMap(txo.Origin)
 			}
 		}
