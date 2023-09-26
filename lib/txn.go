@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -126,6 +127,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					Height: ctx.Height,
 					Idx:    ctx.Idx,
 					Data:   txo.Data,
+					Map:    txo.Data.Map,
 				}
 				ctx.Origins = append(ctx.Origins, origin)
 				txo.Origin = txo.Outpoint
@@ -176,8 +178,6 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 					Amt:     txo.Spend.Data.Bsv20.Amt,
 					Implied: true,
 				}
-
-				// saveImpliedBsv20Transfer(txo.Txid, txo.Vout, txo)
 			}
 			txo.Save()
 
@@ -186,6 +186,10 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				if err != nil {
 					log.Panicf("%x %v\n", ctx.Txid, err)
 				}
+			}
+
+			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
+				SaveMap(txo.Origin)
 			}
 		}
 

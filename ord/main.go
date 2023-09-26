@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -12,16 +11,16 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
-	"github.com/shruggr/1sat-indexer/lib"
 )
 
 const INDEXER = "ord"
 
 var THREADS uint64 = 16
 
-var db *sql.DB
+var db *pgxpool.Pool
 var junglebusClient *junglebus.Client
 
 var sub *junglebus.Subscription
@@ -58,15 +57,21 @@ func init() {
 	godotenv.Load("../.env")
 
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
-	if err != nil {
-		log.Panic(err)
-	}
+	// db, err = pgxpool.New(
+	// 	context.Background(),
+	// 	os.Getenv("POSTGRES"),
+	// )
 
-	err = lib.Initialize(db)
-	if err != nil {
-		log.Panic(err)
-	}
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr:     "localhost:6379",
+	// 	Password: "", // no password set
+	// 	DB:       0,  // use default DB
+	// })
+
+	// err = lib.Initialize(db, rdb)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 	if os.Getenv("THREADS") != "" {
 		THREADS, err = strconv.ParseUint(os.Getenv("THREADS"), 10, 64)
 		if err != nil {
@@ -76,6 +81,7 @@ func init() {
 }
 
 func main() {
+	fmt.Println("Starting Ord", os.Getenv("JUNGLEBUS"))
 	var err error
 	junglebusClient, err = junglebus.New(
 		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
@@ -84,17 +90,17 @@ func main() {
 		log.Panicln(err.Error())
 	}
 
-	row := db.QueryRow(`SELECT height
-		FROM progress
-		WHERE indexer=$1`,
-		INDEXER,
-	)
-	row.Scan(&fromBlock)
-	if fromBlock < lib.TRIGGER {
-		fromBlock = lib.TRIGGER
-	}
+	// row := db.QueryRow(`SELECT height
+	// 	FROM progress
+	// 	WHERE indexer=$1`,
+	// 	INDEXER,
+	// )
+	// row.Scan(&fromBlock)
+	// if fromBlock < lib.TRIGGER {
+	// 	fromBlock = lib.TRIGGER
+	// }
 
-	go processQueue()
+	// go processQueue()
 	subscribe()
 	var wg2 sync.WaitGroup
 	wg2.Add(1)
@@ -108,23 +114,23 @@ func subscribe() {
 		os.Getenv("ORD"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
-			OnTransaction: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
-					Transaction: txResp.Transaction,
-				}
-			},
+			// OnTransaction: func(txResp *jbModels.TransactionResponse) {
+			// 	log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+			// 	msgQueue <- &Msg{
+			// 		Id:          txResp.Id,
+			// 		Height:      txResp.BlockHeight,
+			// 		Idx:         uint32(txResp.BlockIndex),
+			// 		Transaction: txResp.Transaction,
+			// 	}
+			// },
 			OnMempool: func(txResp *jbModels.TransactionResponse) {
 				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         uint32(txResp.BlockIndex),
-					Transaction: txResp.Transaction,
-				}
+				// msgQueue <- &Msg{
+				// 	Id:          txResp.Id,
+				// 	Height:      txResp.BlockHeight,
+				// 	Idx:         uint32(txResp.BlockIndex),
+				// 	Transaction: txResp.Transaction,
+				// }
 
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
@@ -156,136 +162,136 @@ func subscribe() {
 	}
 }
 
-func processQueue() {
-	var settledHeight uint32
-	go processInscriptionIds()
-	go processTxns()
-	for {
-		msg := <-msgQueue
+// func processQueue() {
+// 	var settledHeight uint32
+// 	go processInscriptionIds()
+// 	go processTxns()
+// 	for {
+// 		msg := <-msgQueue
 
-		switch msg.Status {
-		case 0:
-			tx, err := bt.NewTxFromBytes(msg.Transaction)
-			if err != nil {
-				if msg.Height == 0 {
-					continue
-				}
-				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-			}
+// 		switch msg.Status {
+// 		case 0:
+// 			tx, err := bt.NewTxFromBytes(msg.Transaction)
+// 			if err != nil {
+// 				if msg.Height == 0 {
+// 					continue
+// 				}
+// 				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+// 			}
 
-			txn := &TxnStatus{
-				ID:       msg.Id,
-				Tx:       tx,
-				Height:   msg.Height,
-				Idx:      msg.Idx,
-				Parents:  map[string]*TxnStatus{},
-				Children: map[string]*TxnStatus{},
-			}
+// 			txn := &TxnStatus{
+// 				ID:       msg.Id,
+// 				Tx:       tx,
+// 				Height:   msg.Height,
+// 				Idx:      msg.Idx,
+// 				Parents:  map[string]*TxnStatus{},
+// 				Children: map[string]*TxnStatus{},
+// 			}
 
-			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
-			if err != nil {
-				panic(err)
-			}
+// 			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
+// 			if err != nil {
+// 				panic(err)
+// 			}
 
-			if msg.Height == 0 {
-				txnQueue <- txn
-				continue
-			}
+// 			if msg.Height == 0 {
+// 				txnQueue <- txn
+// 				continue
+// 			}
 
-			for _, input := range tx.Inputs {
-				m.Lock()
-				if parent, ok := txns[input.PreviousTxIDStr()]; ok {
-					parent.Children[msg.Id] = txn
-					txn.Parents[parent.ID] = parent
-				}
-				m.Unlock()
-			}
-			m.Lock()
-			if t, ok := txns[msg.Id]; ok {
-				t.Height = msg.Height
-				t.Idx = msg.Idx
-				m.Unlock()
-				continue
-			}
-			txns[msg.Id] = txn
-			m.Unlock()
-			wg.Add(1)
-			if len(txn.Parents) == 0 {
-				txnQueue <- txn
-			}
-		// On Connected, if already connected, unsubscribe and cool down
+// 			for _, input := range tx.Inputs {
+// 				m.Lock()
+// 				if parent, ok := txns[input.PreviousTxIDStr()]; ok {
+// 					parent.Children[msg.Id] = txn
+// 					txn.Parents[parent.ID] = parent
+// 				}
+// 				m.Unlock()
+// 			}
+// 			m.Lock()
+// 			if t, ok := txns[msg.Id]; ok {
+// 				t.Height = msg.Height
+// 				t.Idx = msg.Idx
+// 				m.Unlock()
+// 				continue
+// 			}
+// 			txns[msg.Id] = txn
+// 			m.Unlock()
+// 			wg.Add(1)
+// 			if len(txn.Parents) == 0 {
+// 				txnQueue <- txn
+// 			}
+// 		// On Connected, if already connected, unsubscribe and cool down
 
-		case 200:
-			wg.Wait()
-			// log.Panicf("Status: %d\n", msg.Status)
-			settledHeight = msg.Height - 6
+// 		case 200:
+// 			wg.Wait()
+// 			// log.Panicf("Status: %d\n", msg.Status)
+// 			settledHeight = msg.Height - 6
 
-			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
-				VALUES($1, $2)
-				ON CONFLICT(indexer) DO UPDATE
-					SET height=$2`,
-				INDEXER,
-				settledHeight,
-			); err != nil {
-				log.Panic(err)
-			}
-			fromBlock = msg.Height + 1
-			fmt.Printf("Completed: %d\n", msg.Height)
-			settled <- settledHeight
+// 			if _, err := db.Exec(`INSERT INTO progress(indexer, height)
+// 				VALUES($1, $2)
+// 				ON CONFLICT(indexer) DO UPDATE
+// 					SET height=$2`,
+// 				INDEXER,
+// 				settledHeight,
+// 			); err != nil {
+// 				log.Panic(err)
+// 			}
+// 			fromBlock = msg.Height + 1
+// 			fmt.Printf("Completed: %d\n", msg.Height)
+// 			settled <- settledHeight
 
-		default:
-			log.Printf("Status: %d\n", msg.Status)
-		}
-	}
-}
+// 		default:
+// 			log.Printf("Status: %d\n", msg.Status)
+// 		}
+// 	}
+// }
 
-func processTxns() {
-	for {
-		txn := <-txnQueue
-		threadLimiter <- struct{}{}
-		go func(txn *TxnStatus) {
-			processTxn(txn)
-			<-threadLimiter
-		}(txn)
-	}
-}
+// func processTxns() {
+// 	for {
+// 		txn := <-txnQueue
+// 		threadLimiter <- struct{}{}
+// 		go func(txn *TxnStatus) {
+// 			processTxn(txn)
+// 			<-threadLimiter
+// 		}(txn)
+// 	}
+// }
 
-func processTxn(txn *TxnStatus) {
-	fmt.Printf("Processing: %d %d %s\n", txn.Height, txn.Idx, txn.Tx.TxID())
-	_, err := lib.IndexSpends(txn.Tx, true)
-	if err != nil {
-		log.Panic(err)
-	}
+// func processTxn(txn *TxnStatus) {
+// 	fmt.Printf("Processing: %d %d %s\n", txn.Height, txn.Idx, txn.Tx.TxID())
+// 	_, err := lib.IndexSpends(txn.Tx, true)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
 
-	_, err = lib.IndexTxos(txn.Tx, txn.Height, txn.Idx, true)
-	if err != nil {
-		log.Panic(err)
-	}
+// 	_, err = lib.IndexTxos(txn.Tx, txn.Height, txn.Idx, true)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
 
-	if txn.Height > 0 {
-		for _, child := range txn.Children {
-			m.Lock()
-			delete(child.Parents, txn.ID)
-			orphan := len(child.Parents) == 0
-			m.Unlock()
-			if orphan {
-				txnQueue <- child
-			}
-		}
-		m.Lock()
-		delete(txns, txn.ID)
-		m.Unlock()
-		wg.Done()
-	}
-}
+// 	if txn.Height > 0 {
+// 		for _, child := range txn.Children {
+// 			m.Lock()
+// 			delete(child.Parents, txn.ID)
+// 			orphan := len(child.Parents) == 0
+// 			m.Unlock()
+// 			if orphan {
+// 				txnQueue <- child
+// 			}
+// 		}
+// 		m.Lock()
+// 		delete(txns, txn.ID)
+// 		m.Unlock()
+// 		wg.Done()
+// 	}
+// }
 
-func processInscriptionIds() {
-	for {
-		height := <-settled
-		fmt.Println("Processing inscription ids for height", height)
-		err := lib.SetOriginNum(height)
-		if err != nil {
-			log.Panicln("Error processing inscription ids:", err)
-		}
-	}
-}
+// func processInscriptionIds() {
+// 	for {
+// 		height := <-settled
+// 		fmt.Println("Processing inscription ids for height", height)
+// 		err := lib.SetOriginNum(height)
+// 		if err != nil {
+// 			log.Panicln("Error processing inscription ids:", err)
+// 		}
+// 	}
+// }

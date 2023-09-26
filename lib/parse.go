@@ -403,42 +403,12 @@ func ParseScript(txo *Txo) {
 					}
 				}
 			}
-			if ins.File.Type == "op-ns/reg" {
-				var pos int
-				for {
-					claim := &Claim{}
-					op, err := ReadOp(ins.File.Content, &pos)
-					if err != nil {
-						break
-					}
-					claim.SubDomain = string(op.Data)
-
-					op, err = ReadOp(ins.File.Content, &pos)
-					if err != nil {
-						break
-					}
-					claim.Type = string(op.Data)
-
-					op, err = ReadOp(ins.File.Content, &pos)
-					if err != nil {
-						break
-					}
-					if selfRef.MatchString(string(op.Data)) {
-						claim.Value = fmt.Sprintf("%s%s", txo.Tx.TxID(), string(op.Data))
-					} else {
-						claim.Value = string(op.Data)
-					}
-					txo.Data.Claims = append(txo.Data.Claims, claim)
+			if ins.File.Type == "application/op-reg" {
+				err = json.Unmarshal(ins.File.Content, &txo.Data.Claims)
+				if err == nil {
+					txo.Data.Types = append(txo.Data.Types, "op-reg")
 				}
 			}
-			// if ins.File.Type == "bitcoin/bitcom" {
-			// 	var subI int
-			// 	err = ParseBitcom(txo, &subI)
-			// 	if err != nil {
-			// 		log.Println("Error parsing bitcom", err)
-			// 		continue
-			// 	}
-			// }
 			txo.Data.Types = append(txo.Data.Types, insType)
 		}
 	}
