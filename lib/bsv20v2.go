@@ -487,7 +487,7 @@ func ValidateTransfer(txid []byte) {
 	tickTokens := map[string][]uint32{}
 
 	inRows, err := Db.Query(context.Background(), `
-		SELECT data
+		SELECT txid, vout, data
 		FROM txos
 		WHERE spend=$1 AND data->'bsv20'->>'amt' IS NOT NULL`,
 		txid,
@@ -498,18 +498,21 @@ func ValidateTransfer(txid []byte) {
 	defer inRows.Close()
 
 	for inRows.Next() {
+		var inTxid []byte
+		var vout uint32
 		data := &TxoData{}
-		err = inRows.Scan(&data)
+		err = inRows.Scan(&inTxid, &vout, &data)
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
 
-		// fmt.Println("IN:", hex.EncodeToString(txid), *data.Bsv20.Ticker, *data.Bsv20.Amt, data.Bsv20.Status)
 		var tick string
 		if data.Bsv20.Ticker != nil {
 			tick = *data.Bsv20.Ticker
 		} else if data.Bsv20.Id != nil {
 			tick = data.Bsv20.Id.String()
+		} else if data.Bsv20.Op == "deploy+mint" {
+			tick = NewOutpoint(inTxid, vout).String()
 		} else {
 			log.Panicf("%x - missing tick\n", txid)
 		}

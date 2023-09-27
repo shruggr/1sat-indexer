@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"encoding/hex"
 	"log"
 	"os"
 	"strconv"
@@ -45,9 +45,11 @@ func main() {
 		log.Panic(err)
 	}
 	// 	// fmt.Printf("Completed: %d txns: %d\n", height, len(ctx.TxFees))
-	height := uint32(810142)
-	fmt.Println("Validating bsv20 for height", height)
-	lib.ValidateBsv20(height)
+	// height := uint32(810142)
+	// fmt.Println("Validating bsv20 for height", height)
+	// lib.ValidateBsv20(height)
+	txid, _ := hex.DecodeString("e4e3f610f7f3e4f59b0fbbe1cdea79eb77b2daba59a294c56bccd17d6e231887")
+	lib.ValidateTransfer(txid)
 
 	// 	fmt.Println("Processing inscription ids for height", height)
 	// 	err = lib.SetOriginNum(height)
