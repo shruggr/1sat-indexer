@@ -5,7 +5,7 @@ ALTER TABLE txos ADD COLUMN bsv20_xfer INTEGER GENERATED ALWAYS AS (
     END
 ) STORED;
 
-CREATE INDEX idx_bsv20_transfers_height_idx ON txos(status, height, idx)
+CREATE INDEX idx_bsv20_transfers_height_idx ON txos(bsv20_xfer, height, idx)
 WHERE bsv20_xfer IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS bsv20 (
