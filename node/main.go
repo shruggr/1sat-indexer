@@ -160,6 +160,8 @@ func main() {
 					continue
 				}
 				log.Println("GetBlockHeader", err)
+			} else {
+				block = nil
 			}
 			fmt.Println("Waiting for Block")
 			time.Sleep(30 * time.Second)
