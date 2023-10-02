@@ -100,6 +100,7 @@ func main() {
 	// 	fromBlock = lib.TRIGGER
 	// }
 
+	fromBlock = 800000
 	// go processQueue()
 	subscribe()
 	var wg2 sync.WaitGroup
@@ -114,25 +115,25 @@ func subscribe() {
 		os.Getenv("ORD"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
-			// OnTransaction: func(txResp *jbModels.TransactionResponse) {
-			// 	log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
-			// 	msgQueue <- &Msg{
-			// 		Id:          txResp.Id,
-			// 		Height:      txResp.BlockHeight,
-			// 		Idx:         uint32(txResp.BlockIndex),
-			// 		Transaction: txResp.Transaction,
-			// 	}
-			// },
-			OnMempool: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-				// msgQueue <- &Msg{
-				// 	Id:          txResp.Id,
-				// 	Height:      txResp.BlockHeight,
-				// 	Idx:         uint32(txResp.BlockIndex),
-				// 	Transaction: txResp.Transaction,
-				// }
-
+			OnTransaction: func(txResp *jbModels.TransactionResponse) {
+				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+				// 	msgQueue <- &Msg{
+				// 		Id:          txResp.Id,
+				// 		Height:      txResp.BlockHeight,
+				// 		Idx:         uint32(txResp.BlockIndex),
+				// 		Transaction: txResp.Transaction,
+				// 	}
 			},
+			// OnMempool: func(txResp *jbModels.TransactionResponse) {
+			// 	log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+			// 	// msgQueue <- &Msg{
+			// 	// 	Id:          txResp.Id,
+			// 	// 	Height:      txResp.BlockHeight,
+			// 	// 	Idx:         uint32(txResp.BlockIndex),
+			// 	// 	Transaction: txResp.Transaction,
+			// 	// }
+
+			// },
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
 

@@ -181,15 +181,15 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			}
 			txo.Save()
 
+			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
+				SaveMap(txo.Origin)
+			}
+
 			if txo.Data.Listing != nil {
 				err = SaveListing(txo)
 				if err != nil {
 					log.Panicf("%x %v\n", ctx.Txid, err)
 				}
-			}
-
-			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
-				SaveMap(txo.Origin)
 			}
 		}
 
@@ -202,7 +202,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		}
 
 		if hasTransfer {
-			ValidateTransfer(ctx.Txid)
+			ValidateTransfer(ctx.Txid, ctx.Height != nil)
 		}
 	}
 }

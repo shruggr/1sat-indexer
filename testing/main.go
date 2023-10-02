@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -48,8 +51,8 @@ func main() {
 	// height := uint32(810142)
 	// fmt.Println("Validating bsv20 for height", height)
 	// lib.ValidateBsv20(height)
-	txid, _ := hex.DecodeString("e4e3f610f7f3e4f59b0fbbe1cdea79eb77b2daba59a294c56bccd17d6e231887")
-	lib.ValidateTransfer(txid)
+	// txid, _ := hex.DecodeString("c4e7018108e4529a63cdc8eef2256b786866868a5a66d4d6bb057589f344b3d1")
+	// lib.ValidateTransfer(txid)
 
 	// 	fmt.Println("Processing inscription ids for height", height)
 	// 	err = lib.SetOriginNum(height)
@@ -57,22 +60,21 @@ func main() {
 	// 		log.Panicln("Error processing inscription ids:", err)
 	// 	}
 
-	// 	// hexId := "11f7907a50bb77a58599d5de41a8e300591ae42cdf892553493a9dbbde716579"
-	// 	// txid, _ := hex.DecodeString(hexId)
+	hexId := "131996f99dfafd6c46464508ef1da721ef3660d4c58ff45400922f21f90ed567"
+	txid, _ := hex.DecodeString(hexId)
 
-	// 	// tx := bt.NewTx()
-	// 	// r, err := bit.GetRawTransactionRest(hexId)
-	// 	// if err != nil {
-	// 	// 	log.Panicf("%x: %v\n", txid, err)
-	// 	// }
-	// 	// if _, err = tx.ReadFrom(r); err != nil {
-	// 	// 	log.Panicf("%x: %v\n", txid, err)
-	// 	// }
-	// 	// height := uint32(783968)
-	// 	// result, err := lib.IndexTxn(tx, nil, &height, 0, false)
-	// 	// if err != nil {
-	// 	// 	log.Panic(err)
-	// 	// }
+	tx := bt.NewTx()
+	r, err := bit.GetRawTransactionRest(hexId)
+	if err != nil {
+		log.Panicf("%x: %v\n", txid, err)
+	}
+	if _, err = tx.ReadFrom(r); err != nil {
+		log.Panicf("%x: %v\n", txid, err)
+	}
+	result, err := lib.IndexTxn(tx, nil, nil, 0, false)
+	if err != nil {
+		log.Panic(err)
+	}
 
 	// 	// log.Println("Origins:", len(result.Origins))
 
@@ -87,11 +89,11 @@ func main() {
 	// 	// }
 	// 	// result, err := lib.IndexTxn(tx, 0, 0, true)
 
-	// out, err := json.MarshalIndent(result, "", "  ")
-	//
-	//	if err != nil {
-	//		log.Panic(err)
-	//	}
-	//
-	// fmt.Println(string(out))
+	out, err := json.MarshalIndent(result, "", "  ")
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Println(string(out))
 }

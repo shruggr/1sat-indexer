@@ -474,14 +474,14 @@ func validateBsv20Transfers(height uint32) {
 				<-limiter
 				wg.Done()
 			}()
-			ValidateTransfer(txid)
+			ValidateTransfer(txid, true)
 			// time.Sleep(10 * time.Second)
 		}()
 	}
 	wg.Wait()
 }
 
-func ValidateTransfer(txid []byte) {
+func ValidateTransfer(txid []byte, mined bool) {
 	invalid := map[string]string{}
 	tokensIn := map[string]uint64{}
 	tickTokens := map[string][]uint32{}
@@ -574,7 +574,11 @@ func ValidateTransfer(txid []byte) {
 			}
 		} else {
 			if _, ok := invalid[tick]; !ok {
-				invalid[tick] = "missing inputs"
+				if !mined {
+					return
+				} else {
+					invalid[tick] = "missing inputs"
+				}
 			}
 		}
 	}
@@ -598,7 +602,7 @@ func ValidateTransfer(txid []byte) {
 		} else {
 			fmt.Println("VALID:", hex.EncodeToString(txid), tick)
 			sql = `UPDATE txos
-				SET data = jsonb_set(data, '{bsv20,status}', '1')
+				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":""}')
 				WHERE txid = $1 AND vout = ANY ($2)`
 		}
 		_, err := t.Exec(context.Background(),

@@ -402,11 +402,17 @@ func ParseScript(txo *Txo) {
 						}
 					}
 				}
-			}
-			if ins.File.Type == "application/op-reg" {
-				err = json.Unmarshal(ins.File.Content, &txo.Data.Claims)
-				if err == nil {
-					txo.Data.Types = append(txo.Data.Types, "op-reg")
+				if mime == "application/op-ns" {
+					if insType == "file" {
+						insType = "op-ns"
+					}
+					ins.Text = string(ins.File.Content)
+				}
+				if ins.File.Type == "application/op-reg" {
+					err = json.Unmarshal(ins.File.Content, &txo.Data.Claims)
+					if err == nil {
+						txo.Data.Types = append(txo.Data.Types, "op-reg")
+					}
 				}
 			}
 			txo.Data.Types = append(txo.Data.Types, insType)
