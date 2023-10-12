@@ -353,6 +353,7 @@ func ParseScript(txo *Txo) {
 					break ordLoop
 				}
 			}
+
 			ins.File.Size = uint32(len(ins.File.Content))
 			hash := sha256.Sum256(ins.File.Content)
 			ins.File.Hash = hash[:]
@@ -416,6 +417,9 @@ func ParseScript(txo *Txo) {
 				}
 			}
 			txo.Data.Types = append(txo.Data.Types, insType)
+			if len(txo.PKHash) == 0 && len(script) >= i+25 && bscript.NewFromBytes(script[i:i+25]).IsP2PKH() {
+				txo.PKHash = []byte(script[i+3 : i+23])
+			}
 		}
 	}
 

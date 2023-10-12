@@ -80,11 +80,13 @@ func init() {
 	}
 }
 
+// JUNGLEBUS := os.Getenv("JUNGLEBUS")
 func main() {
-	fmt.Println("Starting Ord", os.Getenv("JUNGLEBUS"))
+	JUNGLEBUS := "https://junglebus.gorillapool.io"
+	fmt.Println("Starting Ord", JUNGLEBUS)
 	var err error
 	junglebusClient, err = junglebus.New(
-		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
+		junglebus.WithHTTP(JUNGLEBUS),
 	)
 	if err != nil {
 		log.Panicln(err.Error())

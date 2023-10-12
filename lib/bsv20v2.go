@@ -386,16 +386,16 @@ func validateBsv20Mint(height uint32) {
 						*bsv20.Amt = ticker.Max - ticker.Supply
 						reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
 						sql = fmt.Sprintf(`
-						UPDATE txos
-						SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":"%s", "amt":%d}')
-						WHERE txid = $1 AND vout = $2`,
+							UPDATE txos
+							SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":"%s", "amt":%d}')
+							WHERE txid = $1 AND vout = $2`,
 							reason,
 							*bsv20.Amt,
 						)
 					} else {
 						sql = `UPDATE txos
-						SET data = jsonb_set(data, '{bsv20, status}', '1')
-						WHERE txid = $1 AND vout = $2`
+							SET data = jsonb_set(data, '{bsv20, status}', '1')
+							WHERE txid = $1 AND vout = $2`
 					}
 					// fmt.Println("SQL:", sql)
 					_, err = t.Exec(context.Background(),

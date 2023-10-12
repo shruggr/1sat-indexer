@@ -60,7 +60,7 @@ func main() {
 	// 		log.Panicln("Error processing inscription ids:", err)
 	// 	}
 
-	hexId := "131996f99dfafd6c46464508ef1da721ef3660d4c58ff45400922f21f90ed567"
+	hexId := "c4a472d166d9e5b8586be28846cb9329d8c12b4421e5050204556ab125c66d9b"
 	txid, _ := hex.DecodeString(hexId)
 
 	tx := bt.NewTx()
