@@ -72,7 +72,7 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 		bsv20.Ticker = &tick
 	}
 
-	if id, ok := data["id"]; ok {
+	if id, ok := data["id"]; ok && len(id) >= 66 {
 		bsv20.Id, err = NewOutpointFromString(id)
 		if err != nil {
 			return nil, nil
