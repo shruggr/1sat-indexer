@@ -89,6 +89,9 @@ func main() {
 		ch := sub.Subscribe(context.Background(), "submit").Channel()
 		for msg := range ch {
 			txid := msg.Payload
+			if len(txid) != 64 {
+				continue
+			}
 			for i := 0; i < 4; i++ {
 				tx, err := lib.LoadTx(txid)
 				if err == nil {
