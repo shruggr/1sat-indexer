@@ -1,7 +1,7 @@
 bitbucket.org/simon_ordish/cryptolib v1.0.48 h1:bz3DsRCQK1tPQ59d1KwqDCkS0wW2PU6VoLlgTK/jKZM=
 bitbucket.org/simon_ordish/cryptolib v1.0.48/go.mod h1:Zt5cEbIFQyX6LxtDy7rZ5Bo2irVWJPZ1gQXWCsc66ZE=
-github.com/GorillaPool/go-junglebus v0.2.0 h1:ZePeZgQLEyYrJbBaHB6GKeMt+QOyw4EOtXxAyZvpkAk=
-github.com/GorillaPool/go-junglebus v0.2.0/go.mod h1:LigiSImLy9G/Tg9RKbn+pNYnuPbs5oLUprQZkxEr/2k=
+github.com/GorillaPool/go-junglebus v0.2.2 h1:APDhBGqjfadQRSXoVYxAp5o1FkhU4QJB5JQxRECq3JA=
+github.com/GorillaPool/go-junglebus v0.2.2/go.mod h1:LigiSImLy9G/Tg9RKbn+pNYnuPbs5oLUprQZkxEr/2k=
 github.com/Microsoft/go-winio v0.6.0 h1:slsWYD/zyx7lCXoZVlvQrj0hPTM1HI4+v1sIda2yDvg=
 github.com/Microsoft/go-winio v0.6.0/go.mod h1:cTAf44im0RAYeL23bpB+fzCyDH2MJiz2BO69KH/soAE=
 github.com/bitcoinschema/go-bitcoin v0.3.20 h1:jWKT7ePYm4dPaIR2aIAVL8BwdsYtuG/4B87l1+KZyWs=

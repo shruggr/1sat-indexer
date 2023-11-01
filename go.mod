@@ -3,7 +3,7 @@ module github.com/shruggr/1sat-indexer
 go 1.20
 
 require (
-	github.com/GorillaPool/go-junglebus v0.2.0
+	github.com/GorillaPool/go-junglebus v0.2.2
 	github.com/bitcoinschema/go-bitcoin v0.3.20
 	github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173
 	github.com/golang-migrate/migrate v3.5.4+incompatible

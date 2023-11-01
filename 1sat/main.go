@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -10,9 +9,11 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	jbModels "github.com/GorillaPool/go-junglebus/models"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
@@ -24,7 +25,7 @@ const INDEXER = "1sat"
 
 var THREADS uint64 = 64
 
-var db *sql.DB
+var db *pgxpool.Pool
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
 var settled = make(chan uint32, 100)
@@ -47,10 +48,7 @@ func init() {
 	godotenv.Load("../.env")
 
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("POSTGRES"))
-	if err != nil {
-		log.Panic(err)
-	}
+	db, err = pgxpool.New(context.Background(), os.Getenv("POSTGRES2"))
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -80,7 +78,7 @@ func main() {
 	if err != nil {
 		log.Panicln(err.Error())
 	}
-	row := db.QueryRow(`SELECT height
+	row := db.QueryRow(context.Background(), `SELECT height
 		FROM progress
 		WHERE indexer=$1`,
 		INDEXER,
@@ -125,12 +123,12 @@ func subscribe() {
 		junglebus.EventHandler{
 			OnTransaction: func(txResp *jbModels.TransactionResponse) {
 				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         txResp.BlockIndex,
-					Transaction: txResp.Transaction,
-				}
+				// msgQueue <- &Msg{
+				// 	Id:          txResp.Id,
+				// 	Height:      txResp.BlockHeight,
+				// 	Idx:         txResp.BlockIndex,
+				// 	Transaction: txResp.Transaction,
+				// }
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
@@ -175,20 +173,18 @@ func processQueue() {
 			if err != nil {
 				log.Panicf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
 			}
-			lib.TxCache.Add(msg.Id, tx)
 
 			txn := &indexer.TxnStatus{
-				ID:       msg.Id,
 				Tx:       tx,
-				Height:   msg.Height,
+				Height:   &msg.Height,
 				Idx:      msg.Idx,
 				Parents:  map[string]*indexer.TxnStatus{},
 				Children: map[string]*indexer.TxnStatus{},
-			}
-
-			_, err = lib.SetTxn.Exec(msg.Id, msg.Hash, txn.Height, txn.Idx)
-			if err != nil {
-				panic(err)
+				Ctx: &indexer.BlockCtx{
+					Hash:      msg.Hash,
+					Height:    &msg.Height,
+					StartTime: time.Now(),
+				},
 			}
 
 			indexer.M.Lock()
@@ -225,9 +221,10 @@ func processQueue() {
 				settledHeight = 0
 			}
 
-			if _, err := db.Exec(`UPDATE progress
-				SET height=$2
-				WHERE indexer=$1 and height<$2`,
+			if _, err := db.Exec(context.Background(),
+				`UPDATE progress
+					SET height=$2
+					WHERE indexer=$1 and height<$2`,
 				INDEXER,
 				settledHeight,
 			); err != nil {

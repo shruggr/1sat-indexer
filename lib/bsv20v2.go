@@ -27,8 +27,9 @@ type Bsv20 struct {
 	Height   *uint32     `json:"-"`
 	Idx      uint64      `json:"-"`
 	Ticker   *string     `json:"tick,omitempty"`
-	Id       *Outpoint   `json:"id"`
+	Id       *Outpoint   `json:"id,omitempty"`
 	Op       string      `json:"op"`
+	Symbol   *string     `json:"sym,omitempty"`
 	Max      uint64      `json:"-"`
 	Limit    uint64      `json:"-"`
 	Decimals uint8       `json:"-"`
@@ -70,6 +71,10 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 		}
 		tick = strings.ToUpper(tick)
 		bsv20.Ticker = &tick
+	}
+
+	if sym, ok := data["sym"]; ok {
+		bsv20.Symbol = &sym
 	}
 
 	if id, ok := data["id"]; ok && len(id) >= 66 {

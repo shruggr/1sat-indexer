@@ -43,6 +43,7 @@ func (s *Spend) SetSpent() (exists bool) {
 	defer rows.Close()
 	var data sql.NullString
 	if rows.Next() {
+		exists = true
 		err = rows.Scan(&s.PKHash, &s.Satoshis, &data, &s.Origin)
 		if err != nil {
 			log.Panic(err)
@@ -54,13 +55,30 @@ func (s *Spend) SetSpent() (exists bool) {
 				log.Panic(err)
 			}
 		}
-		exists = true
 	}
 
 	return
 }
 
 func (s *Spend) Save() {
+	// result, err := Db.Exec(context.Background(), `
+	// 	UPDATE txos
+	// 	SET spend=$2, vin=$3, spend_heigh=$4, spend_idx=$5
+	// 	WHERE outpoint=$1`,
+	// 	s.Outpoint,
+	// 	s.Spend,
+	// 	s.Vin,
+	// 	s.Height,
+	// 	s.Idx,
+	// )
+	// if err != nil {
+	// 	log.Panicf("%s %x: %v\n", s.Outpoint.String(), s.Txid, err)
+	// }
+
+	// if result.RowsAffected() > 0 {
+	// 	return
+	// }
+
 	if _, err := Db.Exec(context.Background(), `
 		INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, spend, vin, spend_height, spend_idx)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -75,6 +93,6 @@ func (s *Spend) Save() {
 		s.Height,
 		s.Idx,
 	); err != nil {
-		log.Panicf("%x: %v\n", s.Txid, err)
+		log.Panicf("%s %x: %v\n", s.Outpoint.String(), s.Txid, err)
 	}
 }
