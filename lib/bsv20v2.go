@@ -119,6 +119,7 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 		if bsv20.Amt == nil {
 			return nil, nil
 		}
+		bsv20.Ticker = nil
 		bsv20.Status = Valid
 	case "mint":
 		if bsv20.Ticker == nil || bsv20.Amt == nil {
