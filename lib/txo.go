@@ -10,6 +10,11 @@ import (
 	"github.com/libsv/go-bt/v2"
 )
 
+type Lock struct {
+	Address string `json:"address"`
+	Until   uint32 `json:"until"`
+}
+
 type TxoData struct {
 	Types       []string     `json:"types,omitempty"`
 	Inscription *Inscription `json:"insc,omitempty"`
@@ -19,7 +24,9 @@ type TxoData struct {
 	Listing     *Listing     `json:"list,omitempty"`
 	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
 	Claims      []*Claim     `json:"claims,omitempty"`
-	// OpNS        *string      `json:"opns,omitempty"`
+	Lock        *Lock        `json:"lock,omitempty"`
+	OpNSMint    *OpNS        `json:"opnsMint,omitempty"`
+	OpNS        *OpNS        `json:"opns,omitempty"`
 }
 
 type Txo struct {

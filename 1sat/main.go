@@ -48,7 +48,10 @@ func init() {
 	godotenv.Load("../.env")
 
 	var err error
-	db, err = pgxpool.New(context.Background(), os.Getenv("POSTGRES2"))
+	db, err = pgxpool.New(context.Background(), os.Getenv("POSTGRES"))
+	if err != nil {
+		log.Panic(err)
+	}
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -122,13 +125,13 @@ func subscribe() {
 		uint64(fromBlock),
 		junglebus.EventHandler{
 			OnTransaction: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
-				// msgQueue <- &Msg{
-				// 	Id:          txResp.Id,
-				// 	Height:      txResp.BlockHeight,
-				// 	Idx:         txResp.BlockIndex,
-				// 	Transaction: txResp.Transaction,
-				// }
+				// log.Printf("[TX]: %d - %d: %s\n", txResp.BlockHeight, txResp.BlockIndex, txResp.Id)
+				msgQueue <- &Msg{
+					Id:          txResp.Id,
+					Height:      txResp.BlockHeight,
+					Idx:         txResp.BlockIndex,
+					Transaction: txResp.Transaction,
+				}
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
 				log.Printf("[STATUS]: %v\n", status)
@@ -139,12 +142,12 @@ func subscribe() {
 					os.Exit(0)
 					return
 				}
-				if status.StatusCode == 200 && status.Block < lib.TRIGGER {
-					fmt.Printf("Crawler Reset!!!!")
-					fmt.Println("Unsubscribing and exiting...")
-					sub.Unsubscribe()
-					os.Exit(0)
-				}
+				// if status.StatusCode == 200 && status.Block < lib.TRIGGER {
+				// 	fmt.Printf("Crawler Reset!!!!")
+				// 	fmt.Println("Unsubscribing and exiting...")
+				// 	sub.Unsubscribe()
+				// 	os.Exit(0)
+				// }
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,

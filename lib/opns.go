@@ -7,6 +7,7 @@ type Claim struct {
 }
 
 type OpNS struct {
-	Claims    []*Claim          `json:"claims"`
-	ClaimedBy map[string]*Claim `json:"claimedby"`
+	Genesis *Outpoint `json:"genesis,omitempty"`
+	Domain  string    `json:"domain"`
+	Status  int       `json:"status"`
 }

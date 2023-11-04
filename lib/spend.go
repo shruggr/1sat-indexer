@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Spend struct {
@@ -93,6 +96,25 @@ func (s *Spend) Save() {
 		s.Height,
 		s.Idx,
 	); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			log.Println(pgErr.Code, pgErr.Message)
+			if pgErr.Code == "23505" {
+				log.Println("Trying Update")
+				if _, err = Db.Exec(context.Background(), `
+					UPDATE txos
+					SET spend=$2, vin=$3, spend_height=$4, spend_idx=$5
+					WHERE outpoint=$1`,
+					s.Outpoint,
+					s.Spend,
+					s.Vin,
+					s.Height,
+					s.Idx,
+				); err == nil {
+					return
+				}
+			}
+		}
 		log.Panicf("%s %x: %v\n", s.Outpoint.String(), s.Txid, err)
 	}
 }

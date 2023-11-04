@@ -78,6 +78,7 @@ func processTxn(txn *TxnStatus) {
 	blacklist := false
 	for _, output := range txn.Tx.Outputs {
 		if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
+			log.Panicln("Rekord", txn.ID)
 			blacklist = true
 			break
 		}
