@@ -133,7 +133,6 @@ func ReadOp(b []byte, idx *int) (op *OpPart, err error) {
 func ParseBitcom(txo *Txo, idx *int) (err error) {
 	script := *txo.Tx.Outputs[txo.Vout].LockingScript
 	tx := txo.Tx
-	d := txo.Data
 
 	startIdx := *idx
 	op, err := ReadOp(script, idx)
@@ -149,7 +148,10 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 		if string(op.Data) != "SET" {
 			return nil
 		}
-		d.Map = map[string]interface{}{}
+		if txo.Data == nil {
+			txo.Data = &TxoData{}
+		}
+		txo.Data.Map = map[string]interface{}{}
 		for {
 			prevIdx := *idx
 			op, err = ReadOp(script, idx)
@@ -180,18 +182,21 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 				op.Data = []byte{}
 			}
 
-			d.Map[string(opKey)] = string(op.Data)
+			txo.Data.Map[string(opKey)] = string(op.Data)
 
 		}
-		if val, ok := d.Map["subTypeData"]; ok {
+		if val, ok := txo.Data.Map["subTypeData"]; ok {
 			var subTypeData json.RawMessage
 			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
-				d.Map["subTypeData"] = subTypeData
+				txo.Data.Map["subTypeData"] = subTypeData
 			}
 		}
 		return nil
 	case B:
-		d.B = &File{}
+		if txo.Data == nil {
+			txo.Data = &TxoData{}
+		}
+		txo.Data.B = &File{}
 		for i := 0; i < 4; i++ {
 			prevIdx := *idx
 			op, err = ReadOp(script, idx)
@@ -202,18 +207,18 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 
 			switch i {
 			case 0:
-				d.B.Content = op.Data
+				txo.Data.B.Content = op.Data
 			case 1:
-				d.B.Type = string(op.Data)
+				txo.Data.B.Type = string(op.Data)
 			case 2:
-				d.B.Encoding = string(op.Data)
+				txo.Data.B.Encoding = string(op.Data)
 			case 3:
-				d.B.Name = string(op.Data)
+				txo.Data.B.Name = string(op.Data)
 			}
 		}
-		hash := sha256.Sum256(d.B.Content)
-		d.B.Size = uint32(len(d.B.Content))
-		d.B.Hash = hash[:]
+		hash := sha256.Sum256(txo.Data.B.Content)
+		txo.Data.B.Size = uint32(len(txo.Data.B.Content))
+		txo.Data.B.Hash = hash[:]
 	case "SIGMA":
 		sigma := &Sigma{}
 		for i := 0; i < 4; i++ {
@@ -238,13 +243,14 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 				}
 			}
 		}
-		d.Sigmas = append(d.Sigmas, sigma)
+		if txo.Data == nil {
+			txo.Data = &TxoData{}
+		}
+		txo.Data.Sigmas = append(txo.Data.Sigmas, sigma)
 
 		outpoint := tx.Inputs[sigma.Vin].PreviousTxID()
 		outpoint = binary.LittleEndian.AppendUint32(outpoint, tx.Inputs[sigma.Vin].PreviousTxOutIndex)
-		// fmt.Printf("outpoint %x\n", outpoint)
 		inputHash := sha256.Sum256(outpoint)
-		// fmt.Printf("ihash: %x\n", inputHash)
 		var scriptBuf []byte
 		if script[startIdx-1] == bscript.OpRETURN {
 			scriptBuf = script[:startIdx-1]
@@ -253,11 +259,8 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 		} else {
 			return nil
 		}
-		// fmt.Printf("scriptBuf %x\n", scriptBuf)
 		outputHash := sha256.Sum256(scriptBuf)
-		// fmt.Printf("ohash: %x\n", outputHash)
 		msgHash := sha256.Sum256(append(inputHash[:], outputHash[:]...))
-		// fmt.Printf("msghash: %x\n", msgHash)
 		err = bitcoin.VerifyMessage(sigma.Address,
 			base64.StdEncoding.EncodeToString(sigma.Signature),
 			string(msgHash[:]),
@@ -274,8 +277,6 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 }
 
 func ParseScript(txo *Txo) {
-	d := &TxoData{}
-	txo.Data = d
 	script := *txo.Tx.Outputs[txo.Vout].LockingScript
 
 	start := 0
@@ -359,7 +360,10 @@ func ParseScript(txo *Txo) {
 			ins.File.Size = uint32(len(ins.File.Content))
 			hash := sha256.Sum256(ins.File.Content)
 			ins.File.Hash = hash[:]
-			d.Inscription = ins
+			if txo.Data == nil {
+				txo.Data = &TxoData{}
+			}
+			txo.Data.Inscription = ins
 			insType := "file"
 			if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
 				mime := strings.ToLower(ins.File.Type)
@@ -373,13 +377,13 @@ func ParseScript(txo *Txo) {
 						insType = "json"
 						ins.Json = data
 						if strings.HasPrefix(mime, "application/bsv-20") {
-							d.Bsv20, _ = parseBsv20(ins.File, txo.Height)
+							txo.Data.Bsv20, _ = parseBsv20(ins.File, txo.Height)
 						}
 						if txo.Height != nil && *txo.Height < 793000 &&
 							strings.HasPrefix(mime, "text/plain") {
-							d.Bsv20, _ = parseBsv20(ins.File, txo.Height)
+							txo.Data.Bsv20, _ = parseBsv20(ins.File, txo.Height)
 						}
-						if d.Bsv20 != nil {
+						if txo.Data.Bsv20 != nil {
 							txo.Data.Types = append(txo.Data.Types, "bsv20")
 						}
 					}
@@ -423,23 +427,25 @@ func ParseScript(txo *Txo) {
 	if sCryptPrefixIndex > -1 {
 		if bytes.Contains(script[sCryptPrefixIndex:], LockSuffix) {
 			lock := &Lock{}
-			pos := sCryptPrefixIndex + len(sCryptPrefix) + 1
-			txo.PKHash = script[pos : pos+20]
+			pos := sCryptPrefixIndex + len(sCryptPrefix)
+			op, err := ReadOp(script, &pos)
+			if err != nil {
+				log.Println(err)
+			}
+			txo.PKHash = op.Data
 			if address, err := bscript.NewAddressFromPublicKeyHash(txo.PKHash, true); err == nil {
 				lock.Address = address.AddressString
 			}
-			pos += 21
-			switch script[pos] {
-			case 0xff:
-				lock.Until = uint32(binary.LittleEndian.Uint64(script[pos+1 : pos+9]))
-			case 0xfe:
-				lock.Until = binary.LittleEndian.Uint32(script[pos+1 : pos+5])
-				// return VarInt(binary.LittleEndian.Uint32(bb[1:5])), 5
-			case 0xfd:
-				lock.Until = uint32(binary.LittleEndian.Uint16(script[pos+1 : pos+3]))
-				// return VarInt(binary.LittleEndian.Uint16(bb[1:3])), 3
-			default:
-				lock.Until = uint32(binary.LittleEndian.Uint16([]byte{script[pos], 0x00}))
+			op, err = ReadOp(script, &pos)
+			if err != nil {
+				log.Println(err)
+			}
+			until := make([]byte, 4)
+			copy(until, op.Data)
+			lock.Until = binary.LittleEndian.Uint32(until)
+
+			if txo.Data == nil {
+				txo.Data = &TxoData{}
 			}
 			txo.Data.Lock = lock
 		} else {
@@ -451,7 +457,10 @@ func ParseScript(txo *Txo) {
 					payOutput := &bt.Output{}
 					_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
 					if err == nil {
-						d.Listing = &Listing{
+						if txo.Data == nil {
+							txo.Data = &TxoData{}
+						}
+						txo.Data.Listing = &Listing{
 							Price:  payOutput.Satoshis,
 							PayOut: payOutput.Bytes(),
 						}
@@ -486,7 +495,9 @@ func ParseScript(txo *Txo) {
 				return
 			}
 			opNS.Domain = string(op.Data)
-
+			if txo.Data == nil {
+				txo.Data = &TxoData{}
+			}
 			txo.Data.OpNSMint = opNS
 		}
 	}

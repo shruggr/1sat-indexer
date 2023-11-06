@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"bytes"
 	"log"
 	"sync"
 	"time"
@@ -76,13 +75,13 @@ func ProcessTxns(THREADS uint) {
 func processTxn(txn *TxnStatus) {
 	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	blacklist := false
-	for _, output := range txn.Tx.Outputs {
-		if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
-			log.Panicln("Rekord", txn.ID)
-			blacklist = true
-			break
-		}
-	}
+	// for _, output := range txn.Tx.Outputs {
+	// 	if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
+	// 		log.Panicln("Rekord", txn.ID)
+	// 		blacklist = true
+	// 		break
+	// 	}
+	// }
 
 	if !blacklist {
 		_, err := lib.IndexTxn(txn.Tx, &txn.Ctx.Hash, txn.Height, txn.Idx, false)
@@ -111,5 +110,5 @@ func processTxn(txn *TxnStatus) {
 		InQueue--
 		Wg.Done()
 	}
-	// fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
+	// log.Panicf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 }

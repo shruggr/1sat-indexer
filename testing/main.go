@@ -19,7 +19,9 @@ import (
 var rdb *redis.Client
 var bit *bitcoin.Bitcoind
 
-var hexId = "f5684b29563ca4bfa9961153abea27438a7cd22133f559a18221ab4029377a45"
+var dryRun = true
+
+var hexId = "366d667a03c5418688d4138a030d7dbf8b4a937afe0ca2072410d3545aa6c74e"
 
 // var hexId = "58b7558ea379f24266c7e2f5fe321992ad9a724fd7a87423ba412677179ccb25"
 
@@ -29,7 +31,7 @@ func main() {
 	// re := regexp.MustCompile("\\W")
 	// split := re.Split("1234.asdf the is the.thing", -1)
 	// fmt.Println(split)
-	db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES"))
+	db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES2"))
 	if err != nil {
 		log.Panic(err)
 	}
@@ -89,7 +91,7 @@ func main() {
 	// 	log.Panicf("%x: %v\n", txid, err)
 	// }
 
-	result, err := lib.IndexTxn(tx, nil, nil, 0, false)
+	result, err := lib.IndexTxn(tx, nil, nil, 0, dryRun)
 	if err != nil {
 		log.Panic(err)
 	}
