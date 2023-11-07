@@ -28,7 +28,7 @@ var THREADS uint64 = 64
 var db *pgxpool.Pool
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
-var settled = make(chan uint32, 100)
+var settle = make(chan uint32, 1000)
 var fromBlock uint32
 var sub *junglebus.Subscription
 
@@ -125,17 +125,17 @@ func subscribe() {
 		os.Getenv("ONESAT"),
 		uint64(fromBlock),
 		junglebus.EventHandler{
-			OnTransaction: func(txResp *jbModels.TransactionResponse) {
-				log.Printf("[TX]: %d - %d: %d %s\n", txResp.BlockHeight, txResp.BlockIndex, len(txResp.Transaction), txResp.Id)
+			OnTransaction: func(tx *jbModels.TransactionResponse) {
+				// log.Printf("[TX]: %d - %d: %d %s\n", tx.BlockHeight, tx.BlockIndex, len(tx.Transaction), tx.Id)
 				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Height:      txResp.BlockHeight,
-					Idx:         txResp.BlockIndex,
-					Transaction: txResp.Transaction,
+					Id:          tx.Id,
+					Height:      tx.BlockHeight,
+					Idx:         tx.BlockIndex,
+					Transaction: tx.Transaction,
 				}
 			},
 			OnStatus: func(status *jbModels.ControlResponse) {
-				log.Printf("[STATUS]: %v\n", status)
+				log.Printf("[STATUS]: %v\n", status.Message)
 				if status.StatusCode == 999 {
 					log.Println(status.Message)
 					log.Println("Unsubscribing...")
@@ -143,17 +143,19 @@ func subscribe() {
 					os.Exit(0)
 					return
 				}
-				// if status.StatusCode == 200 && status.Block < lib.TRIGGER {
-				// 	fmt.Printf("Crawler Reset!!!!")
-				// 	fmt.Println("Unsubscribing and exiting...")
-				// 	sub.Unsubscribe()
-				// 	os.Exit(0)
-				// }
+
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
 				}
 			},
+			// OnMempool: func(tx *jbModels.TransactionResponse) {
+			// 	log.Printf("[MEMPOOL]: %d %s\n", len(tx.Transaction), tx.Id)
+			// 	msgQueue <- &Msg{
+			// 		Id:          tx.Id,
+			// 		Transaction: tx.Transaction,
+			// 	}
+			// },
 			OnError: func(err error) {
 				log.Panicf("[ERROR]: %v", err)
 			},
@@ -166,7 +168,7 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go processSettled(settled)
+	go processCompletions()
 	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
@@ -191,6 +193,8 @@ func processQueue() {
 				},
 			}
 
+			rdb.Set(context.Background(), txn.ID, txn.Tx.Bytes(), 0).Err()
+
 			indexer.M.Lock()
 			_, ok := indexer.Txns[msg.Id]
 			indexer.M.Unlock()
@@ -206,24 +210,20 @@ func processQueue() {
 				}
 				indexer.M.Unlock()
 			}
+
 			indexer.M.Lock()
 			indexer.Txns[msg.Id] = txn
 			indexer.M.Unlock()
+
 			if len(txn.Parents) == 0 {
 				indexer.Wg.Add(1)
 				indexer.InQueue++
 				indexer.TxnQueue <- txn
 			}
-		// On Connected, if already connected, unsubscribe and cool down
 
 		case 200:
 			indexer.Wg.Wait()
 			rdb.Publish(context.Background(), "indexed", fmt.Sprintf("%d", msg.Height-1))
-			if msg.Height > 6 {
-				settledHeight = msg.Height - 6
-			} else {
-				settledHeight = 0
-			}
 
 			if _, err := db.Exec(context.Background(),
 				`UPDATE progress
@@ -236,7 +236,7 @@ func processQueue() {
 			}
 			fromBlock = msg.Height + 1
 			fmt.Printf("Completed: %d\n", msg.Height)
-			settled <- settledHeight
+			settle <- msg.Height
 
 		default:
 			log.Printf("Status: %d\n", msg.Status)
@@ -244,16 +244,43 @@ func processQueue() {
 	}
 }
 
-func processSettled(settled chan uint32) {
-	for {
-		height := <-settled
-		fmt.Println("Processing inscription ids for height", height)
-		// err := lib.SetInscriptionIds(height)
-		// if err != nil {
-		// 	log.Panicln("Error processing inscription ids:", err)
-		// }
+func processCompletions() {
+	for height := range settle {
+		var settled uint32
+		if height > 6 {
+			settled = height - 6
+		}
+		if _, err := db.Exec(context.Background(), `
+			INSERT INTO progress(indexer, height)
+			VALUES($1, $2)
+			ON CONFLICT(indexer) DO UPDATE
+				SET height=$2
+				WHERE progress.height < $2`,
+			INDEXER,
+			settled,
+		); err != nil {
+			log.Panic(err)
+		}
 
-		// lib.ValidateBsv20(height)
-		// rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func(height uint32) {
+			fmt.Println("Processing inscription ids for height", height)
+			err := lib.SetOriginNum(height)
+			if err != nil {
+				log.Panicln("Error processing inscription ids:", err)
+			}
+			wg.Done()
+		}(settled)
+
+		go func(height uint32) {
+			fmt.Println("Validating bsv20 for height", height)
+			lib.ValidateBsv20(height)
+			wg.Done()
+		}(height)
+
+		wg.Wait()
+		// fmt.Println("Done processing inscription ids")
+		rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
 }

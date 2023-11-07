@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
@@ -16,17 +17,18 @@ type Lock struct {
 }
 
 type TxoData struct {
-	Types       []string     `json:"types,omitempty"`
-	Inscription *Inscription `json:"insc,omitempty"`
-	Map         Map          `json:"map,omitempty"`
-	B           *File        `json:"b,omitempty"`
-	Sigmas      []*Sigma     `json:"sigma,omitempty"`
-	Listing     *Listing     `json:"list,omitempty"`
-	Bsv20       *Bsv20       `json:"bsv20,omitempty"`
-	Claims      []*Claim     `json:"claims,omitempty"`
-	Lock        *Lock        `json:"lock,omitempty"`
-	OpNSMint    *OpNS        `json:"opnsMint,omitempty"`
-	OpNS        *OpNS        `json:"opns,omitempty"`
+	Types       []string        `json:"types,omitempty"`
+	Inscription *Inscription    `json:"insc,omitempty"`
+	Map         Map             `json:"map,omitempty"`
+	B           *File           `json:"b,omitempty"`
+	Sigmas      []*Sigma        `json:"sigma,omitempty"`
+	Listing     *Listing        `json:"list,omitempty"`
+	Bsv20       *Bsv20          `json:"bsv20,omitempty"`
+	Claims      []*Claim        `json:"claims,omitempty"`
+	Lock        *Lock           `json:"lock,omitempty"`
+	OpNSMint    *OpNS           `json:"opnsMint,omitempty"`
+	OpNS        *OpNS           `json:"opns,omitempty"`
+	Sigil       json.RawMessage `json:"sigil,omitempty"`
 }
 
 type Txo struct {
@@ -78,8 +80,8 @@ func (t *Txo) Save() {
 			if errors.As(err, &pgErr) {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
-					time.Sleep(10 * time.Millisecond)
-					log.Println("Conflict. Retrying Insert")
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying Insert %x %d\n", t.Txid, t.Vout)
 					continue
 				}
 			}

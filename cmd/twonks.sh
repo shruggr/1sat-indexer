@@ -1,0 +1,1 @@
+../junglebus/junglebus -pg="$POSTGRES_FULL" -idx=twonks -topic="1297998233d4cae0529aa18333c6a287e3a67d3a9b7882cfb480fe58a8b7a2aa"

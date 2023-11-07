@@ -501,4 +501,24 @@ func ParseScript(txo *Txo) {
 			txo.Data.OpNSMint = opNS
 		}
 	}
+
+	if len(script) > 49 &&
+		script[0] == bscript.OpHASH160 &&
+		script[22] == bscript.OpEQUALVERIFY &&
+		script[23] == bscript.OpDUP &&
+		script[24] == bscript.OpHASH160 &&
+		script[46] == bscript.OpEQUALVERIFY &&
+		script[47] == bscript.OpCHECKSIG &&
+		script[48] == bscript.OpRETURN {
+
+		if txo.Data == nil {
+			txo.PKHash = script[26:46]
+			txo.Data = &TxoData{}
+		}
+		pos := 49
+		op, err := ReadOp(script, &pos)
+		if err == nil {
+			txo.Data.Sigil = op.Data
+		}
+	}
 }

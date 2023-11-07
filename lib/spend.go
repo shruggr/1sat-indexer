@@ -86,8 +86,8 @@ func (s *Spend) Save() {
 			if errors.As(err, &pgErr) {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
-					time.Sleep(10 * time.Millisecond)
-					log.Println("Conflict. Retrying Insert")
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying Insert %x %d\n", s.Txid, s.Vout)
 					continue
 				}
 			}

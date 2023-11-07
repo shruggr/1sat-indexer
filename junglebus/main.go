@@ -29,7 +29,6 @@ var THREADS uint64 = 64
 var db *pgxpool.Pool
 var junglebusClient *junglebus.Client
 var msgQueue = make(chan *Msg, 1000000)
-var settled = make(chan uint32, 100)
 var fromBlock uint32
 var sub *junglebus.Subscription
 
@@ -46,7 +45,9 @@ type Msg struct {
 var rdb *redis.Client
 
 func init() {
-	godotenv.Load("../.env")
+	wd, _ := os.Getwd()
+	log.Println("CWD:", wd)
+	godotenv.Load(fmt.Sprintf(`%s/../.env`, wd))
 
 	flag.StringVar(&INDEXER, "idx", "", "Indexer name")
 	flag.StringVar(&POSTGRES, "pg", "", "Postgres connection string")
@@ -85,9 +86,11 @@ func init() {
 
 func main() {
 	var err error
-	fmt.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
+	JUNGLEBUS := "https://prod.junglebus.gorillapool.io" // os.Getenv("JUNGLEBUS")
+	fmt.Println("JUNGLEBUS", JUNGLEBUS)
+
 	junglebusClient, err = junglebus.New(
-		junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
+		junglebus.WithHTTP(JUNGLEBUS),
 	)
 	if err != nil {
 		log.Panicln(err.Error())
@@ -158,15 +161,16 @@ func subscribe() {
 					os.Exit(0)
 					return
 				}
-				// if status.StatusCode == 200 && status.Block < lib.TRIGGER {
-				// 	fmt.Printf("Crawler Reset!!!!")
-				// 	fmt.Println("Unsubscribing and exiting...")
-				// 	sub.Unsubscribe()
-				// 	os.Exit(0)
-				// }
 				msgQueue <- &Msg{
 					Height: status.Block,
 					Status: status.StatusCode,
+				}
+			},
+			OnMempool: func(tx *jbModels.TransactionResponse) {
+				log.Printf("[MEMPOOL]: %d %s\n", len(tx.Transaction), tx.Id)
+				msgQueue <- &Msg{
+					Id:          tx.Id,
+					Transaction: tx.Transaction,
 				}
 			},
 			OnError: func(err error) {
@@ -181,7 +185,6 @@ func subscribe() {
 
 func processQueue() {
 	var settledHeight uint32
-	go processSettled(settled)
 	go indexer.ProcessTxns(uint(THREADS))
 	for {
 		msg := <-msgQueue
@@ -251,25 +254,9 @@ func processQueue() {
 				log.Panic(err)
 			}
 			fromBlock = msg.Height + 1
-			// fmt.Printf("Completed: %d\n", msg.Height)
-			settled <- settledHeight
 
 		default:
 			log.Printf("Status: %d\n", msg.Status)
 		}
-	}
-}
-
-func processSettled(settled chan uint32) {
-	for {
-		<-settled
-		// fmt.Println("Processing inscription ids for height", height)
-		// // err := lib.SetInscriptionIds(height)
-		// // if err != nil {
-		// // 	log.Panicln("Error processing inscription ids:", err)
-		// // }
-
-		// // lib.ValidateBsv20(height)
-		// // rdb.Publish(context.Background(), "settled", fmt.Sprintf("%d", height))
 	}
 }
