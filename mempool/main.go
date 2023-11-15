@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
@@ -79,7 +81,6 @@ func main() {
 	}
 
 	go processQueue()
-	// subscribe()
 	go func() {
 		sub := redis.NewClient(&redis.Options{
 			Addr:     "localhost:6379",
@@ -115,23 +116,25 @@ func main() {
 
 		}
 	}()
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		sub.Unsubscribe()
-	// 		fmt.Println("Recovered in f", r)
-	// 		fmt.Println("Unsubscribing and exiting...")
-	// 	}
-	// }()
+	defer func() {
+		if r := recover(); r != nil {
+			sub.Unsubscribe()
+			fmt.Println("Recovered in f", r)
+			fmt.Println("Unsubscribing and exiting...")
+		}
+	}()
 
-	// sigs := make(chan os.Signal, 1)
-	// signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	// go func() {
-	// 	<-sigs
-	// 	fmt.Printf("Caught signal")
-	// 	fmt.Println("Unsubscribing and exiting...")
-	// 	sub.Unsubscribe()
-	// 	os.Exit(0)
-	// }()
+	subscribe()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		fmt.Printf("Caught signal")
+		fmt.Println("Unsubscribing and exiting...")
+		sub.Unsubscribe()
+		os.Exit(0)
+	}()
 
 	<-make(chan struct{})
 }
@@ -147,7 +150,7 @@ func subscribe() {
 				if len(txResp.Transaction) == 0 {
 					log.Printf("Empty Transaction: %v\n", txResp.Id)
 				}
-				// log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Transaction: txResp.Transaction,

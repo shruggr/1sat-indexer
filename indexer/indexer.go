@@ -57,6 +57,7 @@ func ProcessTxns(THREADS uint) {
 	}()
 	for {
 		txn := <-TxnQueue
+		// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 		threadLimiter <- struct{}{}
 		go func(txn *TxnStatus) {
 			processTxn(txn)
@@ -73,7 +74,7 @@ func ProcessTxns(THREADS uint) {
 }
 
 func processTxn(txn *TxnStatus) {
-	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Processing: %d %d %s %d %d %v\n", *txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	blacklist := false
 	// for _, output := range txn.Tx.Outputs {
 	// 	if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
@@ -103,12 +104,13 @@ func processTxn(txn *TxnStatus) {
 		}
 		M.Unlock()
 		for _, orphan := range orphans {
+			// fmt.Println("Orphan", orphan.ID)
 			InQueue++
 			Wg.Add(1)
 			TxnQueue <- orphan
 		}
 		InQueue--
+		// log.Printf("Indexed: %d %d %s %d %d %v\n", *txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 		Wg.Done()
 	}
-	// log.Panicf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 }

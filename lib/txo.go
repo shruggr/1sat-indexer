@@ -60,9 +60,52 @@ func (t *Txo) Save() {
 				outacc=EXCLUDED.outacc,
 				pkhash=EXCLUDED.pkhash,
 				origin=EXCLUDED.origin,
-				height=EXCLUDED.height,
-				idx=EXCLUDED.idx,
+				height=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.height ELSE txos.height END,
+				idx=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.idx ELSE txos.idx END,
 				data=EXCLUDED.data`,
+			t.Txid,
+			t.Vout,
+			t.Outpoint,
+			t.Satoshis,
+			t.OutAcc,
+			t.PKHash,
+			t.Origin,
+			t.Height,
+			t.Idx,
+			t.Data,
+		)
+
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				log.Println(pgErr.Code, pgErr.Message)
+				if pgErr.Code == "23505" {
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying Insert %x %d\n", t.Txid, t.Vout)
+					continue
+				}
+			}
+			log.Panicln("insTxo Err:", err)
+		}
+		break
+	}
+	if err != nil {
+		log.Panicln("insTxo Err:", err)
+	}
+}
+
+func (t *Txo) SetOrigin() {
+	var err error
+	for i := 0; i < 3; i++ {
+		_, err = Db.Exec(context.Background(), `
+			INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, origin, height, idx)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT(outpoint) DO UPDATE SET
+				satoshis=EXCLUDED.satoshis,
+				outacc=EXCLUDED.outacc,
+				origin=EXCLUDED.origin,
+				height=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.height ELSE txos.height END,
+				idx=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.idx ELSE txos.idx END`,
 			t.Txid,
 			t.Vout,
 			t.Outpoint,

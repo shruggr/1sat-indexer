@@ -117,7 +117,7 @@ func SetOriginNum(height uint32) (err error) {
 			log.Panic(err)
 			return
 		}
-		fmt.Printf("Origin Num %d %s\n", num, origin)
+		// fmt.Printf("Origin Num %d %s\n", num, origin)
 		_, err = Db.Exec(context.Background(), `
 			UPDATE origins
 			SET num=$2

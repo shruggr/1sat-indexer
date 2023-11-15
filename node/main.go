@@ -220,11 +220,8 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 			log.Panicln(block.Height, idx, err)
 		}
 
-		// fmt.Printf("Eval Txn %d\n", idx)
 		txid := txn.Tx.TxIDBytes()
 		txn.ID = hex.EncodeToString(txid)
-		// indexer.M.Lock()
-		// blockCtx.TxFees[idx] = &indexer.TxFee{Txid: txid}
 
 		rdb.Set(context.Background(), txn.ID, txn.Tx.Bytes(), 0).Err()
 		has1Sat := false

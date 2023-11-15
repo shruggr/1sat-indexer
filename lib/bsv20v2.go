@@ -183,13 +183,13 @@ func SaveBsv20(t *Txo) {
 }
 
 func ValidateBsv20(height uint32) {
-	log.Println("Validating BSV20", height)
+	// log.Println("Validating BSV20", height)
 	validateBsv20Deploy(height - 6)
-	log.Println("Validating BSV20 mint", height)
+	// log.Println("Validating BSV20 mint", height)
 	validateBsv20Mint(height - 6)
-	log.Println("Validating BSV20 transfers", height)
+	// log.Println("Validating BSV20 transfers", height)
 	validateBsv20Transfers(height)
-	log.Println("Done validating BSV20", height)
+	// log.Println("Done validating BSV20", height)
 }
 
 func validateBsv20Deploy(height uint32) {
@@ -277,7 +277,7 @@ func validateBsv20Deploy(height uint32) {
 }
 
 func validateBsv20Mint(height uint32) {
-	fmt.Println("Validating BSV20 mint", height)
+	// fmt.Println("Validating BSV20 mint", height)
 
 	tickRows, err := Db.Query(context.Background(), `
 		SELECT DISTINCT tick

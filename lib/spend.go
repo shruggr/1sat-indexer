@@ -31,7 +31,9 @@ type Spend struct {
 func (s *Spend) SetSpent() (exists bool) {
 	rows, err := Db.Query(context.Background(), `
 		UPDATE txos
-		SET spend=$3, vin=$4, spend_height=$5, spend_idx=$6
+		SET spend=$3, vin=$4, 
+			spend_height=CASE WHEN $5 > 0 THEN $5 ELSE spend_height END, 
+			spend_idx=CASE WHEN $5 > 0 THEN $6 ELSE spend_height END
 		WHERE txid=$1 AND vout=$2
 		RETURNING COALESCE(pkhash, '\x'), satoshis, data, origin`,
 		s.Txid,

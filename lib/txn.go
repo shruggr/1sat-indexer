@@ -44,6 +44,7 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			var tx *bt.Tx
 			hexId := hex.EncodeToString(spend.Txid)
 			tx, err = LoadTx(hexId)
+			// txout, err := LoadTxOut(hexId, spend.Vout)
 			if err != nil {
 				if ctx.Height != nil {
 					log.Panicf("%x: %d %v\n", spend.Txid, ctx.Height, err)
@@ -174,8 +175,8 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			if txo.Data.Listing != nil {
 				ctx.Listings = append(ctx.Listings, txo.Data.Listing)
 			}
-			ctx.Txos = append(ctx.Txos, txo)
 		}
+		ctx.Txos = append(ctx.Txos, txo)
 		accSats += txout.Satoshis
 	}
 	if !dryRun {
@@ -205,6 +206,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			}
 			// Implied BSV20 transfer
 			if len(ctx.Bsv20s) == 0 && txo.ImpliedBsv20 {
+				if txo.Data == nil {
+					txo.Data = &TxoData{}
+				}
 				txo.Data.Bsv20 = &Bsv20{
 					Ticker:  txo.Spend.Data.Bsv20.Ticker,
 					Op:      "transfer",
@@ -214,6 +218,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			}
 			txo.Save()
 
+			if txo.Data == nil {
+				continue
+			}
 			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
 				SaveMap(txo.Origin)
 			}

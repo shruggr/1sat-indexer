@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -70,15 +71,17 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 		return bt.NewTxFromBytes(rawtx)
 	}
 
-	if JB != nil {
-		if txData, err := JB.GetTransaction(context.Background(), txid); err == nil {
-			rawtx = txData.Transaction
+	if len(rawtx) == 0 && bit != nil {
+		// log.Println("Requesting tx from node", txid)
+		if r, err := bit.GetRawTransactionRest(txid); err == nil {
+			rawtx, _ = io.ReadAll(r)
 		}
 	}
 
-	if len(rawtx) == 0 && bit != nil {
-		if r, err := bit.GetRawTransactionRest(txid); err == nil {
-			rawtx, _ = io.ReadAll(r)
+	if len(rawtx) == 0 && JB != nil {
+		// log.Println("Requesting tx from jb", txid)
+		if txData, err := JB.GetTransaction(context.Background(), txid); err == nil {
+			rawtx = txData.Transaction
 		}
 	}
 
@@ -97,4 +100,24 @@ func LoadTxData(txid string) ([]byte, error) {
 		return nil, err
 	}
 	return txData.Transaction, nil
+}
+
+func LoadTxOut(txid string, vout uint32) (txout *bt.Output, err error) {
+
+	url := fmt.Sprintf("https://junglebus.gorillapool.io/v1/txo/get/%s_%d", txid, vout)
+	// log.Println("Requesting txo", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		err = fmt.Errorf("missing-txn %s", txid)
+		return
+	}
+	txout = &bt.Output{}
+	_, err = txout.ReadFrom(resp.Body)
+	return
+
 }
