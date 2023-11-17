@@ -2,7 +2,6 @@ package lib
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"time"
@@ -17,55 +16,48 @@ type Lock struct {
 }
 
 type TxoData struct {
-	Types       []string        `json:"types,omitempty"`
-	Inscription *Inscription    `json:"insc,omitempty"`
-	Map         Map             `json:"map,omitempty"`
-	B           *File           `json:"b,omitempty"`
-	Sigmas      []*Sigma        `json:"sigma,omitempty"`
-	Listing     *Listing        `json:"list,omitempty"`
-	Bsv20       *Bsv20          `json:"bsv20,omitempty"`
-	Claims      []*Claim        `json:"claims,omitempty"`
-	Lock        *Lock           `json:"lock,omitempty"`
-	OpNSMint    *OpNS           `json:"opnsMint,omitempty"`
-	OpNS        *OpNS           `json:"opns,omitempty"`
-	Sigil       json.RawMessage `json:"sigil,omitempty"`
+	Types       []string     `json:"types,omitempty"`
+	Inscription *Inscription `json:"insc,omitempty"`
+	Map         Map          `json:"map,omitempty"`
+	B           *File        `json:"b,omitempty"`
+	Sigmas      []*Sigma     `json:"sigma,omitempty"`
 }
 
 type Txo struct {
-	Tx           *bt.Tx    `json:"-"`
-	Txid         []byte    `json:"txid"`
-	Vout         uint32    `json:"vout"`
-	Height       *uint32   `json:"height"`
-	Idx          uint64    `json:"idx"`
-	Satoshis     uint64    `json:"satoshis"`
-	OutAcc       uint64    `json:"outacc"`
-	PKHash       []byte    `json:"pkhash"`
-	Spend        *Spend    `json:"spend"`
-	Vin          uint32    `json:"vin"`
-	Origin       *Outpoint `json:"origin"`
-	Data         *TxoData  `json:"data,omitempty"`
-	Outpoint     *Outpoint `json:"outpoint"`
-	IsOrigin     bool      `json:"-"`
-	ImpliedBsv20 bool      `json:"-"`
+	Tx          *bt.Tx    `json:"-"`
+	Outpoint    *Outpoint `json:"outpoint,omitempty"`
+	Height      *uint32   `json:"height,omitempty"`
+	Idx         uint64    `json:"idx"`
+	Satoshis    uint64    `json:"satoshis"`
+	OutAcc      uint64    `json:"outacc"`
+	PKHash      []byte    `json:"pkhash"`
+	Spend       []byte    `json:"spend"`
+	Vin         uint32    `json:"vin"`
+	SpendHeight *uint32   `json:"spend_height"`
+	SpendIdx    uint64    `json:"spend_idx"`
+	Origin      *Outpoint `json:"origin,omitempty"`
+	Data        *TxoData  `json:"data,omitempty"`
 }
 
 func (t *Txo) Save() {
 	var err error
 	for i := 0; i < 3; i++ {
 		_, err = Db.Exec(context.Background(), `
-			INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, pkhash, origin, height, idx, data)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			INSERT INTO txos(outpoint, vout, satoshis, outacc, pkhash, origin, height, idx, data)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT(outpoint) DO UPDATE SET
 				satoshis=EXCLUDED.satoshis,
 				outacc=EXCLUDED.outacc,
-				pkhash=EXCLUDED.pkhash,
-				origin=EXCLUDED.origin,
-				height=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.height ELSE txos.height END,
-				idx=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.idx ELSE txos.idx END,
-				data=EXCLUDED.data`,
-			t.Txid,
-			t.Vout,
+				pkhash=CASE WHEN EXCLUDED.pkhash IS NULL THEN txos.pkhash ELSE EXCLUDED.pkhash END,
+				origin=CASE WHEN EXCLUDED.origin IS NULL THEN txos.origin ELSE EXCLUDED.origin END,
+				height=CASE WHEN EXCLUDED.height IS NULL THEN txos.height ELSE EXCLUDED.height END,
+				idx=CASE WHEN EXCLUDED.height IS NULL THEN txos.idx ELSE EXCLUDED.idx END,
+				data=CASE WHEN txos.data IS NULL 
+					THEN EXCLUDED.data 
+					ELSE CASE WHEN EXCLUDED.data IS NULL THEN txos.data ELSE txos.data || EXCLUDED.data END
+				END`,
 			t.Outpoint,
+			t.Outpoint.Vout(),
 			t.Satoshis,
 			t.OutAcc,
 			t.PKHash,
@@ -81,7 +73,7 @@ func (t *Txo) Save() {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying Insert %x %d\n", t.Txid, t.Vout)
+					log.Printf("Conflict. Retrying Insert %s\n", t.Outpoint)
 					continue
 				}
 			}
@@ -94,28 +86,41 @@ func (t *Txo) Save() {
 	}
 }
 
-func (t *Txo) SetOrigin() {
+func (t *Txo) SaveSpend() {
+	_, err := Db.Exec(context.Background(), `
+		INSERT INTO txos(outpoint, vout, spend, vin, spend_height, spend_idx)
+		VALUES($1, $2, $3, $4, $5, $6)
+		ON CONFLICT(outpoint) DO UPDATE SET
+			spend=EXCLUDED.spend,
+			vin=EXCLUDED.vin, 
+			spend_height=CASE WHEN EXCLUDED.spend_height IS NULL THEN spend_height ELSE EXCLUDED.spend_height END, 
+			spend_idx=CASE WHEN EXCLUDED.spend_height IS NULL THEN spend_idx ELSE EXCLUDED.spend_idx END
+		WHERE outpoint=$1`,
+		t.Outpoint,
+		t.Outpoint.Vout(),
+		t.Spend,
+		t.Vin,
+		t.SpendHeight,
+		t.SpendIdx,
+	)
+	if err != nil {
+		log.Panicln("setSpend Err:", err)
+	}
+}
+
+func (t *Txo) SetOrigin(origin *Outpoint) {
 	var err error
 	for i := 0; i < 3; i++ {
 		_, err = Db.Exec(context.Background(), `
-			INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, origin, height, idx)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO txos(outpoint, vout, origin, satoshis, outacc)
+			VALUES($1, $2, $3, $4, $5)
 			ON CONFLICT(outpoint) DO UPDATE SET
-				satoshis=EXCLUDED.satoshis,
-				outacc=EXCLUDED.outacc,
-				origin=EXCLUDED.origin,
-				height=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.height ELSE txos.height END,
-				idx=CASE WHEN EXCLUDED.height > 0 THEN EXCLUDED.idx ELSE txos.idx END`,
-			t.Txid,
-			t.Vout,
+				origin=EXCLUDED.origin`,
 			t.Outpoint,
+			t.Outpoint.Vout(),
+			origin,
 			t.Satoshis,
 			t.OutAcc,
-			t.PKHash,
-			t.Origin,
-			t.Height,
-			t.Idx,
-			t.Data,
 		)
 
 		if err != nil {
@@ -124,7 +129,7 @@ func (t *Txo) SetOrigin() {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying Insert %x %d\n", t.Txid, t.Vout)
+					log.Printf("Conflict. Retrying Insert %s\n", t.Outpoint)
 					continue
 				}
 			}

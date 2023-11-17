@@ -5,29 +5,67 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+
+	"github.com/jackc/pgx/v5"
 )
+
+const MAX_DEPTH = 256
 
 type Origin struct {
 	Origin *Outpoint `json:"origin"`
 	Num    uint64    `json:"num"`
-	Txid   []byte    `json:"txid"`
-	Vout   uint32    `json:"vout"`
 	Height *uint32   `json:"height"`
 	Idx    uint64    `json:"idx"`
-	Data   *TxoData  `json:"data,omitempty"`
 	Map    Map       `json:"map,omitempty"`
+}
+
+func LoadOrigin(outpoint *Outpoint, outAcc uint64) *Outpoint {
+	return calcOrigin(outpoint, outAcc, 0)
+}
+
+func calcOrigin(outpoint *Outpoint, outAcc uint64, depth uint32) *Outpoint {
+	// fmt.Println("Finding", outpoint, outAcc, depth)
+	if depth > MAX_DEPTH {
+		log.Panicf("max depth exceeded %d %s\n", depth, outpoint)
+	}
+	origin := &Outpoint{}
+	row := Db.QueryRow(context.Background(),
+		`SELECT origin FROM txos WHERE txid=$1 AND outacc=$2`,
+		outpoint.Txid(),
+		outAcc,
+	)
+	err := row.Scan(&origin)
+	if err != nil && err != pgx.ErrNoRows {
+		panic(err)
+	} else if err == pgx.ErrNoRows || origin == nil {
+		spends := LoadSpends(outpoint.Txid(), nil)
+		var inSats uint64
+		for _, spend := range spends {
+			if inSats < outAcc {
+				inSats += spend.Satoshis
+				continue
+			}
+			if spend.Satoshis != 1 {
+				origin = outpoint
+			} else if inSats == outAcc {
+				origin = calcOrigin(spend.Outpoint, spend.OutAcc, depth+1)
+				spend.SetOrigin(origin)
+			}
+			break
+		}
+		// SetOrigin(outpoint, origin)
+	}
+	return origin
 }
 
 func (o *Origin) Save() {
 	_, err := Db.Exec(context.Background(), `
-		INSERT INTO origins(origin, txid, vout, height, idx, map)
-		VALUES($1, $2, $3, $4, $5, $6)
+		INSERT INTO origins(origin, height, idx, map)
+		VALUES($1, $2, $3, $4)
 		ON CONFLICT(origin) DO UPDATE SET
 			height=EXCLUDED.height,
 			idx=EXCLUDED.idx`,
 		o.Origin,
-		o.Txid,
-		o.Vout,
 		o.Height,
 		o.Idx,
 		o.Map,

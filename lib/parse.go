@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
-	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
 )
 
@@ -131,7 +130,7 @@ func ReadOp(b []byte, idx *int) (op *OpPart, err error) {
 }
 
 func ParseBitcom(txo *Txo, idx *int) (err error) {
-	script := *txo.Tx.Outputs[txo.Vout].LockingScript
+	script := *txo.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 	tx := txo.Tx
 
 	startIdx := *idx
@@ -277,7 +276,7 @@ func ParseBitcom(txo *Txo, idx *int) (err error) {
 }
 
 func ParseScript(txo *Txo) {
-	script := *txo.Tx.Outputs[txo.Vout].LockingScript
+	script := *txo.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 
 	start := 0
 	if len(script) >= 25 && bscript.NewFromBytes(script[:25]).IsP2PKH() {
@@ -367,52 +366,32 @@ func ParseScript(txo *Txo) {
 			insType := "file"
 			if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
 				mime := strings.ToLower(ins.File.Type)
-				if strings.HasPrefix(mime, "application/bsv-20") ||
-					strings.HasPrefix(mime, "text/plain") ||
-					strings.HasPrefix(mime, "application/json") {
+				if strings.HasPrefix(mime, "application") ||
+					strings.HasPrefix(mime, "text") {
 
 					var data json.RawMessage
 					err = json.Unmarshal(ins.File.Content, &data)
 					if err == nil {
 						insType = "json"
 						ins.Json = data
-						if strings.HasPrefix(mime, "application/bsv-20") {
-							txo.Data.Bsv20, _ = parseBsv20(ins.File, txo.Height)
+					} else if ok, err := regexp.Match("^[[:ascii:]]*$", ins.File.Content); err == nil && ok {
+						if insType == "file" {
+							insType = "text"
 						}
-						if txo.Height != nil && *txo.Height < 793000 &&
-							strings.HasPrefix(mime, "text/plain") {
-							txo.Data.Bsv20, _ = parseBsv20(ins.File, txo.Height)
+						ins.Text = string(ins.File.Content)
+						re := regexp.MustCompile(`\W`)
+						words := map[string]struct{}{}
+						for _, word := range re.Split(ins.Text, -1) {
+							if len(word) > 1 {
+								words[word] = struct{}{}
+							}
 						}
-						if txo.Data.Bsv20 != nil {
-							txo.Data.Types = append(txo.Data.Types, "bsv20")
+						if len(words) > 0 {
+							ins.Words = make([]string, 0, len(words))
+							for word := range words {
+								ins.Words = append(ins.Words, word)
+							}
 						}
-					}
-				}
-				if strings.HasPrefix(mime, "text") || mime == "application/op-ns" {
-					if insType == "file" {
-						insType = "text"
-					}
-					ins.Text = string(ins.File.Content)
-					re := regexp.MustCompile(`\W`)
-
-					words := map[string]struct{}{}
-					for _, word := range re.Split(ins.Text, -1) {
-						if len(word) > 1 {
-							words[word] = struct{}{}
-						}
-					}
-
-					if len(words) > 1 {
-						ins.Words = make([]string, 0, len(words))
-						for word := range words {
-							ins.Words = append(ins.Words, word)
-						}
-					}
-				}
-				if ins.File.Type == "application/op-reg" {
-					err = json.Unmarshal(ins.File.Content, &txo.Data.Claims)
-					if err == nil {
-						txo.Data.Types = append(txo.Data.Types, "op-reg")
 					}
 				}
 			}
@@ -420,105 +399,6 @@ func ParseScript(txo *Txo) {
 			if len(txo.PKHash) == 0 && len(script) >= i+25 && bscript.NewFromBytes(script[i:i+25]).IsP2PKH() {
 				txo.PKHash = []byte(script[i+3 : i+23])
 			}
-		}
-	}
-
-	sCryptPrefixIndex := bytes.Index(script, sCryptPrefix)
-	if sCryptPrefixIndex > -1 {
-		if bytes.Contains(script[sCryptPrefixIndex:], LockSuffix) {
-			lock := &Lock{}
-			pos := sCryptPrefixIndex + len(sCryptPrefix)
-			op, err := ReadOp(script, &pos)
-			if err != nil {
-				log.Println(err)
-			}
-			txo.PKHash = op.Data
-			if address, err := bscript.NewAddressFromPublicKeyHash(txo.PKHash, true); err == nil {
-				lock.Address = address.AddressString
-			}
-			op, err = ReadOp(script, &pos)
-			if err != nil {
-				log.Println(err)
-			}
-			until := make([]byte, 4)
-			copy(until, op.Data)
-			lock.Until = binary.LittleEndian.Uint32(until)
-
-			if txo.Data == nil {
-				txo.Data = &TxoData{}
-			}
-			txo.Data.Lock = lock
-		} else {
-			ordLockSuffixIndex := bytes.Index(script, OrdLockSuffix)
-			if ordLockSuffixIndex > -1 {
-				ordLock := script[sCryptPrefixIndex+len(sCryptPrefix) : ordLockSuffixIndex]
-				if ordLockParts, err := bscript.DecodeParts(ordLock); err == nil && len(ordLockParts) > 0 {
-					txo.PKHash = ordLockParts[0]
-					payOutput := &bt.Output{}
-					_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
-					if err == nil {
-						if txo.Data == nil {
-							txo.Data = &TxoData{}
-						}
-						txo.Data.Listing = &Listing{
-							Price:  payOutput.Satoshis,
-							PayOut: payOutput.Bytes(),
-						}
-					}
-				}
-			}
-		}
-	}
-
-	opNSPrefixIndex := bytes.Index(script, OpNSPrefix)
-	if opNSPrefixIndex > -1 {
-		opNSSuffixIndex := bytes.Index(script, OpNSSuffix)
-		if opNSSuffixIndex > -1 {
-			opNS := &OpNS{}
-			stateScript := script[opNSSuffixIndex+len(OpNSSuffix)+2:]
-			pos := 0
-			op, err := ReadOp(stateScript, &pos)
-			if err != nil {
-				return
-			}
-			if op.Len == 36 {
-				genesis := op.Data
-				txid := bt.ReverseBytes(genesis[:32])
-				vout := binary.LittleEndian.Uint32(genesis[32:36])
-				opNS.Genesis = NewOutpoint(txid, vout)
-			}
-			if _, err = ReadOp(stateScript, &pos); err != nil {
-				return
-			}
-			op, err = ReadOp(stateScript, &pos)
-			if err != nil {
-				return
-			}
-			opNS.Domain = string(op.Data)
-			if txo.Data == nil {
-				txo.Data = &TxoData{}
-			}
-			txo.Data.OpNSMint = opNS
-		}
-	}
-
-	if len(script) > 49 &&
-		script[0] == bscript.OpHASH160 &&
-		script[22] == bscript.OpEQUALVERIFY &&
-		script[23] == bscript.OpDUP &&
-		script[24] == bscript.OpHASH160 &&
-		script[46] == bscript.OpEQUALVERIFY &&
-		script[47] == bscript.OpCHECKSIG &&
-		script[48] == bscript.OpRETURN {
-
-		if txo.Data == nil {
-			txo.PKHash = script[26:46]
-			txo.Data = &TxoData{}
-		}
-		pos := 49
-		op, err := ReadOp(script, &pos)
-		if err == nil {
-			txo.Data.Sigil = op.Data
 		}
 	}
 }

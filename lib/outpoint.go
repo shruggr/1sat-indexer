@@ -44,10 +44,10 @@ func (o *Outpoint) Vout() uint32 {
 }
 
 func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
-	if len(o) == 36 {
-		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+	if len(o) != 36 {
+		return []byte("null"), nil
 	}
-	return bytes, err
+	return json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 }
 
 // UnmarshalJSON deserializes Origin to string
