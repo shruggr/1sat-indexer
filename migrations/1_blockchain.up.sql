@@ -34,14 +34,6 @@ CREATE INDEX idx_txns_block_id_idx ON txns(block_id, idx);
 CREATE INDEX idx_txns_created_unmined ON txns(created)
     WHERE height IS NULL;
 
--- CREATE TABLE txns_feed(
---     txid BYTEA,
---     indexer VARCHAR(32),
-
---     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
---     PRIMARY KEY(txid, indexer)
--- );
-
 CREATE TABLE txos(
     outpoint BYTEA PRIMARY KEY,
     txid BYTEA GENERATED ALWAYS AS (substring(outpoint from 1 for 32)) STORED,

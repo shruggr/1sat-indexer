@@ -39,7 +39,7 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 	}
 
 	if !tx.IsCoinbase() {
-		SetSpends(tx)
+		SetSpends(ctx)
 	}
 
 	IndexTxos(tx, ctx, dryRun)
@@ -110,20 +110,17 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 	}
 }
 
-func SetSpends(tx *bt.Tx) {
+func SetSpends(ctx *IndexContext) {
 	// outpoints := make([][]byte, len(tx.Inputs))
-	spend := tx.TxIDBytes()
-	for vin, txin := range tx.Inputs {
-		outpoint := NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex)
-		// outpoints[vin] = *outpoint
-		if _, err := Db.Exec(context.Background(),
-			"UPDATE txos SET spend=$2, vin=$3 WHERE outpoint=$1",
-			outpoint,
-			spend,
-			vin,
-		); err != nil {
-			log.Panic(err)
+	for vin, txin := range ctx.Tx.Inputs {
+		spend := &Txo{
+			Outpoint:    NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
+			Spend:       ctx.Txid,
+			Vin:         uint32(vin),
+			SpendHeight: ctx.Height,
+			SpendIdx:    ctx.Idx,
 		}
+		spend.SaveSpend()
 	}
 }
 

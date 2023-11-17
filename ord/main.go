@@ -1,12 +1,22 @@
 package main
 
 import (
-	"github.com/shruggr/1sat-indexer/junglebus"
+	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
+var settled = make(chan uint32, 1000)
+
 func main() {
-	err := junglebus.Exec(
+	go func() {
+		for height := range settled {
+			err := lib.SetOriginNum(height)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}()
+	err := indexer.Exec(
 		true,
 		true,
 		handleTx,
@@ -22,5 +32,6 @@ func handleTx(tx *lib.IndexContext) error {
 }
 
 func handleBlock(height uint32) error {
+	settled <- height - 6
 	return nil
 }

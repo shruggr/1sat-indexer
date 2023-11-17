@@ -113,34 +113,27 @@ func SaveMap(origin *Outpoint) {
 }
 
 func SetOriginNum(height uint32) (err error) {
-	rows, err := Db.Query(context.Background(),
+
+	row := Db.QueryRow(context.Background(),
 		"SELECT MAX(num) FROM origins",
 	)
+	var dbNum sql.NullInt64
+	err = row.Scan(&dbNum)
 	if err != nil {
 		log.Panic(err)
 		return
 	}
-	defer rows.Close()
 	var num uint64
-	if rows.Next() {
-		var dbNum sql.NullInt64
-		err = rows.Scan(&dbNum)
-		if err != nil {
-			log.Panic(err)
-			return
-		}
-		if dbNum.Valid {
-			num = uint64(dbNum.Int64 + 1)
-		}
-	} else {
-		return
+	if dbNum.Valid {
+		num = uint64(dbNum.Int64 + 1)
 	}
 
-	rows, err = Db.Query(context.Background(), `
+	rows, err := Db.Query(context.Background(), `
 		SELECT origin
 		FROM origins
 		WHERE num IS NULL AND height <= $1 AND height IS NOT NULL
-		ORDER BY height, idx, vout`,
+		ORDER BY height, idx
+		LIMIT 100`,
 		height,
 	)
 	if err != nil {
@@ -169,5 +162,6 @@ func SetOriginNum(height uint32) (err error) {
 		num++
 	}
 	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
+	// log.Println("Height", height, "Max Origin Num", num)
 	return
 }

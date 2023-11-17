@@ -73,7 +73,7 @@ func (t *Txo) Save() {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying Insert %s\n", t.Outpoint)
+					log.Printf("Conflict. Retrying Save %s\n", t.Outpoint)
 					continue
 				}
 			}
@@ -87,24 +87,39 @@ func (t *Txo) Save() {
 }
 
 func (t *Txo) SaveSpend() {
-	_, err := Db.Exec(context.Background(), `
-		INSERT INTO txos(outpoint, vout, spend, vin, spend_height, spend_idx)
-		VALUES($1, $2, $3, $4, $5, $6)
-		ON CONFLICT(outpoint) DO UPDATE SET
-			spend=EXCLUDED.spend,
-			vin=EXCLUDED.vin, 
-			spend_height=CASE WHEN EXCLUDED.spend_height IS NULL THEN spend_height ELSE EXCLUDED.spend_height END, 
-			spend_idx=CASE WHEN EXCLUDED.spend_height IS NULL THEN spend_idx ELSE EXCLUDED.spend_idx END
-		WHERE outpoint=$1`,
-		t.Outpoint,
-		t.Outpoint.Vout(),
-		t.Spend,
-		t.Vin,
-		t.SpendHeight,
-		t.SpendIdx,
-	)
+	var err error
+	for i := 0; i < 3; i++ {
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO txos(outpoint, vout, spend, vin, spend_height, spend_idx)
+			VALUES($1, $2, $3, $4, $5, $6)
+			ON CONFLICT(outpoint) DO UPDATE SET
+				spend=EXCLUDED.spend,
+				vin=EXCLUDED.vin, 
+				spend_height=CASE WHEN EXCLUDED.spend_height IS NULL THEN txos.spend_height ELSE EXCLUDED.spend_height END, 
+				spend_idx=CASE WHEN EXCLUDED.spend_height IS NULL THEN txos.spend_idx ELSE EXCLUDED.spend_idx END`,
+			t.Outpoint,
+			t.Outpoint.Vout(),
+			t.Spend,
+			t.Vin,
+			t.SpendHeight,
+			t.SpendIdx,
+		)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				log.Println(pgErr.Code, pgErr.Message)
+				if pgErr.Code == "23505" {
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
+					continue
+				}
+			}
+			log.Panicln("insTxo Err:", err)
+		}
+		break
+	}
 	if err != nil {
-		log.Panicln("setSpend Err:", err)
+		log.Panicln("insTxo Err:", err)
 	}
 }
 
@@ -129,7 +144,7 @@ func (t *Txo) SetOrigin(origin *Outpoint) {
 				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying Insert %s\n", t.Outpoint)
+					log.Printf("Conflict. Retrying SetOrigin %s\n", t.Outpoint)
 					continue
 				}
 			}
