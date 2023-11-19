@@ -2,26 +2,16 @@ package lib
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/libsv/go-bt/v2"
 )
-
-type Lock struct {
-	Address string `json:"address"`
-	Until   uint32 `json:"until"`
-}
-
-type TxoData struct {
-	Types       []string     `json:"types,omitempty"`
-	Inscription *Inscription `json:"insc,omitempty"`
-	Map         Map          `json:"map,omitempty"`
-	B           *File        `json:"b,omitempty"`
-	Sigmas      []*Sigma     `json:"sigma,omitempty"`
-}
 
 type Txo struct {
 	Tx          *bt.Tx    `json:"-"`
@@ -36,7 +26,39 @@ type Txo struct {
 	SpendHeight *uint32   `json:"spend_height"`
 	SpendIdx    uint64    `json:"spend_idx"`
 	Origin      *Outpoint `json:"origin,omitempty"`
-	Data        *TxoData  `json:"data,omitempty"`
+	Data        Map       `json:"data,omitempty"`
+}
+
+func (t *Txo) AddData(key string, value interface{}) {
+	if t.Data == nil {
+		t.Data = map[string]interface{}{}
+	}
+	t.Data[key] = value
+}
+
+func LoadTxoData(outpoint *Outpoint) (data Map, err error) {
+	var dataStr sql.NullString
+	err = Db.QueryRow(context.Background(), `
+		SELECT data
+		FROM txos
+		WHERE outpoint=$1`,
+		outpoint,
+	).Scan(
+		&dataStr,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if dataStr.Valid {
+		err = json.Unmarshal([]byte(dataStr.String), &data)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	return data, nil
 }
 
 func (t *Txo) Save() {
@@ -70,10 +92,9 @@ func (t *Txo) Save() {
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) {
-				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying Save %s\n", t.Outpoint)
+					// log.Printf("Conflict. Retrying Save %s\n", t.Outpoint)
 					continue
 				}
 			}
@@ -107,10 +128,9 @@ func (t *Txo) SaveSpend() {
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) {
-				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
+					// log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
 					continue
 				}
 			}
@@ -141,10 +161,9 @@ func (t *Txo) SetOrigin(origin *Outpoint) {
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) {
-				log.Println(pgErr.Code, pgErr.Message)
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
-					log.Printf("Conflict. Retrying SetOrigin %s\n", t.Outpoint)
+					// log.Printf("Conflict. Retrying SetOrigin %s\n", t.Outpoint)
 					continue
 				}
 			}

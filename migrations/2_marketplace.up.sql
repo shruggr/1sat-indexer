@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS listings(
     price BIGINT,
     payout BYTEA,
     origin BYTEA,
-    num BIGINT,
+    num BIGINT DEFAULT -1,
     spend BYTEA DEFAULT '\x',
     pkhash BYTEA,
     data JSONB,

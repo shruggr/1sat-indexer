@@ -14,22 +14,21 @@ import (
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-var POSTGRES string
 var INDEXER string
 var TOPIC string
 var VERBOSE int
-var CONCURRENCY uint = 64
+var CONCURRENCY int = 64
 var threadLimiter chan struct{}
 
+var POSTGRES string
 var Db *pgxpool.Pool
 var Rdb *redis.Client
 var junglebusClient *junglebus.Client
-var fromBlock uint32
+var fromBlock uint
 
 var sub *junglebus.Subscription
 
@@ -47,22 +46,23 @@ type Msg struct {
 var wg sync.WaitGroup
 
 func init() {
-	wd, _ := os.Getwd()
-	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../.env`, wd))
-
-	flag.UintVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
+	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
 	flag.StringVar(&INDEXER, "id", "", "Indexer name")
 	flag.StringVar(&POSTGRES, "pg", "", "Postgres connection string")
 	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
 	flag.IntVar(&VERBOSE, "v", 0, "Junglebus SubscriptionID")
+	flag.UintVar(&fromBlock, "s", uint(lib.TRIGGER), "Start from block")
 
 	flag.Parse()
 
-	if POSTGRES == "" {
-		POSTGRES = os.Getenv("POSTGRES_FULL")
-	}
 	threadLimiter = make(chan struct{}, CONCURRENCY)
+
+}
+
+func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
+	Db = db
+	Rdb = rdb
+	return lib.Initialize(db, rdb)
 }
 
 func Exec(
@@ -81,23 +81,6 @@ func Exec(
 	// 	}
 	// }()
 
-	log.Println("POSTGRES:", POSTGRES)
-	Db, err = pgxpool.New(context.Background(), POSTGRES)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	Rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	err = lib.Initialize(Db, Rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
 		JUNGLEBUS = "https://junglebus.gorillapool.io"
@@ -110,12 +93,14 @@ func Exec(
 	if err != nil {
 		log.Panicln(err.Error())
 	}
+
+	var progress uint
 	row := Db.QueryRow(context.Background(), `SELECT height
 		FROM progress
 		WHERE indexer=$1`,
 		INDEXER,
 	)
-	err = row.Scan(&fromBlock)
+	err = row.Scan(&progress)
 	if err != nil {
 		Db.Exec(context.Background(),
 			`INSERT INTO progress(indexer, height)
@@ -123,8 +108,8 @@ func Exec(
 			INDEXER,
 		)
 	}
-	if fromBlock < lib.TRIGGER {
-		fromBlock = lib.TRIGGER
+	if progress > fromBlock {
+		fromBlock = progress
 	}
 
 	var txCount int
@@ -142,12 +127,13 @@ func Exec(
 
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
-			if VERBOSE > 0 {
-				log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
-			}
+			// if VERBOSE > 0 {
+			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
+			// }
 			if status.StatusCode == 200 {
 				wg.Wait()
 				err = blockHander(status.Block)
+				height = status.Block
 				var settledHeight uint32
 				if status.Block > 6 {
 					settledHeight = status.Block - 6
@@ -164,7 +150,7 @@ func Exec(
 				); err != nil {
 					log.Panic(err)
 				}
-				fromBlock = status.Block + 1
+				fromBlock = uint(status.Block) + 1
 			}
 			if status.StatusCode == 999 {
 				log.Println(status.Message)

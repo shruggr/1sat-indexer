@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -20,6 +19,7 @@ type IndexContext struct {
 	Height  *uint32 `json:"height"`
 	Idx     uint64  `json:"idx"`
 	Txos    []*Txo  `json:"txos"`
+	Spends  []*Txo  `json:"spends"`
 }
 
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *IndexContext, err error) {
@@ -60,9 +60,8 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			Outpoint: &outpoint,
 		}
 
-		ParseScript(txo)
-		if txo.Satoshis == 1 {
-			txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
+		if txout.LockingScript.IsP2PKH() {
+			txo.PKHash = []byte((*txout.LockingScript)[3:23])
 		}
 		ctx.Txos = append(ctx.Txos, txo)
 		accSats += txout.Satoshis
@@ -85,33 +84,15 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		}
 
 		for _, txo := range ctx.Txos {
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-			}
+			// if Rdb != nil {
+			// 	Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+			// }
 			txo.Save()
-
-			if txo.Origin == nil {
-				continue
-			}
-			if bytes.Equal(*txo.Origin, *txo.Outpoint) {
-				origin := &Origin{
-					Origin: txo.Outpoint,
-					Height: ctx.Height,
-					Idx:    ctx.Idx,
-				}
-				if txo.Data != nil && txo.Data.Map != nil {
-					origin.Map = txo.Data.Map
-				}
-				origin.Save()
-			} else if txo.Data != nil && txo.Data.Map != nil {
-				SaveMap(txo.Origin)
-			}
 		}
 	}
 }
 
 func SetSpends(ctx *IndexContext) {
-	// outpoints := make([][]byte, len(tx.Inputs))
 	for vin, txin := range ctx.Tx.Inputs {
 		spend := &Txo{
 			Outpoint:    NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
@@ -121,6 +102,7 @@ func SetSpends(ctx *IndexContext) {
 			SpendIdx:    ctx.Idx,
 		}
 		spend.SaveSpend()
+		ctx.Spends = append(ctx.Spends, spend)
 	}
 }
 

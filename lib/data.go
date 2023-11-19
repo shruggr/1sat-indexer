@@ -18,29 +18,12 @@ import (
 
 var TRIGGER = uint32(783968)
 
-// var TxCache *lru.Cache[string, *bt.Tx]
-
 var Db *pgxpool.Pool
 var Rdb *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-// var GetInput *sql.Stmt
-// var GetMaxInscriptionNum *sql.Stmt
-// var GetUnnumbered *sql.Stmt
-// var InsTxo *sql.Stmt
-// var InsBareSpend *sql.Stmt
-// var InsSpend *sql.Stmt
-// var InsInscription *sql.Stmt
-// var InsMetadata *sql.Stmt
-// var InsListing *sql.Stmt
-// var SetSpend *sql.Stmt
-// var SetInscriptionId *sql.Stmt
-
-// var SetTxn *sql.Stmt
-
 func Initialize(postgres *pgxpool.Pool, rdb *redis.Client) (err error) {
-	// db = sdb
 	Db = postgres
 	Rdb = rdb
 
@@ -65,10 +48,18 @@ func Initialize(postgres *pgxpool.Pool, rdb *redis.Client) (err error) {
 }
 
 func LoadTx(txid string) (tx *bt.Tx, err error) {
-	rawtx, _ := Rdb.Get(context.Background(), txid).Bytes()
+	rawtx, err := LoadRawtx(txid)
+	if err != nil {
+		return
+	}
+	return bt.NewTxFromBytes(rawtx)
+}
+
+func LoadRawtx(txid string) (rawtx []byte, err error) {
+	rawtx, _ = Rdb.Get(context.Background(), txid).Bytes()
 
 	if len(rawtx) > 0 {
-		return bt.NewTxFromBytes(rawtx)
+		return rawtx, nil
 	}
 
 	if len(rawtx) == 0 && bit != nil {
@@ -91,15 +82,7 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 	}
 
 	Rdb.Set(context.Background(), txid, rawtx, 0).Err()
-	return bt.NewTxFromBytes(rawtx)
-}
-
-func LoadTxData(txid string) ([]byte, error) {
-	txData, err := JB.GetTransaction(context.Background(), txid)
-	if err != nil {
-		return nil, err
-	}
-	return txData.Transaction, nil
+	return
 }
 
 func LoadTxOut(txid string, vout uint32) (txout *bt.Output, err error) {
