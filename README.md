@@ -17,6 +17,7 @@ If a satoshi is subsequently packaged up in an output of more than one satoshi, 
 Postgres >= v10
 Redis (Currently assumes running on localhost with the default port)
 Bitcoin SV node
+Go >= v1.20
 
 ### Environment Variables
 - POSTGRES_FULL=`<postgres connection string>`
