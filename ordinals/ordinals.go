@@ -176,7 +176,6 @@ func ParseScript(txo *lib.Txo) {
 						insType = "json"
 						ins.Json = data
 						bsv20, _ = ParseBsv20(ins.File, txo.Height)
-
 					} else if lib.AsciiRegexp.Match(ins.File.Content) {
 						if insType == "file" {
 							insType = "text"

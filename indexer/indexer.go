@@ -127,9 +127,9 @@ func Exec(
 
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
-			// if VERBOSE > 0 {
-			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
-			// }
+			if VERBOSE > 0 {
+				log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
+			}
 			if status.StatusCode == 200 {
 				wg.Wait()
 				err = blockHander(status.Block)

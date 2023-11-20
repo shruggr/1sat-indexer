@@ -277,7 +277,7 @@ func validateBsv20Deploy(height uint32) {
 }
 
 func validateBsv20Mint(height uint32, concurrency int) {
-	// fmt.Println("Validating BSV20 mint", height)
+	fmt.Println("[BSV20] Validating mints. Height ", height)
 
 	tickRows, err := Db.Query(context.Background(), `
 		SELECT DISTINCT tick
@@ -306,7 +306,7 @@ func validateBsv20Mint(height uint32, concurrency int) {
 		ticker := loadTicker(tick)
 
 		go func(tick string) {
-			fmt.Println("Validating BSV20 mint", tick, "to height", height)
+			fmt.Println("[BSV20] Validating mint", tick, "to height", height)
 			defer func() {
 				<-limiter
 				wg.Done()
@@ -449,6 +449,7 @@ func validateBsv20Mint(height uint32, concurrency int) {
 }
 
 func validateBsv20Transfers(height uint32, concurrency int) {
+	fmt.Println("[BSV20] Validating transfers. Height ", height)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM (
@@ -610,14 +611,14 @@ func ValidateTransfer(txid []byte, mined bool) {
 		var sql string
 		vouts := tickTokens[tick]
 		if reason, ok := invalid[tick]; ok {
-			fmt.Println("INVALID:", hex.EncodeToString(txid), tick, reason)
+			fmt.Println("[BSV20] Transfer Invalid:", hex.EncodeToString(txid), tick, reason)
 			sql = fmt.Sprintf(`UPDATE txos
 				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
 				WHERE txid = $1 AND vout = ANY ($2)`,
 				reason,
 			)
 		} else {
-			fmt.Println("VALID:", hex.EncodeToString(txid), tick)
+			fmt.Println("[BSV20] Tranfer Valid:", hex.EncodeToString(txid), tick)
 			sql = `UPDATE txos
 				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":""}')
 				WHERE txid = $1 AND vout = ANY ($2)`

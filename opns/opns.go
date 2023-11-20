@@ -22,6 +22,7 @@ type OpNS struct {
 	Genesis *lib.Outpoint `json:"genesis,omitempty"`
 	Domain  string        `json:"domain"`
 	Status  int           `json:"status"`
+	PoW     []byte        `json:"pow,omitempty"`
 }
 
 var GENESIS, _ = lib.NewOutpointFromString("58b7558ea379f24266c7e2f5fe321992ad9a724fd7a87423ba412677179ccb25_0")
@@ -43,19 +44,13 @@ func IndexOpNS(ctx *lib.IndexContext) {
 		opNsMine := ParseScript(txo)
 		if opNsMine != nil {
 			srcMine := loadSrcMine(ctx)
-			if srcMine == nil {
-				if opNsMine.Genesis != nil || bytes.Equal(*txo.Outpoint, *GENESIS) {
-					opNsMine.Genesis = txo.Outpoint
-					opNsMine.Status = 1
-				} else {
-					opNsMine.Status = -1
-				}
+			if srcMine == nil && bytes.Equal(*txo.Outpoint, *GENESIS) {
+				opNsMine.Genesis = txo.Outpoint
+				opNsMine.Status = 1
+			} else if srcMine != nil && srcMine.Status == 1 && bytes.Equal(*opNsMine.Genesis, *GENESIS) {
+				opNsMine.Status = 1
 			} else {
-				if srcMine.Genesis == nil || bytes.Equal(*opNsMine.Genesis, *srcMine.Genesis) {
-					opNsMine.Status = 1
-				} else {
-					opNsMine.Status = -1
-				}
+				opNsMine.Status = -1
 			}
 			txo.AddData("opnsMine", opNsMine)
 			txo.Save()
@@ -135,6 +130,10 @@ func ParseScript(txo *lib.Txo) (opNS *OpNS) {
 				return
 			}
 			opNS.Domain = string(op.Data)
+			if op, err = lib.ReadOp(stateScript, &pos); err != nil {
+				return
+			}
+			opNS.PoW = op.Data
 		}
 	}
 	return

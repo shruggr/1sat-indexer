@@ -52,7 +52,7 @@ func init() {
 
 func main() {
 	// flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
-	flag.IntVar(&PORT, "p", 8083, "Concurrency Limit")
+	flag.IntVar(&PORT, "p", 8081, "Port to listen on")
 
 	app := fiber.New()
 	app.Use(recover.New())
@@ -122,6 +122,9 @@ func main() {
 			}(txid, txn)
 		}
 		wg.Wait()
+		if height == 0 {
+			height = 817000
+		}
 		_, err = db.Exec(c.Context(), `
 			INSERT INTO addresses(address, height)
 			VALUES ($1, $2) 

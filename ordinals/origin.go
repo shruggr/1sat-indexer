@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -163,7 +162,7 @@ func SetOriginNum(height uint32) (err error) {
 		}
 		num++
 	}
-	indexer.Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
+	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
 	// log.Println("Height", height, "Max Origin Num", num)
 	return
 }
