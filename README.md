@@ -5,7 +5,6 @@ Ordinal Theory defines a means of walking back the blockchain to determin a uniq
 
 Indexing the ordinal number of an individual satoshi can be very expensive in terms of processing, RAM, and storage. 1Sat indexing takes a different approach where, if you can determine that multiple transactions are spending the SAME Ordinal, it doesn't matter WHICH Ordinal Number that is.
 
-
 ## 1Sat Origin Indexing
 The BSV blockchain is unique among blockchains which support ordinals, in that BSV supports single satoshi outputs. This allows us to take some short-cuts in indexing until a full ordinal indexer can be built efficiently. 
 
@@ -37,3 +36,10 @@ cd node
 go build
 ./node
 ```
+
+### How can you help
+This project is used in active production, but is maintained by a single person.
+
+I have a lot on my plate, and the docs are basic and suffer for lack of dedication to keeping updated. If you'd like to help or have any questions, please reach out to David Case (shruggr) on the 1SatOrdinals discord, @shruggr on Twitter, or leave an issue in this GitHub repo.
+
+BSV Donations: 1Sat9g9w2XZ9FeV9GJswQhxePxGM86vx1
