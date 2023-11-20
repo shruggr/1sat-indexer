@@ -59,7 +59,6 @@ func init() {
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
 	}
-	log.Println("POSTGRES:", POSTGRES)
 	db, err = pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
