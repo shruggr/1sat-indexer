@@ -72,6 +72,8 @@ CREATE INDEX idx_txos_spend ON txos(spend);
 CREATE INDEX idx_txos_height_idx_vout ON txos(height, idx, vout);
 CREATE INDEX idx_txos_data ON txos USING GIN(data)
     WHERE data IS NOT NULL;
+CREATE INDEX idx_txos_data_unspent ON txos USING GIN(data)
+    WHERE data IS NOT NULL AND spend = '\x';
 CREATE INDEX idx_txos_search_text_en ON txos USING GIN(search_text_en);
 CREATE INDEX idx_txos_geohash ON txos(geohash text_pattern_ops)
     WHERE geohash IS NOT NULL;

@@ -44,6 +44,7 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			var tx *bt.Tx
 			hexId := hex.EncodeToString(spend.Txid)
 			tx, err = LoadTx(hexId)
+			// txout, err := LoadTxOut(hexId, spend.Vout)
 			if err != nil {
 				if ctx.Height != nil {
 					log.Panicf("%x: %d %v\n", spend.Txid, ctx.Height, err)
@@ -118,8 +119,10 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				}
 				txo.IsOrigin = true
 			}
-			ParseScript(txo)
-			if txo.IsOrigin && txo.Data != nil && txo.Data.Inscription != nil {
+		}
+		ParseScript(txo)
+		if txo.Data != nil {
+			if txo.IsOrigin && txo.Data.Inscription != nil {
 				origin := &Origin{
 					Origin: txo.Outpoint,
 					Txid:   ctx.Txid,
@@ -133,6 +136,38 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 				txo.Origin = txo.Outpoint
 			}
 
+			if txo.Data.OpNSMint != nil {
+				spend := ctx.Spends[0]
+				opNS := txo.Data.OpNSMint
+				if !spend.Missing {
+					if spend.Data == nil || spend.Data.OpNSMint == nil {
+						if opNS.Genesis == nil {
+							txo.Data.OpNSMint.Genesis = txo.Outpoint
+							txo.Data.OpNSMint.Status = 1
+						} else {
+							txo.Data.OpNSMint.Status = -1
+						}
+					} else {
+						if spend.Data.OpNSMint.Genesis == nil || bytes.Equal(*txo.Data.OpNSMint.Genesis, *spend.Data.OpNSMint.Genesis) {
+							txo.Data.OpNSMint.Status = 1
+						} else {
+							txo.Data.OpNSMint.Status = -1
+						}
+					}
+				}
+			}
+
+			if txo.Data.Inscription != nil && txo.Data.Inscription.File.Type == "application/op-ns" {
+				spend := ctx.Spends[0]
+				if !spend.Missing && spend.Data != nil && spend.Data.OpNSMint != nil {
+					txo.Data.OpNS = &OpNS{
+						Genesis: spend.Data.OpNSMint.Genesis,
+						Domain:  txo.Data.Inscription.Text,
+						Status:  spend.Data.OpNSMint.Status,
+					}
+				}
+			}
+
 			if txo.Data.Bsv20 != nil {
 				ctx.Bsv20s = append(ctx.Bsv20s, txo)
 			}
@@ -140,10 +175,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			if txo.Data.Listing != nil {
 				ctx.Listings = append(ctx.Listings, txo.Data.Listing)
 			}
-
-			ctx.Txos = append(ctx.Txos, txo)
-			accSats += txout.Satoshis
 		}
+		ctx.Txos = append(ctx.Txos, txo)
+		accSats += txout.Satoshis
 	}
 	if !dryRun {
 		_, err := Db.Exec(context.Background(), `
@@ -172,6 +206,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			}
 			// Implied BSV20 transfer
 			if len(ctx.Bsv20s) == 0 && txo.ImpliedBsv20 {
+				if txo.Data == nil {
+					txo.Data = &TxoData{}
+				}
 				txo.Data.Bsv20 = &Bsv20{
 					Ticker:  txo.Spend.Data.Bsv20.Ticker,
 					Op:      "transfer",
@@ -181,6 +218,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			}
 			txo.Save()
 
+			if txo.Data == nil {
+				continue
+			}
 			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
 				SaveMap(txo.Origin)
 			}

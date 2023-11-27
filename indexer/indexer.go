@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"bytes"
 	"log"
 	"sync"
 	"time"
@@ -58,6 +57,7 @@ func ProcessTxns(THREADS uint) {
 	}()
 	for {
 		txn := <-TxnQueue
+		// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 		threadLimiter <- struct{}{}
 		go func(txn *TxnStatus) {
 			processTxn(txn)
@@ -74,14 +74,15 @@ func ProcessTxns(THREADS uint) {
 }
 
 func processTxn(txn *TxnStatus) {
-	// fmt.Printf("Processing: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
+	// fmt.Printf("Processing: %d %d %s %d %d %v\n", *txn.Height, txn.Idx, txn.Tx.TxID(), len(TxnQueue), len(Txns), InQueue)
 	blacklist := false
-	for _, output := range txn.Tx.Outputs {
-		if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
-			blacklist = true
-			break
-		}
-	}
+	// for _, output := range txn.Tx.Outputs {
+	// 	if output.Satoshis == 1 && bytes.Contains(*output.LockingScript, []byte("Rekord IoT")) {
+	// 		log.Panicln("Rekord", txn.ID)
+	// 		blacklist = true
+	// 		break
+	// 	}
+	// }
 
 	if !blacklist {
 		_, err := lib.IndexTxn(txn.Tx, &txn.Ctx.Hash, txn.Height, txn.Idx, false)
@@ -103,12 +104,13 @@ func processTxn(txn *TxnStatus) {
 		}
 		M.Unlock()
 		for _, orphan := range orphans {
+			// fmt.Println("Orphan", orphan.ID)
 			InQueue++
 			Wg.Add(1)
 			TxnQueue <- orphan
 		}
 		InQueue--
+		// log.Printf("Indexed: %d %d %s %d %d %v\n", *txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 		Wg.Done()
 	}
-	// fmt.Printf("Indexed: %d %d %s %d %d %v\n", txn.Height, txn.Idx, txn.ID, len(TxnQueue), len(Txns), InQueue)
 }

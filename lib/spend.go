@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Spend struct {
@@ -27,7 +31,9 @@ type Spend struct {
 func (s *Spend) SetSpent() (exists bool) {
 	rows, err := Db.Query(context.Background(), `
 		UPDATE txos
-		SET spend=$3, vin=$4, spend_height=$5, spend_idx=$6
+		SET spend=$3, vin=$4, 
+			spend_height=CASE WHEN $5 > 0 THEN $5 ELSE spend_height END, 
+			spend_idx=CASE WHEN $5 > 0 THEN $6 ELSE spend_height END
 		WHERE txid=$1 AND vout=$2
 		RETURNING COALESCE(pkhash, '\x'), satoshis, data, origin`,
 		s.Txid,
@@ -61,38 +67,37 @@ func (s *Spend) SetSpent() (exists bool) {
 }
 
 func (s *Spend) Save() {
-	// result, err := Db.Exec(context.Background(), `
-	// 	UPDATE txos
-	// 	SET spend=$2, vin=$3, spend_heigh=$4, spend_idx=$5
-	// 	WHERE outpoint=$1`,
-	// 	s.Outpoint,
-	// 	s.Spend,
-	// 	s.Vin,
-	// 	s.Height,
-	// 	s.Idx,
-	// )
-	// if err != nil {
-	// 	log.Panicf("%s %x: %v\n", s.Outpoint.String(), s.Txid, err)
-	// }
-
-	// if result.RowsAffected() > 0 {
-	// 	return
-	// }
-
-	if _, err := Db.Exec(context.Background(), `
+	var err error
+	for i := 0; i < 3; i++ {
+		_, err := Db.Exec(context.Background(), `
 		INSERT INTO txos(txid, vout, outpoint, satoshis, outacc, spend, vin, spend_height, spend_idx)
 		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(outpoint) DO NOTHING`,
-		s.Txid,
-		s.Vout,
-		s.Outpoint,
-		s.Satoshis,
-		s.OutAcc,
-		s.Spend,
-		s.Vin,
-		s.Height,
-		s.Idx,
-	); err != nil {
-		log.Panicf("%s %x: %v\n", s.Outpoint.String(), s.Txid, err)
+			s.Txid,
+			s.Vout,
+			s.Outpoint,
+			s.Satoshis,
+			s.OutAcc,
+			s.Spend,
+			s.Vin,
+			s.Height,
+			s.Idx,
+		)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				log.Println(pgErr.Code, pgErr.Message)
+				if pgErr.Code == "23505" {
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying Insert %x %d\n", s.Txid, s.Vout)
+					continue
+				}
+			}
+			log.Panicln("insTxo Err:", err)
+		}
+		break
+	}
+	if err != nil {
+		log.Panicln("insTxo Err:", err)
 	}
 }
