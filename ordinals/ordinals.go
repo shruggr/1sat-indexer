@@ -15,6 +15,8 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
+var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
+
 type Inscription struct {
 	Json  json.RawMessage `json:"json,omitempty"`
 	Text  string          `json:"text,omitempty"`
@@ -176,7 +178,7 @@ func ParseScript(txo *lib.Txo) {
 						insType = "json"
 						ins.Json = data
 						bsv20, _ = ParseBsv20(ins.File, txo.Height)
-					} else if lib.AsciiRegexp.Match(ins.File.Content) {
+					} else if AsciiRegexp.Match(ins.File.Content) {
 						if insType == "file" {
 							insType = "text"
 						}
@@ -184,6 +186,7 @@ func ParseScript(txo *lib.Txo) {
 						re := regexp.MustCompile(`\W`)
 						words := map[string]struct{}{}
 						for _, word := range re.Split(ins.Text, -1) {
+							word = strings.ToLower(word)
 							if len(word) > 1 {
 								words[word] = struct{}{}
 							}
