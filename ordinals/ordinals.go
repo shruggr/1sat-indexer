@@ -233,7 +233,7 @@ func addBitcom(txo *lib.Txo, bitcom interface{}) {
 		}
 		sigmas = append(sigmas, bc)
 		txo.AddData("sigma", sigmas)
-	case *lib.Map:
+	case lib.Map:
 		txo.AddData("map", bc)
 	case *lib.File:
 		txo.AddData("b", bc)

@@ -11,14 +11,14 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/opns"
+	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var rdb *redis.Client
 
-var dryRun = false
+var dryRun = true
 
-var hexId = "2a7613a5c5fc212d23c3cdcbd9a5941c7d3bc6f1bf87eedac7200e314bf78ca9"
+var hexId = "b2a088b799a63265d72e2b5e3a6fb771ca3e8d743d24cb5c52bf6944698880ba"
 
 func main() {
 	godotenv.Load("../.env")
@@ -29,6 +29,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	defer db.Close()
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -41,12 +42,17 @@ func main() {
 		log.Panic(err)
 	}
 
+	err = ordinals.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
+
 	rawtx, err := lib.LoadRawtx(hexId)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	txnCtx := opns.IndexTxn(rawtx, "", 0, 0, dryRun)
+	txnCtx := ordinals.IndexTxn(rawtx, "", 0, 0, dryRun)
 
 	out, err := json.MarshalIndent(txnCtx, "", "  ")
 

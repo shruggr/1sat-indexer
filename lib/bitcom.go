@@ -33,7 +33,7 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 		if string(op.Data) != "SET" {
 			return nil, nil
 		}
-		Map := map[string]interface{}{}
+		mp := Map{}
 		for {
 			prevIdx := *idx
 			op, err = ReadOp(script, idx)
@@ -64,16 +64,16 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 				op.Data = []byte{}
 			}
 
-			Map[string(opKey)] = string(op.Data)
+			mp[string(opKey)] = string(op.Data)
 
 		}
-		if val, ok := Map["subTypeData"]; ok {
+		if val, ok := mp["subTypeData"]; ok {
 			var subTypeData json.RawMessage
 			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
-				Map["subTypeData"] = subTypeData
+				mp["subTypeData"] = subTypeData
 			}
 		}
-		value = Map
+		value = mp
 
 	case B:
 		b := &File{}
@@ -151,5 +151,5 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 	default:
 		*idx--
 	}
-	return
+	return value, nil
 }
