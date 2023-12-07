@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"log"
 
 	"github.com/libsv/go-bt/v2"
@@ -71,12 +72,11 @@ func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		accSatsIn += spend.Satoshis
 		if Rdb != nil {
 			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-			msg := outpoint.String()
 			if len(spend.PKHash) > 0 {
-				Rdb.Publish(context.Background(), hex.EncodeToString(spend.PKHash), msg)
+				Rdb.Publish(context.Background(), fmt.Sprintf("s:%x", spend.PKHash), outpoint.String())
 			}
 			if spend.Data != nil && spend.Data.Listing != nil {
-				Rdb.Publish(context.Background(), "unlist", msg)
+				Rdb.Publish(context.Background(), "unlist", outpoint.String())
 			}
 		}
 	}
@@ -168,7 +168,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 
 		for _, txo := range ctx.Txos {
 			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+				Rdb.Publish(context.Background(), fmt.Sprintf("t:%x", txo.PKHash), txo.Outpoint.String())
 			}
 			// Implied BSV20 transfer
 			if len(ctx.Bsv20s) == 0 && txo.ImpliedBsv20 {

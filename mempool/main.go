@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
@@ -79,7 +81,7 @@ func main() {
 	}
 
 	go processQueue()
-	// subscribe()
+	subscribe()
 	go func() {
 		sub := redis.NewClient(&redis.Options{
 			Addr:     "localhost:6379",
@@ -92,46 +94,47 @@ func main() {
 			if len(txid) != 64 {
 				continue
 			}
-			for i := 0; i < 4; i++ {
-				tx, err := lib.LoadTx(txid)
-				if err == nil {
-					msgQueue <- &Msg{
-						Id:          txid,
-						Transaction: tx.Bytes(),
+			go func(txid string) {
+				for i := 0; i < 4; i++ {
+					tx, err := lib.LoadTx(txid)
+					if err == nil {
+						msgQueue <- &Msg{
+							Id:          txid,
+							Transaction: tx.Bytes(),
+						}
+						log.Printf("[INJEST]: %s\n", txid)
+						break
 					}
-					log.Printf("Indexing %s\n", txid)
-					break
+					log.Printf("[RETRY] %d: %s\n", i, txid)
+					switch i {
+					case 0:
+						time.Sleep(2 * time.Second)
+					case 1:
+						time.Sleep(10 * time.Second)
+					default:
+						time.Sleep(30 * time.Second)
+					}
 				}
-				log.Printf("Retry %d: %s\n", i, txid)
-				switch i {
-				case 0:
-					time.Sleep(2 * time.Second)
-				case 1:
-					time.Sleep(10 * time.Second)
-				default:
-					time.Sleep(30 * time.Second)
-				}
-			}
-
+			}(txid)
 		}
 	}()
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		sub.Unsubscribe()
-	// 		fmt.Println("Recovered in f", r)
-	// 		fmt.Println("Unsubscribing and exiting...")
-	// 	}
-	// }()
+	defer func() {
+		if r := recover(); r != nil {
+			sub.Unsubscribe()
+			fmt.Println("Recovered in f", r)
+			fmt.Println("Unsubscribing and exiting...")
+		}
+	}()
 
-	// sigs := make(chan os.Signal, 1)
-	// signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	// go func() {
-	// 	<-sigs
-	// 	fmt.Printf("Caught signal")
-	// 	fmt.Println("Unsubscribing and exiting...")
-	// 	sub.Unsubscribe()
-	// 	os.Exit(0)
-	// }()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		fmt.Printf("Caught signal")
+		fmt.Println("Unsubscribing and exiting...")
+		sub.Unsubscribe()
+		os.Exit(0)
+	}()
 
 	<-make(chan struct{})
 }
@@ -147,7 +150,7 @@ func subscribe() {
 				if len(txResp.Transaction) == 0 {
 					log.Printf("Empty Transaction: %v\n", txResp.Id)
 				}
-				// log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
 				msgQueue <- &Msg{
 					Id:          txResp.Id,
 					Transaction: txResp.Transaction,
@@ -185,13 +188,7 @@ func processQueue() {
 
 		var tx *bt.Tx
 		if len(msg.Transaction) == 0 {
-			tx, err = lib.LoadTx(msg.Id)
-			if err != nil {
-				log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-				continue
-			}
-			// msg.Transaction = txData.Transaction
-			// continue
+			continue
 		} else {
 			tx, err = bt.NewTxFromBytes(msg.Transaction)
 			if err != nil {

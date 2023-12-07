@@ -391,12 +391,12 @@ func ParseScript(txo *Txo) {
 
 					words := map[string]struct{}{}
 					for _, word := range re.Split(ins.Text, -1) {
-						if len(word) > 1 {
+						if len(word) > 0 {
 							words[word] = struct{}{}
 						}
 					}
 
-					if len(words) > 1 {
+					if len(words) > 0 {
 						ins.Words = make([]string, 0, len(words))
 						for word := range words {
 							ins.Words = append(ins.Words, word)

@@ -32,7 +32,8 @@ type Bsv20 struct {
 	Symbol   *string     `json:"sym,omitempty"`
 	Max      uint64      `json:"-"`
 	Limit    uint64      `json:"-"`
-	Decimals uint8       `json:"-"`
+	Decimals uint8       `json:"dec,omitempty"`
+	Icon     *string     `json:"icon,omitempty"`
 	Supply   uint64      `json:"-"`
 	Amt      *uint64     `json:"amt"`
 	Implied  bool        `json:"implied,omitempty"`
@@ -121,6 +122,9 @@ func parseBsv20(ord *File, height *uint32) (bsv20 *Bsv20, err error) {
 		}
 		bsv20.Ticker = nil
 		bsv20.Status = Valid
+		if icon, ok := data["icon"]; ok {
+			bsv20.Icon = &icon
+		}
 	case "mint":
 		if bsv20.Ticker == nil || bsv20.Amt == nil {
 			return nil, nil
