@@ -63,7 +63,7 @@ func main() {
 			wg.Add(2)
 			log.Printf("[ORD]: Block %d completions\n", height)
 			go func(height uint32) {
-				err := ordinals.SetOriginNum(height)
+				err := ordinals.SetInscriptionNum(height)
 				if err != nil {
 					log.Panicln("Error processing inscription ids:", err)
 				}

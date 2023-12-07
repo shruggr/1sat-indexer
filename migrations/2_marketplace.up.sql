@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS listings(
     ) STORED,
     PRIMARY KEY (txid, vout),
     FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE,
-    FOREIGN KEY (origin, num) REFERENCES origins(origin, num) ON UPDATE CASCADE
+    FOREIGN KEY (origin, num) REFERENCES inscriptions(outpoint, num) ON UPDATE CASCADE
 );
 
 CREATE INDEX idx_listings_bsv20_price_unspent ON listings(bsv20, price)

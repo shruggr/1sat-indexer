@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
+	"github.com/libsv/go-bt/v2"
 )
 
 type Outpoint []byte
@@ -27,6 +29,18 @@ func NewOutpointFromString(s string) (o *Outpoint, err error) {
 		return
 	}
 	origin := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	o = &origin
+	return
+}
+
+func NewOutpointFromTxOutpoint(p []byte) (o *Outpoint, err error) {
+	if len(p) != 36 {
+		return nil, errors.New("invalid pointer")
+	}
+	b := make([]byte, 36)
+	b = append(b, bt.ReverseBytes(p[:32])...)
+	b = append(b, bt.ReverseBytes(p[32:])...)
+	origin := Outpoint(b)
 	o = &origin
 	return
 }

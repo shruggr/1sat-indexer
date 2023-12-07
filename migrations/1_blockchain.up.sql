@@ -37,7 +37,10 @@ CREATE INDEX idx_txns_created_unmined ON txns(created)
 CREATE TABLE txos(
     outpoint BYTEA PRIMARY KEY,
     txid BYTEA GENERATED ALWAYS AS (substring(outpoint from 1 for 32)) STORED,
-    vout INTEGER,
+    vout INTEGER GENERATED ALWAYS AS ((get_byte(outpoint, 32) << 24) |
+       (get_byte(outpoint, 33) << 16) |
+	   (get_byte(outpoint, 34) << 8) |
+       (get_byte(outpoint, 35))) STORED,
     height INTEGER,
     idx BIGINT,
     satoshis BIGINT,
@@ -104,13 +107,18 @@ CREATE INDEX idx_txos_bsv20_xfer_height_idx ON txos(bsv20_xfer, height, idx)
 CREATE INDEX idx_txos_type_height_idx ON txos(type, height NULLS LAST, idx)
     WHERE type IS NOT NULL;
 
-CREATE TABLE origins(
-    origin BYTEA PRIMARY KEY,
-    num BIGINT DEFAULT -1,
+CREATE TABLE inscriptions(
+    outpoint BYTEA PRIMARY KEY,
     height INTEGER,
     idx BIGINT,
+    num BIGINT DEFAULT -1
+);
+CREATE UNIQUE INDEX idx_inscriptions_outpoint_num ON inscriptions(outpoint, num);
+CREATE INDEX idx_origins_height_idx_vout ON inscriptions(height, idx)
+	WHERE height IS NOT NULL AND num = -1;
+    
+CREATE TABLE origins(
+    origin BYTEA PRIMARY KEY,
     map JSONB
 );
-CREATE UNIQUE INDEX idx_origins_origin_num ON origins(origin, num);
-CREATE INDEX idx_origins_height_idx_vout ON origins(height, idx, origin)
-	WHERE height IS NOT NULL AND num = -1;
+

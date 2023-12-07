@@ -1,0 +1,12 @@
+-- DROP TABLE IF EXISTS listings;
+-- DROP TABLE IF EXISTS inscriptions;
+-- DROP TABLE IF EXISTS bsv20;
+-- DROP TABLE IF EXISTS bsv20_mints;
+-- DROP TABLE IF EXISTS blocks;
+-- DROP TABLE IF EXISTS origins;
+-- DROP TABLE IF EXISTS schema_migrations;
+-- DROP TABLE IF EXISTS txns;
+-- DROP TABLE IF EXISTS txos;
+-- DROP TABLE IF EXISTS progress;
+-- DROP TABLE IF EXISTS addresses;
+-- DROP TABLE IF EXISTS txn_indexer;

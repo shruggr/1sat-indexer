@@ -102,9 +102,10 @@ func SaveMap(origin *lib.Outpoint) {
 	}
 
 	_, err = Db.Exec(context.Background(), `
-		UPDATE origins
-		SET map=$2
-		WHERE origin=$1`,
+		INSERT INTO origins(origin, map)
+		VALUES($1, $2)
+		ON CONFLICT(origin) DO UPDATE SET
+			map=EXCLUDED.map`,
 		origin,
 		m,
 	)
@@ -155,6 +156,60 @@ func SetOriginNum(height uint32) (err error) {
 			SET num=$2
 			WHERE origin=$1`,
 			origin, num,
+		)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		num++
+	}
+	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
+	// log.Println("Height", height, "Max Origin Num", num)
+	return
+}
+
+func SetInscriptionNum(height uint32) (err error) {
+
+	row := Db.QueryRow(context.Background(),
+		"SELECT MAX(num) FROM inscriptions",
+	)
+	var dbNum sql.NullInt64
+	err = row.Scan(&dbNum)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+	var num uint64
+	if dbNum.Valid {
+		num = uint64(dbNum.Int64 + 1)
+	}
+
+	rows, err := Db.Query(context.Background(), `
+		SELECT outpoint
+		FROM inscriptions
+		WHERE num = -1 AND height <= $1 AND height IS NOT NULL
+		ORDER BY height, idx
+		LIMIT 100000`,
+		height,
+	)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		outpoint := &lib.Outpoint{}
+		err = rows.Scan(&outpoint)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+		fmt.Printf("Inscription Num %d %d %s\n", num, height, outpoint)
+		_, err = Db.Exec(context.Background(), `
+			UPDATE inscriptions
+			SET num=$2
+			WHERE outpoint=$1`,
+			outpoint, num,
 		)
 		if err != nil {
 			log.Panic(err)

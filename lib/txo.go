@@ -65,8 +65,8 @@ func (t *Txo) Save() {
 	var err error
 	for i := 0; i < 3; i++ {
 		_, err = Db.Exec(context.Background(), `
-			INSERT INTO txos(outpoint, vout, satoshis, outacc, pkhash, origin, height, idx, data)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			INSERT INTO txos(outpoint, satoshis, outacc, pkhash, origin, height, idx, data)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT(outpoint) DO UPDATE SET
 				satoshis=EXCLUDED.satoshis,
 				outacc=EXCLUDED.outacc,
@@ -79,7 +79,6 @@ func (t *Txo) Save() {
 					ELSE CASE WHEN EXCLUDED.data IS NULL THEN txos.data ELSE txos.data || EXCLUDED.data END
 				END`,
 			t.Outpoint,
-			t.Outpoint.Vout(),
 			t.Satoshis,
 			t.OutAcc,
 			t.PKHash,
@@ -111,15 +110,14 @@ func (t *Txo) SaveSpend() {
 	var err error
 	for i := 0; i < 3; i++ {
 		_, err := Db.Exec(context.Background(), `
-			INSERT INTO txos(outpoint, vout, spend, vin, spend_height, spend_idx)
-			VALUES($1, $2, $3, $4, $5, $6)
+			INSERT INTO txos(outpoint, spend, vin, spend_height, spend_idx)
+			VALUES($1, $2, $3, $4, $5)
 			ON CONFLICT(outpoint) DO UPDATE SET
 				spend=EXCLUDED.spend,
 				vin=EXCLUDED.vin, 
 				spend_height=CASE WHEN EXCLUDED.spend_height IS NULL THEN txos.spend_height ELSE EXCLUDED.spend_height END, 
 				spend_idx=CASE WHEN EXCLUDED.spend_height IS NULL THEN txos.spend_idx ELSE EXCLUDED.spend_idx END`,
 			t.Outpoint,
-			t.Outpoint.Vout(),
 			t.Spend,
 			t.Vin,
 			t.SpendHeight,
@@ -147,12 +145,11 @@ func (t *Txo) SetOrigin(origin *Outpoint) {
 	var err error
 	for i := 0; i < 3; i++ {
 		_, err = Db.Exec(context.Background(), `
-			INSERT INTO txos(outpoint, vout, origin, satoshis, outacc)
-			VALUES($1, $2, $3, $4, $5)
+			INSERT INTO txos(outpoint, origin, satoshis, outacc)
+			VALUES($1, $2, $3, $4)
 			ON CONFLICT(outpoint) DO UPDATE SET
 				origin=EXCLUDED.origin`,
 			t.Outpoint,
-			t.Outpoint.Vout(),
 			origin,
 			t.Satoshis,
 			t.OutAcc,

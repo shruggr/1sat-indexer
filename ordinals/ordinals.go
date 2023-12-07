@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/fxamacker/cbor"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/bscript"
 	"github.com/redis/go-redis/v9"
@@ -16,14 +18,6 @@ import (
 )
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
-
-type Inscription struct {
-	Json  json.RawMessage `json:"json,omitempty"`
-	Text  string          `json:"text,omitempty"`
-	Words []string        `json:"words,omitempty"`
-	File  *lib.File       `json:"file,omitempty"`
-}
-
 var Db *pgxpool.Pool
 var Rdb *redis.Client
 
@@ -54,21 +48,17 @@ func IndexInscriptions(ctx *lib.IndexContext) {
 			txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
 		}
 		txo.Save()
+		if insc, ok := txo.Data["insc"].(*Inscription); ok && ctx.Height != nil {
+			insc.Outpoint = txo.Outpoint
+			insc.Height = ctx.Height
+			insc.Idx = ctx.Idx
+			insc.Save()
+		}
 		if txo.Origin == nil || txo.Data == nil {
 			continue
 		}
 
-		if _, ok := txo.Data["insc"]; ok && bytes.Equal(*txo.Origin, *txo.Outpoint) {
-			origin := &Origin{
-				Origin: txo.Outpoint,
-				Height: ctx.Height,
-				Idx:    ctx.Idx,
-			}
-			if Map, ok := txo.Data["map"].(lib.Map); ok {
-				origin.Map = Map
-			}
-			origin.Save()
-		} else if txo.Data["map"] != nil {
+		if txo.Data["map"] != nil {
 			SaveMap(txo.Origin)
 		}
 		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
@@ -94,8 +84,6 @@ func ParseScript(txo *lib.Txo) {
 		start = 25
 	}
 
-	var opFalse int
-	var opIf int
 	var opReturn int
 	for i := start; i < len(script); {
 		startI := i
@@ -104,10 +92,6 @@ func ParseScript(txo *lib.Txo) {
 			break
 		}
 		switch op.OpCode {
-		case bscript.Op0:
-			opFalse = startI
-		case bscript.OpIF:
-			opIf = startI
 		case bscript.OpRETURN:
 			if opReturn == 0 {
 				opReturn = startI
@@ -126,97 +110,129 @@ func ParseScript(txo *lib.Txo) {
 				}
 				addBitcom(txo, bitcom)
 			}
+		case bscript.OpDATA3:
+			if i > 2 && bytes.Equal(op.Data, []byte("ord")) && script[startI-2] == 0 && script[startI-1] == bscript.OpIF {
+				ParseInscription(txo, script, &i)
+			}
+		}
+	}
+}
+
+func ParseInscription(txo *lib.Txo, script []byte, fromPos *int) {
+	pos := *fromPos
+	ins := &Inscription{
+		File: &lib.File{},
+	}
+
+ordLoop:
+	for {
+		op, err := lib.ReadOp(script, &pos)
+		if err != nil || op.OpCode > bscript.Op16 {
+			return
 		}
 
-		if bytes.Equal(op.Data, []byte("ord")) && opIf == startI-1 && opFalse == startI-2 {
-			ins := &Inscription{
-				File: &lib.File{},
-			}
-		ordLoop:
-			for {
-				op, err = lib.ReadOp(script, &i)
-				if err != nil {
-					break
-				}
-				switch op.OpCode {
-				case bscript.Op0:
-					op, err = lib.ReadOp(script, &i)
-					if err != nil {
-						break ordLoop
-					}
-					ins.File.Content = op.Data
-				case bscript.Op1:
-					op, err = lib.ReadOp(script, &i)
-					if err != nil {
-						break ordLoop
-					}
-					if utf8.Valid(op.Data) {
-						if len(op.Data) <= 256 {
-							ins.File.Type = string(op.Data)
-						} else {
-							ins.File.Type = string(op.Data[:256])
-						}
-					}
-				case bscript.OpENDIF:
-					break ordLoop
-				}
-			}
+		op2, err := lib.ReadOp(script, &pos)
+		if err != nil || op2.OpCode > bscript.Op16 {
+			return
+		}
 
-			ins.File.Size = uint32(len(ins.File.Content))
-			hash := sha256.Sum256(ins.File.Content)
-			ins.File.Hash = hash[:]
-			insType := "file"
-			var bsv20 *Bsv20
-			if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
-				mime := strings.ToLower(ins.File.Type)
-				if strings.HasPrefix(mime, "application") ||
-					strings.HasPrefix(mime, "text") {
+		var field int
+		if op.OpCode > bscript.OpPUSHDATA4 && op.OpCode <= bscript.Op16 {
+			field = int(op.OpCode) - 80
+		} else if len(op.Data) > 1 {
+			continue
+		} else if op.OpCode != bscript.Op0 {
+			field = int(op.Data[0])
+		}
 
-					var data json.RawMessage
-					err = json.Unmarshal(ins.File.Content, &data)
-					if err == nil {
-						insType = "json"
-						ins.Json = data
-						bsv20, _ = ParseBsv20(ins.File, txo.Height)
-					} else if AsciiRegexp.Match(ins.File.Content) {
-						if insType == "file" {
-							insType = "text"
-						}
-						ins.Text = string(ins.File.Content)
-						re := regexp.MustCompile(`\W`)
-						words := map[string]struct{}{}
-						for _, word := range re.Split(ins.Text, -1) {
-							word = strings.ToLower(word)
-							if len(word) > 1 {
-								words[word] = struct{}{}
-							}
-						}
-						if len(words) > 0 {
-							ins.Words = make([]string, 0, len(words))
-							for word := range words {
-								ins.Words = append(ins.Words, word)
-							}
-						}
+		switch field {
+		case 0:
+			op, err := lib.ReadOp(script, &pos)
+			ins.File.Content = op2.Data
+			if err != nil || op.OpCode != bscript.OpENDIF {
+				return
+			}
+			break ordLoop
+		case 1:
+			ins.File.Type = string(op2.Data)
+		case 2:
+			ins.File.Type = string(op2.Data)
+		case 3:
+			pointer := binary.LittleEndian.Uint64(op2.Data)
+			ins.Pointer = &pointer
+		case 5:
+			md := &lib.Map{}
+			if err := cbor.Unmarshal(op2.Data, md); err == nil {
+				ins.Metadata = *md
+			}
+		case 7:
+			ins.Metaproto = op2.Data
+		case 9:
+			ins.File.Encoding = string(op2.Data)
+		}
+	}
+	*fromPos = pos
+
+	ins.File.Size = uint32(len(ins.File.Content))
+	hash := sha256.Sum256(ins.File.Content)
+	ins.File.Hash = hash[:]
+	insType := "file"
+	var bsv20 *Bsv20
+	if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
+		mime := strings.ToLower(ins.File.Type)
+		if strings.HasPrefix(mime, "application") ||
+			strings.HasPrefix(mime, "text") {
+
+			var data json.RawMessage
+			err := json.Unmarshal(ins.File.Content, &data)
+			if err == nil {
+				insType = "json"
+				ins.Json = data
+				bsv20, _ = ParseBsv20(ins.File, txo.Height)
+			} else if AsciiRegexp.Match(ins.File.Content) {
+				if insType == "file" {
+					insType = "text"
+				}
+				ins.Text = string(ins.File.Content)
+				re := regexp.MustCompile(`\W`)
+				words := map[string]struct{}{}
+				for _, word := range re.Split(ins.Text, -1) {
+					word = strings.ToLower(word)
+					if len(word) > 1 {
+						words[word] = struct{}{}
+					}
+				}
+				if len(words) > 0 {
+					ins.Words = make([]string, 0, len(words))
+					for word := range words {
+						ins.Words = append(ins.Words, word)
 					}
 				}
 			}
-			if txo.Data == nil {
-				txo.Data = map[string]interface{}{}
-			}
-			txo.Data["insc"] = ins
-			var types []string
-			if prev, ok := txo.Data["types"].([]string); ok {
-				types = prev
-			}
-			types = append(types, insType)
-			txo.Data["types"] = types
-			if bsv20 != nil {
-				txo.Data["bsv20"] = bsv20
-			}
+		}
+	}
+	if txo.Data == nil {
+		txo.Data = map[string]interface{}{}
+	}
+	txo.Data["insc"] = ins
+	var types []string
+	if prev, ok := txo.Data["types"].([]string); ok {
+		types = prev
+	}
+	types = append(types, insType)
+	txo.Data["types"] = types
+	if bsv20 != nil {
+		txo.Data["bsv20"] = bsv20
+	}
 
-			if len(txo.PKHash) == 0 && len(script) >= i+25 && bscript.NewFromBytes(script[i:i+25]).IsP2PKH() {
-				txo.PKHash = []byte(script[i+3 : i+23])
-			}
+	if len(txo.PKHash) == 0 {
+		if len(script) >= pos+25 && bscript.NewFromBytes(script[pos:pos+25]).IsP2PKH() {
+			txo.PKHash = []byte(script[pos+3 : pos+23])
+		} else if len(script) >= pos+26 &&
+			script[pos] == bscript.OpCODESEPARATOR &&
+			bscript.NewFromBytes(script[pos+1:pos+26]).IsP2PKH() {
+
+			txo.PKHash = []byte(script[pos+4 : pos+24])
 		}
 	}
 }

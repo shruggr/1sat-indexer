@@ -59,7 +59,7 @@ func (l *Listing) Save(t *lib.Txo) {
 			CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END
 		FROM txos t
 		JOIN txos o ON o.outpoint = t.origin
-		JOIN origins n ON n.origin = t.origin
+		JOIN inscriptions n ON n.outpoint = t.origin
 		WHERE t.txid=$1 AND t.vout=$2
 		ON CONFLICT(txid, vout) DO UPDATE SET 
 			height=EXCLUDED.height,
