@@ -11,14 +11,14 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/opns"
+	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var rdb *redis.Client
 
-var dryRun = false
+var dryRun = true
 
-var hexId = "2a7613a5c5fc212d23c3cdcbd9a5941c7d3bc6f1bf87eedac7200e314bf78ca9"
+var hexId = "d578a8c71970c0643654b545516a717d1bafe9c6fc2957813c10688596eac5e6"
 
 func main() {
 	godotenv.Load("../.env")
@@ -36,7 +36,7 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb)
+	err = ordinals.Initialize(db, rdb)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -46,7 +46,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	txnCtx := opns.IndexTxn(rawtx, "", 0, 0, dryRun)
+	txnCtx := ordinals.IndexTxn(rawtx, "", 0, 0, dryRun)
 
 	out, err := json.MarshalIndent(txnCtx, "", "  ")
 

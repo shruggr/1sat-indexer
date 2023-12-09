@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"regexp"
 	"strings"
@@ -50,6 +51,9 @@ func IndexInscriptions(ctx *lib.IndexContext) {
 			continue
 		}
 		ParseScript(txo)
+		if len(txo.PKHash) != 0 && Rdb != nil {
+			Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+		}
 		if txo.Satoshis == 1 {
 			txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
 		}

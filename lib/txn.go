@@ -84,9 +84,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		}
 
 		for _, txo := range ctx.Txos {
-			// if Rdb != nil {
-			// 	Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-			// }
+			if Rdb != nil {
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+			}
 			txo.Save()
 		}
 	}
