@@ -21,7 +21,7 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const INDEXER = "1sat"
+const INDEXER = "node"
 
 var THREADS uint64 = 64
 
@@ -227,7 +227,6 @@ func processQueue() {
 		case 200:
 			indexer.Wg.Wait()
 			rdb.Publish(context.Background(), "indexed", fmt.Sprintf("%d", msg.Height))
-
 			if _, err := db.Exec(context.Background(),
 				`UPDATE progress
 					SET height=$2

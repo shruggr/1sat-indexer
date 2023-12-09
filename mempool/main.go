@@ -93,27 +93,35 @@ func main() {
 			if len(txid) != 64 {
 				continue
 			}
-			for i := 0; i < 4; i++ {
-				tx, err := lib.LoadTx(txid)
-				if err == nil {
-					msgQueue <- &Msg{
-						Id:          txid,
-						Transaction: tx.Bytes(),
+			go func(txid string) {
+				for i := 0; i < 4; i++ {
+					tx, err := lib.LoadTx(txid)
+					if err == nil {
+						msgQueue <- &Msg{
+							Id:          txid,
+							Transaction: tx.Bytes(),
+						}
+						log.Printf("[INJEST]: %s\n", txid)
+						break
 					}
-					log.Printf("Indexing %s\n", txid)
-					break
+					log.Printf("[RETRY] %d: %s\n", i, txid)
+					switch i {
+					case 0:
+						time.Sleep(2 * time.Second)
+					case 1:
+						time.Sleep(10 * time.Second)
+					default:
+						time.Sleep(30 * time.Second)
+					}
 				}
-				log.Printf("Retry %d: %s\n", i, txid)
-				switch i {
-				case 0:
-					time.Sleep(2 * time.Second)
-				case 1:
-					time.Sleep(10 * time.Second)
-				default:
-					time.Sleep(30 * time.Second)
-				}
-			}
-
+			}(txid)
+		}
+	}()
+	defer func() {
+		if r := recover(); r != nil {
+			sub.Unsubscribe()
+			fmt.Println("Recovered in f", r)
+			fmt.Println("Unsubscribing and exiting...")
 		}
 	}()
 	defer func() {
@@ -188,13 +196,7 @@ func processQueue() {
 
 		var tx *bt.Tx
 		if len(msg.Transaction) == 0 {
-			tx, err = lib.LoadTx(msg.Id)
-			if err != nil {
-				log.Printf("OnTransaction Fetch Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-				continue
-			}
-			// msg.Transaction = txData.Transaction
-			// continue
+			continue
 		} else {
 			tx, err = bt.NewTxFromBytes(msg.Transaction)
 			if err != nil {

@@ -24,7 +24,7 @@ import (
 const INDEXER = "node"
 const TMP = "/tmp"
 
-var THREADS uint64 = 32
+var THREADS uint64 = 64
 
 var db *pgxpool.Pool
 var bit *bitcoin.Bitcoind

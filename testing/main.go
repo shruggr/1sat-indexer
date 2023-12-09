@@ -29,12 +29,18 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	defer db.Close()
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+
+	err = ordinals.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
 
 	err = ordinals.Initialize(db, rdb)
 	if err != nil {
