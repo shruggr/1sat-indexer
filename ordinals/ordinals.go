@@ -197,8 +197,8 @@ ordLoop:
 				re := regexp.MustCompile(`\W`)
 				words := map[string]struct{}{}
 				for _, word := range re.Split(ins.Text, -1) {
-					word = strings.ToLower(word)
-					if len(word) > 1 {
+					if len(word) > 0 {
+						word = strings.ToLower(word)
 						words[word] = struct{}{}
 					}
 				}
