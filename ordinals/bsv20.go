@@ -23,23 +23,23 @@ const (
 )
 
 type Bsv20 struct {
-	Txid     []byte      `json:"-"`
-	Vout     uint32      `json:"-"`
-	Height   *uint32     `json:"-"`
-	Idx      uint64      `json:"-"`
-	Ticker   *string     `json:"tick,omitempty"`
-	Id       *Outpoint   `json:"id,omitempty"`
-	Op       string      `json:"op"`
-	Symbol   *string     `json:"sym,omitempty"`
-	Max      uint64      `json:"-"`
-	Limit    uint64      `json:"-"`
-	Decimals uint8       `json:"dec,omitempty"`
-	Icon     *string     `json:"icon,omitempty"`
-	Supply   uint64      `json:"-"`
-	Amt      *uint64     `json:"amt"`
-	Implied  bool        `json:"implied,omitempty"`
-	Status   Bsv20Status `json:"status"`
-	Reason   *string     `json:"reason,omitempty"`
+	Txid     []byte        `json:"-"`
+	Vout     uint32        `json:"-"`
+	Height   *uint32       `json:"-"`
+	Idx      uint64        `json:"-"`
+	Ticker   *string       `json:"tick,omitempty"`
+	Id       *lib.Outpoint `json:"id,omitempty"`
+	Op       string        `json:"op"`
+	Symbol   *string       `json:"sym,omitempty"`
+	Max      uint64        `json:"-"`
+	Limit    uint64        `json:"-"`
+	Decimals uint8         `json:"dec,omitempty"`
+	Icon     *string       `json:"icon,omitempty"`
+	Supply   uint64        `json:"-"`
+	Amt      *uint64       `json:"amt"`
+	Implied  bool          `json:"implied,omitempty"`
+	Status   Bsv20Status   `json:"status"`
+	Reason   *string       `json:"reason,omitempty"`
 }
 
 func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {

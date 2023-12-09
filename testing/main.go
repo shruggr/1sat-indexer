@@ -18,7 +18,7 @@ var rdb *redis.Client
 
 var dryRun = true
 
-var hexId = "d578a8c71970c0643654b545516a717d1bafe9c6fc2957813c10688596eac5e6"
+var hexId = "1bff350b55a113f7da23eaba1dc40a7c5b486d3e1017cda79dbe6bd42e001c81"
 
 func main() {
 	godotenv.Load("../.env")

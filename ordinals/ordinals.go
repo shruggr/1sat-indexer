@@ -151,19 +151,20 @@ ordLoop:
 
 		switch field {
 		case 0:
-			op, err := lib.ReadOp(script, &pos)
 			ins.File.Content = op2.Data
-			if err != nil || op.OpCode != bscript.OpENDIF {
+			if err != nil {
 				return
 			}
 			break ordLoop
 		case 1:
 			ins.File.Type = string(op2.Data)
 		case 2:
-			ins.File.Type = string(op2.Data)
-		case 3:
 			pointer := binary.LittleEndian.Uint64(op2.Data)
 			ins.Pointer = &pointer
+		case 3:
+			if parent, err := lib.NewOutpointFromTxOutpoint(op2.Data); err == nil {
+				ins.Parent = parent
+			}
 		case 5:
 			md := &lib.Map{}
 			if err := cbor.Unmarshal(op2.Data, md); err == nil {
@@ -174,6 +175,10 @@ ordLoop:
 		case 9:
 			ins.File.Encoding = string(op2.Data)
 		}
+	}
+	op, err := lib.ReadOp(script, &pos)
+	if err != nil || op.OpCode != bscript.OpENDIF {
+		return
 	}
 	*fromPos = pos
 
