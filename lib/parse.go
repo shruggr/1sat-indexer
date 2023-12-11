@@ -431,7 +431,7 @@ func ParseScript(txo *Txo) {
 			txo.PKHash = ordLockParts[0]
 			payOutput := &bt.Output{}
 			_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
-			if err == nil {
+			if err == nil && payOutput.Satoshis < 2100000000000000 {
 				d.Listing = &Listing{
 					Price:  payOutput.Satoshis,
 					PayOut: payOutput.Bytes(),

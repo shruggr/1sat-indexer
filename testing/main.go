@@ -60,7 +60,7 @@ func main() {
 	// 		log.Panicln("Error processing inscription ids:", err)
 	// 	}
 
-	hexId := "bf3fd858989669e73378a6b6b5ae9d26e3c4d3251ca45839ddd988ccbf93fc6a"
+	hexId := "1180a228db8bc3b62d42b6734612d508bfdcf14f6fb8cbad51a0612e646ffd04"
 	txid, _ := hex.DecodeString(hexId)
 
 	tx := bt.NewTx()
@@ -71,7 +71,7 @@ func main() {
 	if _, err = tx.ReadFrom(r); err != nil {
 		log.Panicf("%x: %v\n", txid, err)
 	}
-	result, err := lib.IndexTxn(tx, nil, nil, 0, true)
+	result, err := lib.IndexTxn(tx, nil, nil, 0, false)
 	if err != nil {
 		log.Panic(err)
 	}

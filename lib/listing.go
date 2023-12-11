@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"log"
 )
 
 type Listing struct {
@@ -32,6 +33,7 @@ func SaveListing(t *Txo) (err error) {
 	)
 
 	if err != nil {
+		log.Panicf("%x %v\n", t.Txid, err)
 		panic(err)
 	}
 	return
