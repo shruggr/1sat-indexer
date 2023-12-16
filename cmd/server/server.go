@@ -52,7 +52,7 @@ func init() {
 
 func main() {
 	// flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
-	flag.IntVar(&PORT, "p", 8081, "Port to listen on")
+	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 
 	app := fiber.New()
 	app.Use(recover.New())

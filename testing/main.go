@@ -12,13 +12,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
+	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var rdb *redis.Client
 
-var dryRun = true
+var dryRun = false
 
-var hexId = "1bff350b55a113f7da23eaba1dc40a7c5b486d3e1017cda79dbe6bd42e001c81"
+var hexId = "065f2b63f36d5be28701f65b70e63e934f8ef4a55524fe0fc7be7a496a087246"
 
 func main() {
 	godotenv.Load("../.env")
@@ -47,6 +48,12 @@ func main() {
 		log.Panic(err)
 	}
 
+	err = ordlock.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// ordinals.ValidateBsv20Mints(821874, "BSVS")
 	rawtx, err := lib.LoadRawtx(hexId)
 	if err != nil {
 		log.Panic(err)
@@ -54,6 +61,17 @@ func main() {
 
 	txnCtx := ordinals.IndexTxn(rawtx, "", 0, 0, dryRun)
 
+	for _, txo := range txnCtx.Txos {
+		// if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+		// 	fmt.Println(bsv20.Ticker)
+		// 	bsv20.Save(txo)
+		// }
+
+		list := ordlock.ParseScript(txo)
+		if list != nil {
+			list.Save(txo)
+		}
+	}
 	out, err := json.MarshalIndent(txnCtx, "", "  ")
 
 	if err != nil {

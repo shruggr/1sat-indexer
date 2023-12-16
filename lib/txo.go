@@ -97,7 +97,7 @@ func (t *Txo) Save() {
 					continue
 				}
 			}
-			log.Panicln("insTxo Err:", err)
+			log.Panicf("insTxo Err: %s - %v", t.Outpoint, err)
 		}
 		break
 	}

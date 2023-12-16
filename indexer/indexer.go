@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -18,17 +17,15 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-var INDEXER string
-var TOPIC string
 var VERBOSE int
 var CONCURRENCY int = 64
 var threadLimiter chan struct{}
 
-var POSTGRES string
 var Db *pgxpool.Pool
 var Rdb *redis.Client
 var junglebusClient *junglebus.Client
-var fromBlock uint
+
+// var fromBlock uint
 
 var sub *junglebus.Subscription
 
@@ -39,24 +36,6 @@ type Msg struct {
 	Status      uint32
 	Idx         uint64
 	Transaction []byte
-}
-
-// var txnQueue = make(chan *models.Transaction, 1000000)
-// var m sync.Mutex
-var wg sync.WaitGroup
-
-func init() {
-	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
-	flag.StringVar(&INDEXER, "id", "", "Indexer name")
-	flag.StringVar(&POSTGRES, "pg", "", "Postgres connection string")
-	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
-	flag.IntVar(&VERBOSE, "v", 0, "Junglebus SubscriptionID")
-	flag.UintVar(&fromBlock, "s", uint(lib.TRIGGER), "Start from block")
-
-	flag.Parse()
-
-	threadLimiter = make(chan struct{}, CONCURRENCY)
-
 }
 
 func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
@@ -70,16 +49,15 @@ func Exec(
 	indexMempool bool,
 	txHandler func(txn *lib.IndexContext) error,
 	blockHander func(height uint32) error,
+	indexer string,
+	topic string,
+	fromBlock uint,
+	concurrency int,
+	verbose int,
 ) (err error) {
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		if sub != nil {
-	// 			sub.Unsubscribe()
-	// 		}
-	// 		fmt.Println("Recovered in f", r)
-	// 		fmt.Println("Unsubscribing and exiting...")
-	// 	}
-	// }()
+	var wg sync.WaitGroup
+
+	threadLimiter = make(chan struct{}, concurrency)
 
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
@@ -94,22 +72,24 @@ func Exec(
 		log.Panicln(err.Error())
 	}
 
-	var progress uint
-	row := Db.QueryRow(context.Background(), `SELECT height
-		FROM progress
-		WHERE indexer=$1`,
-		INDEXER,
-	)
-	err = row.Scan(&progress)
-	if err != nil {
-		Db.Exec(context.Background(),
-			`INSERT INTO progress(indexer, height)
-				VALUES($1, 0)`,
-			INDEXER,
+	if indexer != "" {
+		var progress uint
+		row := Db.QueryRow(context.Background(), `SELECT height
+			FROM progress
+			WHERE indexer=$1`,
+			indexer,
 		)
-	}
-	if progress > fromBlock {
-		fromBlock = progress
+		err = row.Scan(&progress)
+		if err != nil {
+			Db.Exec(context.Background(),
+				`INSERT INTO progress(indexer, height)
+					VALUES($1, 0)`,
+				indexer,
+			)
+		}
+		if progress > fromBlock {
+			fromBlock = progress
+		}
 	}
 
 	var txCount int
@@ -141,14 +121,16 @@ func Exec(
 					settledHeight = 0
 				}
 
-				if _, err := Db.Exec(context.Background(),
-					`UPDATE progress
-					SET height=$2
-					WHERE indexer=$1 and height<$2`,
-					INDEXER,
-					settledHeight,
-				); err != nil {
-					log.Panic(err)
+				if indexer != "" {
+					if _, err := Db.Exec(context.Background(),
+						`UPDATE progress
+						SET height=$2
+						WHERE indexer=$1 and height<$2`,
+						indexer,
+						settledHeight,
+					); err != nil {
+						log.Panic(err)
+					}
 				}
 				fromBlock = uint(status.Block) + 1
 			}
@@ -223,7 +205,7 @@ func Exec(
 	log.Println("Subscribing to Junglebus from block", fromBlock)
 	sub, err = junglebusClient.Subscribe(
 		context.Background(),
-		TOPIC,
+		topic,
 		uint64(fromBlock),
 		eventHandler,
 	)

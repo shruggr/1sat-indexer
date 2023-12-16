@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -17,11 +18,23 @@ import (
 var POSTGRES string
 var db *pgxpool.Pool
 var rdb *redis.Client
+var INDEXER string
+var TOPIC string
+var FROM_BLOCK uint
+var VERBOSE int
+var CONCURRENCY int = 64
 
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+
+	flag.StringVar(&INDEXER, "id", "", "Indexer name")
+	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
+	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
+	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
+	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
+	flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
@@ -46,7 +59,12 @@ func init() {
 }
 
 func main() {
-	err := indexer.Exec(true, false, handleTx, handleBlock)
+	err := indexer.Exec(true, false, handleTx, handleBlock,
+		INDEXER,
+		TOPIC,
+		FROM_BLOCK,
+		CONCURRENCY,
+		VERBOSE)
 	if err != nil {
 		panic(err)
 	}

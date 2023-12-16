@@ -35,16 +35,19 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 	if err != nil {
 		panic(err)
 	}
-	IndexInscriptions(ctx)
+	IndexInscriptions(ctx, dryRun)
 	return
 }
 
-func IndexInscriptions(ctx *lib.IndexContext) {
+func IndexInscriptions(ctx *lib.IndexContext, dryRun bool) {
 	for _, txo := range ctx.Txos {
 		if len(txo.PKHash) != 0 {
 			continue
 		}
 		ParseScript(txo)
+		if dryRun {
+			continue
+		}
 		if len(txo.PKHash) != 0 && Rdb != nil {
 			Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
 		}
@@ -64,9 +67,6 @@ func IndexInscriptions(ctx *lib.IndexContext) {
 
 		if txo.Data["map"] != nil {
 			SaveMap(txo.Origin)
-		}
-		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
-			bsv20.Save(txo)
 		}
 	}
 
@@ -157,7 +157,9 @@ ordLoop:
 			}
 			break ordLoop
 		case 1:
-			ins.File.Type = string(op2.Data)
+			if len(op2.Data) < 256 && utf8.Valid(op2.Data) {
+				ins.File.Type = string(op2.Data)
+			}
 		case 2:
 			pointer := binary.LittleEndian.Uint64(op2.Data)
 			ins.Pointer = &pointer

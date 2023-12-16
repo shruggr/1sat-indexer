@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -20,10 +21,23 @@ var POSTGRES string
 var db *pgxpool.Pool
 var rdb *redis.Client
 
+var INDEXER string
+var TOPIC string
+var FROM_BLOCK uint
+var VERBOSE int
+var CONCURRENCY int = 64
+
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+
+	flag.StringVar(&INDEXER, "id", "", "Indexer name")
+	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
+	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
+	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
+	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
+	flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
@@ -63,25 +77,26 @@ func main() {
 			wg.Add(2)
 			log.Printf("[ORD]: Block %d completions\n", height)
 			go func(height uint32) {
-				err := ordinals.SetInscriptionNum(height)
-				if err != nil {
-					log.Panicln("Error processing inscription ids:", err)
-				}
+				// err := ordinals.SetInscriptionNum(height)
+				// if err != nil {
+				// 	log.Panicln("Error processing inscription ids:", err)
+				// }
+				// ordinals.Db.Exec(context.Background(),
+				// 	`INSERT INTO progress(indexer, height)
+				// 	VALUES ('settled', $1)
+				// 	ON CONFLICT (indexer) DO UPDATE SET height=EXCLUDED.height`,
+				// 	height,
+				// )
 				wg.Done()
 			}(settled)
 
 			go func(height uint32) {
-				ordinals.ValidateBsv20(height, indexer.CONCURRENCY)
+				// ordinals.ValidateBsv20Deploy(height - 6)
+				// ordinals.ValidateBsv20Transfers(height, 32)
 				wg.Done()
 			}(height)
 
 			wg.Wait()
-			ordinals.Db.Exec(context.Background(),
-				`INSERT INTO progress(indexer, height)
-				VALUES ('settled', $1)
-				ON CONFLICT (indexer) DO UPDATE SET height=EXCLUDED.height`,
-				settled,
-			)
 		}
 	}()
 	err := indexer.Exec(
@@ -89,6 +104,11 @@ func main() {
 		false,
 		handleTx,
 		handleBlock,
+		INDEXER,
+		TOPIC,
+		FROM_BLOCK,
+		CONCURRENCY,
+		VERBOSE,
 	)
 	if err != nil {
 		panic(err)
@@ -96,7 +116,7 @@ func main() {
 }
 
 func handleTx(tx *lib.IndexContext) error {
-	ordinals.IndexInscriptions(tx)
+	ordinals.IndexInscriptions(tx, false)
 	return nil
 }
 

@@ -3,6 +3,7 @@ package ordlock
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -53,28 +54,36 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 }
 
 func (l *Listing) Save(t *lib.Txo) {
-	_, err := Db.Exec(context.Background(), `
-		INSERT INTO listings(txid, vout, height, idx, price, payout, origin, num, spend, pkhash, data, bsv20)
-		SELECT $1, $2, $3, $4, $5, $6, t.origin, n.num, t.spend, t.pkhash, o.data,
-			CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END
-		FROM txos t
-		JOIN txos o ON o.outpoint = t.origin
-		JOIN inscriptions n ON n.outpoint = t.origin
-		WHERE t.txid=$1 AND t.vout=$2
-		ON CONFLICT(txid, vout) DO UPDATE SET 
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx,
-			origin=EXCLUDED.origin,
-			num=EXCLUDED.num`,
-		t.Outpoint.Txid(),
-		t.Outpoint.Vout(),
-		t.Height,
-		t.Idx,
-		l.Price,
-		l.PayOut,
-	)
+	var height sql.NullInt32
+	if t.Height == nil {
+		height.Valid = false
+	} else {
+		height.Int32 = int32(*t.Height)
+	}
+	if _, ok := t.Data["bsv20"]; !ok {
+		_, err := Db.Exec(context.Background(), `
+			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, num, spend, pkhash, data, bsv20)
+			SELECT $1, $2, $3, $4, $5, $6, t.origin, n.num, t.spend, t.pkhash, o.data,
+				CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END
+			FROM txos t
+			JOIN txos o ON o.outpoint = t.origin
+			JOIN inscriptions n ON n.outpoint = t.origin
+			WHERE t.txid=$1 AND t.vout=$2
+			ON CONFLICT(txid, vout) DO UPDATE SET 
+				height=EXCLUDED.height,
+				idx=EXCLUDED.idx,
+				origin=EXCLUDED.origin,
+				num=EXCLUDED.num`,
+			t.Outpoint.Txid(),
+			t.Outpoint.Vout(),
+			height,
+			t.Idx,
+			l.Price,
+			l.PayOut,
+		)
 
-	if err != nil {
-		panic(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 }

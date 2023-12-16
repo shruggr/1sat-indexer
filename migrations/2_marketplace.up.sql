@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS listings(
     vout INTEGER,
     height INTEGER,
     idx INTEGER,
-    price BIGINT,
+    price NUMERIC,
     payout BYTEA,
     origin BYTEA,
     num BIGINT DEFAULT -1,

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log"
+	"sync"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -83,16 +84,30 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			log.Panicf("%x %v\n", ctx.Txid, err)
 		}
 
+		limiter := make(chan struct{}, 32)
+		var wg sync.WaitGroup
+
 		for _, txo := range ctx.Txos {
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-			}
-			txo.Save()
+			limiter <- struct{}{}
+			wg.Add(1)
+			go func(txo *Txo) {
+				defer func() {
+					<-limiter
+					wg.Done()
+				}()
+				if Rdb != nil {
+					Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+				}
+				txo.Save()
+			}(txo)
 		}
+		wg.Wait()
 	}
 }
 
 func SetSpends(ctx *IndexContext) {
+	limiter := make(chan struct{}, 32)
+	var wg sync.WaitGroup
 	for vin, txin := range ctx.Tx.Inputs {
 		spend := &Txo{
 			Outpoint:    NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
@@ -101,9 +116,19 @@ func SetSpends(ctx *IndexContext) {
 			SpendHeight: ctx.Height,
 			SpendIdx:    ctx.Idx,
 		}
-		spend.SaveSpend()
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(spend *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			spend.SaveSpend()
+		}(spend)
+
 		ctx.Spends = append(ctx.Spends, spend)
 	}
+	wg.Wait()
 }
 
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
