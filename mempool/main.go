@@ -11,13 +11,12 @@ import (
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
-	jbModels "github.com/GorillaPool/go-junglebus/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"github.com/libsv/go-bt/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var THREADS uint64 = 16
@@ -68,6 +67,16 @@ func init() {
 			log.Panic(err)
 		}
 	}
+
+	err = indexer.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func main() {
@@ -80,7 +89,7 @@ func main() {
 		log.Panicln(err.Error())
 	}
 
-	go processQueue()
+	// go processQueue()
 	go func() {
 		sub := redis.NewClient(&redis.Options{
 			Addr:     "localhost:6379",
@@ -97,10 +106,11 @@ func main() {
 				for i := 0; i < 4; i++ {
 					tx, err := lib.LoadTx(txid)
 					if err == nil {
-						msgQueue <- &Msg{
-							Id:          txid,
-							Transaction: tx.Bytes(),
-						}
+						// msgQueue <- &Msg{
+						// 	Id:          txid,
+						// 	Transaction: tx.Bytes(),
+						// }
+						ordinals.IndexTxn(tx.Bytes(), "", 0, 0, false)
 						log.Printf("[INJEST]: %s\n", txid)
 						break
 					}
@@ -132,7 +142,7 @@ func main() {
 		}
 	}()
 
-	subscribe()
+	// subscribe()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -147,72 +157,72 @@ func main() {
 	<-make(chan struct{})
 }
 
-func subscribe() {
-	var err error
-	sub, err = junglebusClient.Subscribe(
-		context.Background(),
-		os.Getenv("MEMPOOL"),
-		uint64(fromBlock),
-		junglebus.EventHandler{
-			OnMempool: func(txResp *jbModels.TransactionResponse) {
-				if len(txResp.Transaction) == 0 {
-					log.Printf("Empty Transaction: %v\n", txResp.Id)
-				}
-				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
-				msgQueue <- &Msg{
-					Id:          txResp.Id,
-					Transaction: txResp.Transaction,
-				}
+// func subscribe() {
+// 	var err error
+// 	sub, err = junglebusClient.Subscribe(
+// 		context.Background(),
+// 		os.Getenv("MEMPOOL"),
+// 		uint64(fromBlock),
+// 		junglebus.EventHandler{
+// 			OnMempool: func(txResp *jbModels.TransactionResponse) {
+// 				if len(txResp.Transaction) == 0 {
+// 					log.Printf("Empty Transaction: %v\n", txResp.Id)
+// 				}
+// 				log.Printf("[MEMPOOL]: %v\n", txResp.Id)
+// 				msgQueue <- &Msg{
+// 					Id:          txResp.Id,
+// 					Transaction: txResp.Transaction,
+// 				}
 
-			},
-			OnStatus: func(status *jbModels.ControlResponse) {
-				log.Printf("[STATUS]: %v\n", status)
-				if status.StatusCode == 999 {
-					log.Println(status.Message)
-					log.Println("Unsubscribing...")
-					sub.Unsubscribe()
-					os.Exit(0)
-					return
-				}
-			},
-			OnError: func(err error) {
-				log.Printf("[ERROR]: %v", err)
-			},
-		},
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-}
+// 			},
+// 			OnStatus: func(status *jbModels.ControlResponse) {
+// 				log.Printf("[STATUS]: %v\n", status)
+// 				if status.StatusCode == 999 {
+// 					log.Println(status.Message)
+// 					log.Println("Unsubscribing...")
+// 					sub.Unsubscribe()
+// 					os.Exit(0)
+// 					return
+// 				}
+// 			},
+// 			OnError: func(err error) {
+// 				log.Printf("[ERROR]: %v", err)
+// 			},
+// 		},
+// 	)
+// 	if err != nil {
+// 		log.Panic(err)
+// 	}
+// }
 
-func processQueue() {
-	go indexer.ProcessTxns(uint(THREADS))
-	var err error
-	mempoolCtx := &indexer.BlockCtx{
-		StartTime: time.Now(),
-	}
-	for {
-		msg := <-msgQueue
+// func processQueue() {
+// 	go indexer.ProcessTxns(uint(THREADS))
+// 	var err error
+// 	mempoolCtx := &indexer.BlockCtx{
+// 		StartTime: time.Now(),
+// 	}
+// 	for {
+// 		msg := <-msgQueue
 
-		var tx *bt.Tx
-		if len(msg.Transaction) == 0 {
-			continue
-		} else {
-			tx, err = bt.NewTxFromBytes(msg.Transaction)
-			if err != nil {
-				log.Printf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
-				continue
-			}
-		}
+// 		var tx *bt.Tx
+// 		if len(msg.Transaction) == 0 {
+// 			continue
+// 		} else {
+// 			tx, err = bt.NewTxFromBytes(msg.Transaction)
+// 			if err != nil {
+// 				log.Printf("OnTransaction Parse Error: %s %d %+v\n", msg.Id, len(msg.Transaction), err)
+// 				continue
+// 			}
+// 		}
 
-		txn := &indexer.TxnStatus{
-			ID:       msg.Id,
-			Tx:       tx,
-			Parents:  map[string]*indexer.TxnStatus{},
-			Children: map[string]*indexer.TxnStatus{},
-			Ctx:      mempoolCtx,
-		}
+// 		txn := &indexer.TxnStatus{
+// 			ID:       msg.Id,
+// 			Tx:       tx,
+// 			Parents:  map[string]*indexer.TxnStatus{},
+// 			Children: map[string]*indexer.TxnStatus{},
+// 			Ctx:      mempoolCtx,
+// 		}
 
-		indexer.TxnQueue <- txn
-	}
-}
+// 		indexer.TxnQueue <- txn
+// 	}
+// }

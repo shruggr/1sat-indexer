@@ -121,6 +121,6 @@ func handleTx(tx *lib.IndexContext) error {
 }
 
 func handleBlock(height uint32) error {
-	settled <- height
+	// settled <- height
 	return nil
 }

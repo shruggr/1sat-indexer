@@ -74,17 +74,17 @@ var tick string
 
 func main() {
 
-	tick = "BSVS"
-	go func() {
-		for height := range settled {
-			var settled uint32
-			if height > 6 {
-				settled = height - 6
-			}
-			ordinals.ValidateBsv20DeployTick(settled, tick)
-			ordinals.ValidateBsv20Mints(settled, tick)
-		}
-	}()
+	// tick = "BSVS"
+	// go func() {
+	// 	for height := range settled {
+	// 		var settled uint32
+	// 		if height > 6 {
+	// 			settled = height - 6
+	// 		}
+	// 		ordinals.ValidateBsv20DeployTick(settled, tick)
+	// 		ordinals.ValidateBsv20Mints(settled, tick)
+	// 	}
+	// }()
 	err := indexer.Exec(
 		true,
 		false,
@@ -132,6 +132,6 @@ func handleTx(tx *lib.IndexContext) error {
 }
 
 func handleBlock(height uint32) error {
-	settled <- height
+	// settled <- height
 	return nil
 }

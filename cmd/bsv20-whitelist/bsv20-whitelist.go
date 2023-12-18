@@ -80,7 +80,7 @@ func main() {
 		wg.Add(1)
 		go func(seq uint) {
 			row := db.QueryRow(context.Background(), `
-				SELECT seq, name, tick, topic, progress 
+				SELECT seq, name, tick, id, topic, progress 
 				FROM bsv20_subs
 				WHERE seq=$1`,
 				seq,
@@ -90,9 +90,10 @@ func main() {
 			}
 			var name string
 			var tick sql.NullString
+			var id []byte
 			var topic string
 			var progress uint32
-			err := row.Scan(&seq, &name, &tick, &topic, &progress)
+			err := row.Scan(&seq, &name, &tick, &id, &topic, &progress)
 			if err != nil {
 				panic(err)
 			}
@@ -107,6 +108,10 @@ func main() {
 					if tick.Valid && tick.String != "" {
 						ordinals.ValidateBsv20DeployTick(settled, tick.String)
 						ordinals.ValidateBsv20Mints(settled, tick.String)
+						ordinals.ValidateBsv20Transfers(tick.String, height, 8)
+					} else if len(id) > 0 {
+						tokenId := lib.Outpoint(id)
+						ordinals.ValidateBsv20V2Transfers(&tokenId, height, 8)
 					}
 				}
 			}()

@@ -20,6 +20,9 @@ func NewOutpoint(txid []byte, vout uint32) *Outpoint {
 }
 
 func NewOutpointFromString(s string) (o *Outpoint, err error) {
+	if len(s) < 66 {
+		return nil, fmt.Errorf("invalid-string")
+	}
 	txid, err := hex.DecodeString(s[:64])
 	if err != nil {
 		return

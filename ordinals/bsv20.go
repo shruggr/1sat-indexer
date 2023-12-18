@@ -2,8 +2,6 @@ package ordinals
 
 import (
 	"context"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -36,7 +34,7 @@ type Bsv20 struct {
 	Max           uint64        `json:"-"`
 	Limit         uint64        `json:"-"`
 	Decimals      uint8         `json:"dec,omitempty"`
-	Icon          *string       `json:"icon,omitempty"`
+	Icon          *lib.Outpoint `json:"icon,omitempty"`
 	Supply        uint64        `json:"-"`
 	Amt           *uint64       `json:"amt"`
 	Implied       bool          `json:"implied,omitempty"`
@@ -131,7 +129,7 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 		bsv20.Ticker = nil
 		bsv20.Status = Valid
 		if icon, ok := data["icon"]; ok {
-			bsv20.Icon = &icon
+			bsv20.Icon, _ = lib.NewOutpointFromString(icon)
 		}
 	case "mint":
 		if bsv20.Ticker == nil || bsv20.Amt == nil {
@@ -175,6 +173,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 		}
 	}
 	if b.Op == "deploy+mint" {
+		b.Id = t.Outpoint
 		_, err := Db.Exec(context.Background(), `
 			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec)
 			VALUES($1, $2, $3, $4, $5, $6, $7)
@@ -194,9 +193,10 @@ func (b *Bsv20) Save(t *lib.Txo) {
 		}
 	}
 	if b.Op == "deploy+mint" || b.Op == "mint" || b.Op == "transfer" {
+		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
 		_, err := Db.Exec(context.Background(), `
-			INSERT INTO bsv20_txos(txid, vout, height, idx, tick, op, amt, pkhash, price, payout, listing, price_per_token, spend)
-			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, spend
+			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, spend)
+			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, spend
 			FROM txos
 			WHERE txid=$1 AND vout=$2
 			ON CONFLICT(txid, vout) DO UPDATE SET
@@ -206,6 +206,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			t.Outpoint.Vout(),
 			t.Height,
 			t.Idx,
+			b.Id,
 			b.Ticker,
 			b.Op,
 			b.Amt,
@@ -537,17 +538,59 @@ func ValidateBsv20Mints(height uint32, tick string) {
 	}
 }
 
-func ValidateBsv20Transfers(height uint32, concurrency int) {
-	fmt.Println("[BSV20] Validating transfers. Height ", height)
+func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
+	// fmt.Println("[BSV20] Validating transfers. Height ", height)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM (
 			SELECT txid, MIN(height) as height
-			FROM txos
-			WHERE bsv20_xfer=0 AND height <= $1
+			FROM bsv20_txos
+			WHERE status=0 AND op='transfer' AND tick=$1 AND height <= $2
 			GROUP by txid
 		) t
 		ORDER BY height ASC`,
+		tick,
+		height,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer rows.Close()
+
+	limiter := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for rows.Next() {
+		limiter <- struct{}{}
+		wg.Add(1)
+		txid := make([]byte, 32)
+		err = rows.Scan(&txid)
+		if err != nil {
+			log.Panic(err)
+		}
+		go func() {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			ValidateTransfer(txid, true)
+			// time.Sleep(10 * time.Second)
+		}()
+	}
+	wg.Wait()
+}
+
+func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) {
+	// fmt.Println("[BSV20] Validating transfers. Height ", height)
+	rows, err := Db.Query(context.Background(), `
+		SELECT txid
+		FROM (
+			SELECT txid, MIN(height) as height
+			FROM bsv20_txos
+			WHERE status=0 AND op='transfer' AND id=$1 AND height <= $2
+			GROUP by txid
+		) t
+		ORDER BY height ASC`,
+		id,
 		height,
 	)
 	if err != nil {
@@ -583,9 +626,9 @@ func ValidateTransfer(txid []byte, mined bool) {
 	tickTokens := map[string][]uint32{}
 
 	inRows, err := Db.Query(context.Background(), `
-		SELECT txid, vout, data->'bsv20', data->'list'
-		FROM txos
-		WHERE spend=$1 AND data->'bsv20'->>'amt' IS NOT NULL`,
+		SELECT txid, vout, id, tick, status, amt
+		FROM bsv20_txos
+		WHERE spend=$1`,
 		txid,
 	)
 	if err != nil {
@@ -596,50 +639,41 @@ func ValidateTransfer(txid []byte, mined bool) {
 	for inRows.Next() {
 		var inTxid []byte
 		var vout uint32
-		bsv20Data := ""
-		var listData sql.NullString
-		err = inRows.Scan(&inTxid, &vout, &bsv20Data, &listData)
-		if err != nil {
-			log.Panicf("%x - %v\n", txid, err)
-		}
-
-		var bsv20 *Bsv20
-		err = json.Unmarshal([]byte(bsv20Data), &bsv20)
-		if err != nil {
-			log.Panicf("%x - %v\n", txid, err)
-		}
-		// bsv20 := data["bsv20"].(*Bsv20)
-
+		var id []byte
 		var tick string
-		if bsv20.Ticker != nil {
-			tick = *bsv20.Ticker
-		} else if bsv20.Id != nil {
-			tick = bsv20.Id.String()
-		} else if bsv20.Op == "deploy+mint" {
-			tick = lib.NewOutpoint(inTxid, vout).String()
-		} else {
+		var amt uint64
+		var status int
+		err = inRows.Scan(&inTxid, &vout, &id, &tick, &status, &amt)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+
+		if len(id) > 0 {
+			tokenId := lib.Outpoint(id)
+			tick = tokenId.String()
+		} else if tick == "" {
 			log.Panicf("%x - missing tick\n", txid)
 		}
 
-		switch bsv20.Status {
+		switch status {
 		case -1:
 			invalid[tick] = "invalid inputs"
 		case 0:
 			return
 		case 1:
 			if _, ok := tokensIn[tick]; !ok {
-				tokensIn[tick] = *bsv20.Amt
+				tokensIn[tick] = amt
 			} else {
-				tokensIn[tick] += *bsv20.Amt
+				tokensIn[tick] += amt
 			}
 		}
 	}
 	inRows.Close()
 
 	outRows, err := Db.Query(context.Background(), `
-		SELECT vout, data->'bsv20'
-		FROM txos
-		WHERE txid=$1 AND data->'bsv20' IS NOT NULL`,
+		SELECT vout, id, tick, status, amt
+		FROM bsv20_txos
+		WHERE txid=$1`,
 		txid,
 	)
 	if err != nil {
@@ -648,24 +682,19 @@ func ValidateTransfer(txid []byte, mined bool) {
 	defer outRows.Close()
 
 	for outRows.Next() {
-		data := ""
 		var vout uint32
-		err = outRows.Scan(&vout, &data)
-		if err != nil {
-			log.Panicf("%x - %v\n", txid, err)
-		}
-		var bsv20 *Bsv20
-		err = json.Unmarshal([]byte(data), &bsv20)
-		if err != nil {
-			log.Panicf("%x - %v\n", txid, err)
-		}
-
+		var id []byte
 		var tick string
-		if bsv20.Ticker != nil {
-			tick = *bsv20.Ticker
-		} else if bsv20.Id != nil {
-			tick = bsv20.Id.String()
-		} else {
+		var amt uint64
+		var status int
+		err = outRows.Scan(&vout, &id, &tick, &status, &amt)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+		if len(id) > 0 {
+			tokenId := lib.Outpoint(id)
+			tick = tokenId.String()
+		} else if tick == "" {
 			log.Panicf("%x - missing tick\n", txid)
 		}
 
@@ -674,10 +703,10 @@ func ValidateTransfer(txid []byte, mined bool) {
 		}
 		tickTokens[tick] = append(tickTokens[tick], vout)
 		if balance, ok := tokensIn[tick]; ok {
-			if *bsv20.Amt > balance {
-				invalid[tick] = fmt.Sprintf("insufficient balance %d < %d", balance, *bsv20.Amt)
+			if amt > balance {
+				invalid[tick] = fmt.Sprintf("insufficient balance %d < %d", balance, amt)
 			} else {
-				balance -= *bsv20.Amt
+				balance -= amt
 				tokensIn[tick] = balance
 			}
 		} else {
@@ -701,25 +730,28 @@ func ValidateTransfer(txid []byte, mined bool) {
 		var sql string
 		vouts := tickTokens[tick]
 		if reason, ok := invalid[tick]; ok {
-			fmt.Println("[BSV20] Transfer Invalid:", hex.EncodeToString(txid), tick, reason)
-			sql = fmt.Sprintf(`UPDATE txos
-				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": -1, "reason":"%s"}')
-				WHERE txid = $1 AND vout = ANY ($2)`,
+			_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
+				SET status=-1, reason=$3
+				WHERE txid=$1 AND vout=ANY($2)`,
+				txid,
+				vouts,
 				reason,
 			)
+			if err != nil {
+				log.Panicf("%x %s %v\n", txid, sql, err)
+			}
 		} else {
-			fmt.Println("[BSV20] Tranfer Valid:", hex.EncodeToString(txid), tick)
-			sql = `UPDATE txos
-				SET data = jsonb_set(data, '{bsv20}', data->'bsv20' || '{"status": 1, "reason":""}')
-				WHERE txid = $1 AND vout = ANY ($2)`
-		}
-		_, err := t.Exec(context.Background(),
-			sql,
-			txid,
-			vouts,
-		)
-		if err != nil {
-			log.Panicf("%x %s %v\n", txid, sql, err)
+			_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
+				SET status=1
+				WHERE txid=$1 AND vout=ANY ($2)`,
+				txid,
+				vouts,
+			)
+			if err != nil {
+				log.Panicf("%x %s %v\n", txid, sql, err)
+			}
 		}
 	}
 

@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS bsv20_subs(
     seq BIGSERIAL PRIMARY KEY,
     name TEXT,
-    id BYTEA,
-    tick TEXT,
+    id BYTEA DEFAULT '\x',
+    tick TEXT DEFAULT '',
     topic TEXT,
     progress INTEGER DEFAULT 0
 );
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
     vout INT,
     height INTEGER,
     idx INTEGER,
-    id BYTEA,
-	tick TEXT,
+    id BYTEA DEFAULT '\x',
+	tick TEXT DEFAULT '',
     op TEXT,
     amt NUMERIC,
     spend BYTEA DEFAULT '\x',

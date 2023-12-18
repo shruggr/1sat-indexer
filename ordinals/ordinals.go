@@ -41,7 +41,7 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 
 func IndexInscriptions(ctx *lib.IndexContext, dryRun bool) {
 	for _, txo := range ctx.Txos {
-		if len(txo.PKHash) != 0 {
+		if len(txo.PKHash) != 0 && txo.Satoshis != 1 {
 			continue
 		}
 		ParseScript(txo)
