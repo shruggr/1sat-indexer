@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -63,12 +64,16 @@ func main() {
 	app.Get("/ord/:address", func(c *fiber.Ctx) error {
 		address := c.Params("address")
 		row := db.QueryRow(c.Context(),
-			"SELECT height FROM addresses WHERE address=$1",
+			"SELECT height, updated FROM addresses WHERE address=$1",
 			address,
 		)
 		var height uint32
-		row.Scan(&height)
+		var updated time.Time
+		row.Scan(&height, &updated)
 
+		if time.Since(updated) < 30*time.Minute {
+			log.Println("Frequent Update", address)
+		}
 		url := fmt.Sprintf("%s/v1/address/get/%s/%d", os.Getenv("JUNGLEBUS"), address, height)
 		log.Println("URL:", url)
 		resp, err := http.Get(url)
@@ -126,8 +131,8 @@ func main() {
 			height = 817000
 		}
 		_, err = db.Exec(c.Context(), `
-			INSERT INTO addresses(address, height)
-			VALUES ($1, $2) 
+			INSERT INTO addresses(address, height, updated)
+			VALUES ($1, $2, CURRENT_TIMESTAMP) 
 			ON CONFLICT (address) DO UPDATE SET 
 				height = $2, updated = CURRENT_TIMESTAMP`,
 			address,

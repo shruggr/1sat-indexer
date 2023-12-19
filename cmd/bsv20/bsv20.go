@@ -116,8 +116,8 @@ func handleTx(tx *lib.IndexContext) error {
 				var token *ordinals.Bsv20
 				if bsv20.Id != nil {
 					token = ordinals.LoadTokenById(bsv20.Id)
-				} else if bsv20.Ticker != nil {
-					token = ordinals.LoadTicker(*bsv20.Ticker)
+				} else if bsv20.Ticker != "" {
+					token = ordinals.LoadTicker(bsv20.Ticker)
 				}
 				var decimals uint8
 				if token != nil {

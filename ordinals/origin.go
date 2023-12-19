@@ -28,7 +28,8 @@ func LoadOrigin(outpoint *lib.Outpoint, outAcc uint64) *lib.Outpoint {
 func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoint {
 	// fmt.Println("Finding", outpoint, outAcc, depth)
 	if depth > MAX_DEPTH {
-		log.Panicf("max depth exceeded %d %s\n", depth, outpoint)
+		return nil
+		// log.Panicf("max depth exceeded %d %s\n", depth, outpoint)
 	}
 	origin := &lib.Outpoint{}
 	row := Db.QueryRow(context.Background(),
@@ -38,7 +39,7 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 	)
 	err := row.Scan(&origin)
 	if err != nil && err != pgx.ErrNoRows {
-		panic(err)
+		return nil
 	} else if err == pgx.ErrNoRows || origin == nil {
 		spends := lib.LoadSpends(outpoint.Txid(), nil)
 		var inSats uint64
@@ -49,7 +50,9 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 			}
 			if inSats == outAcc && spend.Satoshis == 1 {
 				origin = calcOrigin(spend.Outpoint, spend.OutAcc, depth+1)
-				spend.SetOrigin(origin)
+				if origin != nil {
+					spend.SetOrigin(origin)
+				}
 				return origin
 			}
 			break

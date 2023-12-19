@@ -64,7 +64,8 @@ func init() {
 
 func main() {
 	rows, err := db.Query(context.Background(),
-		`SELECT seq FROM bsv20_subs`,
+		`SELECT seq, name, tick, id, topic, progress 
+		FROM bsv20_subs`,
 	)
 	if err != nil {
 		panic(err)
@@ -73,31 +74,19 @@ func main() {
 	var wg sync.WaitGroup
 	for rows.Next() {
 		var seq uint
-		err := rows.Scan(&seq)
+		var name string
+		var tick sql.NullString
+		var id []byte
+		var topic string
+		var progress uint32
+
+		err := rows.Scan(&seq, &name, &tick, &id, &topic, &progress)
 		if err != nil {
 			panic(err)
 		}
-		wg.Add(1)
-		go func(seq uint) {
-			row := db.QueryRow(context.Background(), `
-				SELECT seq, name, tick, id, topic, progress 
-				FROM bsv20_subs
-				WHERE seq=$1`,
-				seq,
-			)
-			if err != nil {
-				panic(err)
-			}
-			var name string
-			var tick sql.NullString
-			var id []byte
-			var topic string
-			var progress uint32
-			err := row.Scan(&seq, &name, &tick, &id, &topic, &progress)
-			if err != nil {
-				panic(err)
-			}
 
+		wg.Add(1)
+		go func(seq uint, name string, tick sql.NullString, id []byte, topic string, progress uint32) {
 			var settled = make(chan uint32, 1000)
 			go func() {
 				for height := range settled {
@@ -141,12 +130,12 @@ func main() {
 				topic,
 				uint(progress),
 				CONCURRENCY,
-				VERBOSE,
+				1,
 			)
 			if err != nil {
 				panic(err)
 			}
-		}(seq)
+		}(seq, name, tick, id, topic, progress)
 	}
 	rows.Close()
 	wg.Wait()

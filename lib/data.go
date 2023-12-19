@@ -63,14 +63,14 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 	}
 
 	if len(rawtx) == 0 && bit != nil {
-		// log.Println("Requesting tx from node", txid)
+		log.Println("Requesting tx from node", txid)
 		if r, err := bit.GetRawTransactionRest(txid); err == nil {
 			rawtx, _ = io.ReadAll(r)
 		}
 	}
 
 	if len(rawtx) == 0 && JB != nil {
-		// log.Println("Requesting tx from jb", txid)
+		log.Println("Requesting tx from jb", txid)
 		if txData, err := JB.GetTransaction(context.Background(), txid); err == nil {
 			rawtx = txData.Transaction
 		}

@@ -27,7 +27,7 @@ type Bsv20 struct {
 	Vout          uint32        `json:"-"`
 	Height        *uint32       `json:"-"`
 	Idx           uint64        `json:"-"`
-	Ticker        *string       `json:"tick,omitempty"`
+	Ticker        string        `json:"tick,omitempty"`
 	Id            *lib.Outpoint `json:"id,omitempty"`
 	Op            string        `json:"op"`
 	Symbol        *string       `json:"sym,omitempty"`
@@ -77,7 +77,7 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 			return nil, nil
 		}
 		tick = strings.ToUpper(tick)
-		bsv20.Ticker = &tick
+		bsv20.Ticker = tick
 	}
 
 	if sym, ok := data["sym"]; ok {
@@ -126,20 +126,20 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 		if bsv20.Amt == nil {
 			return nil, nil
 		}
-		bsv20.Ticker = nil
+		bsv20.Ticker = ""
 		bsv20.Status = Valid
 		if icon, ok := data["icon"]; ok {
 			bsv20.Icon, _ = lib.NewOutpointFromString(icon)
 		}
 	case "mint":
-		if bsv20.Ticker == nil || bsv20.Amt == nil {
+		if bsv20.Ticker == "" || bsv20.Amt == nil {
 			return nil, nil
 		}
 	case "transfer":
 		if bsv20.Amt == nil {
 			return nil, nil
 		}
-		if bsv20.Ticker == nil && bsv20.Id == nil {
+		if bsv20.Ticker == "" && bsv20.Id == nil {
 			return nil, nil
 		}
 	default:
@@ -539,7 +539,7 @@ func ValidateBsv20Mints(height uint32, tick string) {
 }
 
 func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
-	// fmt.Println("[BSV20] Validating transfers. Height ", height)
+	// fmt.Printf("[BSV20] Validating transfers. Tick %s Height %d\n", tick, height)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM (
@@ -580,7 +580,7 @@ func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
 }
 
 func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) {
-	// fmt.Println("[BSV20] Validating transfers. Height ", height)
+	// fmt.Printf("[BSV20] Validating transfers. Id: %s Height %d\n", id, height)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM (

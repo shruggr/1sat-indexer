@@ -13,6 +13,7 @@ import (
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/lock"
+	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var POSTGRES string
@@ -56,6 +57,11 @@ func init() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	err = ordinals.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func main() {
@@ -72,6 +78,7 @@ func main() {
 
 func handleTx(ctx *lib.IndexContext) error {
 	lock.IndexLocks(ctx)
+	ordinals.IndexInscriptions(ctx, false)
 	return nil
 }
 
