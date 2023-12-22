@@ -3,7 +3,6 @@ package ordlock
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/hex"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +28,12 @@ func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
 	return
 }
 
+func ParseLocks(ctx *lib.IndexContext) {
+	for _, txo := range ctx.Txos {
+		ParseScript(txo)
+	}
+}
+
 func ParseScript(txo *lib.Txo) (listing *Listing) {
 	script := *txo.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 	sCryptPrefixIndex := bytes.Index(script, lib.SCryptPrefix)
@@ -41,6 +46,7 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 				payOutput := &bt.Output{}
 				_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
 				if err == nil {
+					txo.PKHash = pkhash
 					listing = &Listing{
 						PKHash: pkhash,
 						Price:  payOutput.Satoshis,
@@ -54,30 +60,19 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 }
 
 func (l *Listing) Save(t *lib.Txo) {
-	var height sql.NullInt32
-	if t.Height == nil {
-		height.Valid = false
-	} else {
-		height.Int32 = int32(*t.Height)
-	}
 	if _, ok := t.Data["bsv20"]; !ok {
 		_, err := Db.Exec(context.Background(), `
-			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, num, spend, pkhash, data, bsv20)
-			SELECT $1, $2, $3, $4, $5, $6, t.origin, n.num, t.spend, t.pkhash, o.data,
-				CASE WHEN t.data->'bsv20' IS NULL THEN false ELSE true END
+			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, spend, pkhash, data)
+			SELECT $1, $2, t.height, t.idx, $3, $4, t.origin, t.spend, t.pkhash, o.data
 			FROM txos t
 			JOIN txos o ON o.outpoint = t.origin
-			JOIN inscriptions n ON n.outpoint = t.origin
 			WHERE t.txid=$1 AND t.vout=$2
 			ON CONFLICT(txid, vout) DO UPDATE SET 
 				height=EXCLUDED.height,
 				idx=EXCLUDED.idx,
-				origin=EXCLUDED.origin,
-				num=EXCLUDED.num`,
+				origin=EXCLUDED.origin`,
 			t.Outpoint.Txid(),
 			t.Outpoint.Vout(),
-			height,
-			t.Idx,
 			l.Price,
 			l.PayOut,
 		)

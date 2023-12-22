@@ -10,3 +10,5 @@ CREATE TABLE txn_indexer (
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (txid, indexer)
 );
+
+CREATE INDEX idx_txn_indexer_created ON txn_indexer(indexer, created);

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -25,6 +29,7 @@ var CONCURRENCY int
 var PORT int
 var db *pgxpool.Pool
 var rdb *redis.Client
+var ctx = context.Background()
 
 func init() {
 	wd, _ := os.Getwd()
@@ -117,12 +122,18 @@ func main() {
 			delete(toIndex, txid)
 		}
 		var wg sync.WaitGroup
+		limiter := make(chan struct{}, 32)
 		for txid, txn := range toIndex {
 			wg.Add(1)
+			limiter <- struct{}{}
 			go func(txid string, txn *AddressTxn) {
-				defer wg.Done()
+				defer func() {
+					wg.Done()
+					<-limiter
+				}()
 				if rawtx, err := lib.LoadRawtx(txid); err == nil {
-					ordinals.IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx, false)
+					// lib.IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx, false)
+					ordinals.IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx)
 				}
 			}(txid, txn)
 		}
@@ -134,15 +145,67 @@ func main() {
 			INSERT INTO addresses(address, height, updated)
 			VALUES ($1, $2, CURRENT_TIMESTAMP) 
 			ON CONFLICT (address) DO UPDATE SET 
-				height = $2, updated = CURRENT_TIMESTAMP`,
+				height = $2, 
+				updated = CURRENT_TIMESTAMP`,
 			address,
 			height,
 		)
 		if err != nil {
 			log.Panicf("Error updating address: %s", err)
 		}
+		fmt.Println("Finished", address)
 		c.SendStatus(http.StatusNoContent)
 		return nil
+	})
+
+	app.Get("/origin/:origin/latest", func(c *fiber.Ctx) error {
+		origin, err := lib.NewOutpointFromString(c.Params("origin"))
+		if err != nil {
+			return err
+		}
+
+		var op lib.Outpoint
+		for {
+			row := db.QueryRow(ctx, `SELECT outpoint
+				FROM txos
+				WHERE origin = $1
+				ORDER BY height DESC, idx DESC
+				LIMIT 1`,
+				origin,
+			)
+			var outpoint []byte
+			err = row.Scan(&outpoint)
+			if err != nil {
+				if err == pgx.ErrNoRows {
+					return c.SendStatus(404)
+				}
+				return err
+			}
+			if bytes.Equal(op, outpoint) {
+				return c.Send(outpoint)
+			}
+
+			op = lib.Outpoint(outpoint)
+
+			url := fmt.Sprintf("%s/v1/txo/spend/%s", os.Getenv("JUNGLEBUS"), op.String())
+			log.Println("URL:", url)
+			resp, err := http.Get(url)
+			if err != nil {
+				return err
+			}
+			spend, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			if len(spend) == 0 {
+				return c.Send(outpoint)
+			}
+			rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
+			if err != nil {
+				return err
+			}
+			ordinals.IndexTxn(rawtx, "", 0, 0)
+		}
 	})
 
 	app.Listen(fmt.Sprintf(":%d", PORT))

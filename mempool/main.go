@@ -14,7 +14,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/lock"
 	"github.com/shruggr/1sat-indexer/ordinals"
+	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var THREADS uint64 = 16
@@ -112,14 +114,10 @@ func main() {
 						}
 					}()
 					for i := 0; i < 4; i++ {
-						tx, err := lib.LoadTx(txid)
+						rawtx, err := lib.LoadRawtx(txid)
 						if err == nil {
-							// msgQueue <- &Msg{
-							// 	Id:          txid,
-							// 	Transaction: tx.Bytes(),
-							// }
-							ordinals.IndexTxn(tx.Bytes(), "", 0, 0, false)
-							log.Printf("[INJEST]: %s\n", txid)
+							txCtx, err := processTxn(rawtx)
+							log.Printf("[INJEST]: %x %+v\n", txCtx.Txid, err)
 							break
 						}
 						log.Printf("[RETRY] %d: %s\n", i, txid)
@@ -145,12 +143,26 @@ func main() {
 							fmt.Println("Recovered in broadcast")
 						}
 					}()
-					txCtx := ordinals.IndexTxn(rawtx, "", 0, 0, false)
-					log.Printf("[INJEST]: %x\n", txCtx.Txid)
+					txCtx, err := processTxn(rawtx)
+					log.Printf("[INJEST]: %x %+v\n", txCtx.Txid, err)
 				}(rawtx)
 			}
 		}
 	}()
 
 	<-make(chan struct{})
+}
+
+func processTxn(rawtx []byte) (*lib.IndexContext, error) {
+	ctx, err := lib.ParseTxn(rawtx, "", 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	ctx.SaveSpends()
+	ordinals.CalculateOrigins(ctx)
+	ordinals.ParseInscriptions(ctx)
+	lock.ParseLocks(ctx)
+	ordlock.ParseLocks(ctx)
+	ctx.Save()
+	return ctx, nil
 }

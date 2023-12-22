@@ -42,7 +42,7 @@ func init() {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
 	}
 	var err error
-	log.Println("POSTGRES:", POSTGRES)
+	// log.Println("POSTGRES:", POSTGRES)
 	db, err = pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
@@ -75,11 +75,15 @@ func main() {
 		true,
 		false,
 		handleTx,
-		handleBlock,
+		func(height uint32) error {
+			return nil
+		},
 		INDEXER,
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
+		true,
+		false,
 		VERBOSE,
 	)
 	if err != nil {
@@ -89,11 +93,12 @@ func main() {
 }
 
 func handleTx(ctx *lib.IndexContext) error {
+	ordinals.CalculateOrigins(ctx)
+	ordinals.ParseInscriptions(ctx)
 	for _, txo := range ctx.Txos {
-		if txo.Satoshis != 1 || len(txo.PKHash) > 0 {
+		if txo.Satoshis != 1 {
 			continue
 		}
-		txo.Origin = ordinals.LoadOrigin(txo.Outpoint, txo.OutAcc)
 		if txo.Origin == nil {
 			log.Panicf("No origin found for %s", txo.Outpoint)
 		}
@@ -101,10 +106,8 @@ func handleTx(ctx *lib.IndexContext) error {
 		if list == nil {
 			continue
 		}
-		if txo.Data == nil {
-			txo.Data = lib.Map{}
-		}
-		txo.Data["list"] = list
+		txo.AddData("list", list)
+		txo.PKHash = list.PKHash
 		originData, err := lib.LoadTxoData(txo.Origin)
 		if err != nil {
 			log.Panic(err)
@@ -114,14 +117,10 @@ func handleTx(ctx *lib.IndexContext) error {
 			if err != nil {
 				log.Panic(err)
 			}
-			ordinals.IndexTxn(rawtx, "", 0, 0, true)
+			ordinals.IndexTxn(rawtx, "", 0, 0)
 		}
 		txo.Save()
 		list.Save(txo)
 	}
-	return nil
-}
-
-func handleBlock(height uint32) error {
 	return nil
 }

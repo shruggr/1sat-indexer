@@ -23,7 +23,68 @@ type IndexContext struct {
 	Spends  []*Txo  `json:"spends"`
 }
 
-func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *IndexContext, err error) {
+func (ctx *IndexContext) Save() {
+	_, err := Db.Exec(context.Background(), `
+		INSERT INTO txns(txid, block_id, height, idx)
+		VALUES($1, decode($2, 'hex'), $3, $4)
+		ON CONFLICT(txid) DO UPDATE SET
+			block_id=EXCLUDED.block_id,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx`,
+		ctx.Txid,
+		ctx.BlockId,
+		ctx.Height,
+		ctx.Idx,
+	)
+	if err != nil {
+		log.Panicf("%x %v\n", ctx.Txid, err)
+	}
+
+	limiter := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+	for _, txo := range ctx.Txos {
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(txo *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			if Rdb != nil {
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+			}
+			txo.Save()
+		}(txo)
+	}
+	wg.Wait()
+}
+
+func (ctx *IndexContext) SaveSpends() {
+	limiter := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+
+	for _, spend := range ctx.Spends {
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(spend *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			spend.SaveSpend()
+		}(spend)
+	}
+	wg.Wait()
+}
+
+func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *IndexContext, err error) {
+	ctx, err = ParseTxn(rawtx, blockId, height, idx)
+	ctx.SaveSpends()
+	ctx.Save()
+	return
+}
+
+func ParseTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *IndexContext, err error) {
 	tx, err := bt.NewTxFromBytes(rawtx)
 	if err != nil {
 		return
@@ -40,15 +101,14 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 	}
 
 	if !tx.IsCoinbase() {
-		SetSpends(ctx)
+		ParseSpends(ctx)
 	}
 
-	IndexTxos(tx, ctx, dryRun)
-
+	ParseTxos(tx, ctx)
 	return
 }
 
-func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
+func ParseTxos(tx *bt.Tx, ctx *IndexContext) {
 	accSats := uint64(0)
 	for vout, txout := range tx.Outputs {
 		outpoint := Outpoint(binary.BigEndian.AppendUint32(ctx.Txid, uint32(vout)))
@@ -59,6 +119,7 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 			Satoshis: txout.Satoshis,
 			OutAcc:   accSats,
 			Outpoint: &outpoint,
+			Script:   *txout.LockingScript,
 		}
 
 		if txout.LockingScript.IsP2PKH() {
@@ -67,47 +128,9 @@ func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
 		ctx.Txos = append(ctx.Txos, txo)
 		accSats += txout.Satoshis
 	}
-	if !dryRun {
-		_, err := Db.Exec(context.Background(), `
-			INSERT INTO txns(txid, block_id, height, idx)
-			VALUES($1, decode($2, 'hex'), $3, $4)
-			ON CONFLICT(txid) DO UPDATE SET
-				block_id=EXCLUDED.block_id,
-				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
-			ctx.Txid,
-			ctx.BlockId,
-			ctx.Height,
-			ctx.Idx,
-		)
-		if err != nil {
-			log.Panicf("%x %v\n", ctx.Txid, err)
-		}
-
-		limiter := make(chan struct{}, 32)
-		var wg sync.WaitGroup
-
-		for _, txo := range ctx.Txos {
-			limiter <- struct{}{}
-			wg.Add(1)
-			go func(txo *Txo) {
-				defer func() {
-					<-limiter
-					wg.Done()
-				}()
-				if Rdb != nil {
-					Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-				}
-				txo.Save()
-			}(txo)
-		}
-		wg.Wait()
-	}
 }
 
-func SetSpends(ctx *IndexContext) {
-	limiter := make(chan struct{}, 32)
-	var wg sync.WaitGroup
+func ParseSpends(ctx *IndexContext) {
 	for vin, txin := range ctx.Tx.Inputs {
 		spend := &Txo{
 			Outpoint:    NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
@@ -116,19 +139,9 @@ func SetSpends(ctx *IndexContext) {
 			SpendHeight: ctx.Height,
 			SpendIdx:    ctx.Idx,
 		}
-		limiter <- struct{}{}
-		wg.Add(1)
-		go func(spend *Txo) {
-			defer func() {
-				<-limiter
-				wg.Done()
-			}()
-			spend.SaveSpend()
-		}(spend)
 
 		ctx.Spends = append(ctx.Spends, spend)
 	}
-	wg.Wait()
 }
 
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {

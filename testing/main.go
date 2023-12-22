@@ -2,24 +2,23 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bk/bip32"
+	"github.com/libsv/go-bk/chaincfg"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "1220d621681fb9143e177e9eb463d0fe28076019b90c3a9dc426936a31cf4f35"
+var hexId = "75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f"
 
 func main() {
 	godotenv.Load("../.env")
@@ -43,40 +42,55 @@ func main() {
 		log.Panic(err)
 	}
 
-	err = ordinals.Initialize(db, rdb)
+	ek, err := bip32.NewKeyFromString("xpub661MyMwAqRbcF221R74MPqdipLsgUevAAX4hZP2rywyEeShpbe3v2r9ciAvSGT6FB22TEmFLdUyeEDJL4ekG8s9H5WXbzDQPr6eW1zEYYy9")
 	if err != nil {
 		log.Panic(err)
 	}
 
-	err = ordlock.Initialize(db, rdb)
+	fmt.Println(ek.Address(&chaincfg.MainNet))
+	ek, err = ek.DeriveChildFromPath("123/123")
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// ordinals.ValidateBsv20Mints(821874, "BSVS")
-	rawtx, err := lib.LoadRawtx(hexId)
-	if err != nil {
-		log.Panic(err)
-	}
+	fmt.Println(ek.Address(&chaincfg.MainNet))
+	// rawtx, err := lib.LoadRawtx("75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f")
 
-	txnCtx := ordinals.IndexTxn(rawtx, "", 0, 0, dryRun)
+	// txnCtx, err := lib.ParseTxn(rawtx, "", 0, 0)
 
-	for _, txo := range txnCtx.Txos {
-		// if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-		// 	fmt.Println(bsv20.Ticker)
-		// 	bsv20.Save(txo)
-		// }
+	// ordinals.ParseInscriptions(txnCtx)
 
-		list := ordlock.ParseScript(txo)
-		if list != nil {
-			list.Save(txo)
-		}
-	}
-	out, err := json.MarshalIndent(txnCtx, "", "  ")
+	// for _, txo := range txnCtx.Txos {
+	// 	if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+	// 		list := ordlock.ParseScript(txo)
 
-	if err != nil {
-		log.Panic(err)
-	}
+	// 		if list != nil {
+	// 			txo.PKHash = list.PKHash
+	// 			bsv20.PKHash = list.PKHash
+	// 			bsv20.Price = list.Price
+	// 			bsv20.PayOut = list.PayOut
+	// 			bsv20.Listing = true
+	// 			var token *ordinals.Bsv20
+	// 			if bsv20.Id != nil {
+	// 				token = ordinals.LoadTokenById(bsv20.Id)
+	// 			} else if bsv20.Ticker != "" {
+	// 				token = ordinals.LoadTicker(bsv20.Ticker)
+	// 			}
+	// 			var decimals uint8
+	// 			if token != nil {
+	// 				decimals = token.Decimals
+	// 			}
+	// 			bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
+	// 		}
+	// 		bsv20.Save(txo)
+	// 	}
+	// }
 
-	fmt.Println(string(out))
+	// out, err := json.MarshalIndent(txnCtx, "", "  ")
+
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+
+	// fmt.Println(string(out))
 }

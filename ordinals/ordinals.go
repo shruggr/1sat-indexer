@@ -2,10 +2,8 @@ package ordinals
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"regexp"
 	"strings"
@@ -30,52 +28,57 @@ func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
 	return
 }
 
-func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
-	ctx, err := lib.IndexTxn(rawtx, blockId, height, idx, dryRun)
+func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *lib.IndexContext) {
+	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 	if err != nil {
 		panic(err)
 	}
-	IndexInscriptions(ctx, dryRun)
+
+	IndexInscriptions(ctx)
 	return
 }
 
-func IndexInscriptions(ctx *lib.IndexContext, dryRun bool) {
+func IndexInscriptions(ctx *lib.IndexContext) {
+	CalculateOrigins(ctx)
+	ParseInscriptions(ctx)
+	ctx.SaveSpends()
+	ctx.Save()
+}
+
+func CalculateOrigins(ctx *lib.IndexContext) {
+	for _, txo := range ctx.Txos {
+		if txo.Satoshis != 1 {
+			continue
+		}
+		txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
+	}
+}
+
+func ParseInscriptions(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
 		if len(txo.PKHash) != 0 && txo.Satoshis != 1 {
 			continue
 		}
 		ParseScript(txo)
-		if dryRun {
-			continue
-		}
-		if len(txo.PKHash) != 0 && Rdb != nil {
-			Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-		}
-		if txo.Satoshis == 1 {
-			txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
-		}
-		txo.Save()
-		if insc, ok := txo.Data["insc"].(*Inscription); ok && ctx.Height != nil {
-			insc.Outpoint = txo.Outpoint
-			insc.Height = ctx.Height
-			insc.Idx = ctx.Idx
-			insc.Save()
-		}
-		if txo.Origin == nil || txo.Data == nil {
-			continue
-		}
 
-		if txo.Data["map"] != nil {
-			SaveMap(txo.Origin)
-		}
+		// if len(txo.PKHash) != 0 && Rdb != nil {
+		// 	Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+		// }
+		// txo.Save()
+		// if insc, ok := txo.Data["insc"].(*Inscription); ok && ctx.Height != nil {
+		// 	insc.Outpoint = txo.Outpoint
+		// 	insc.Height = ctx.Height
+		// 	insc.Idx = ctx.Idx
+		// 	insc.Save()
+		// }
+		// if txo.Origin == nil || txo.Data == nil {
+		// 	continue
+		// }
+
+		// if txo.Data["map"] != nil {
+		// 	SaveMap(txo.Origin)
+		// }
 	}
-
-	Db.Exec(context.Background(),
-		`INSERT INTO txn_indexer(txid, indexer) 
-		VALUES ($1, 'ord')
-		ON CONFLICT DO NOTHING`,
-		ctx.Txid,
-	)
 }
 
 func ParseScript(txo *lib.Txo) {

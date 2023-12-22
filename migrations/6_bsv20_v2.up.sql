@@ -23,7 +23,12 @@ CREATE TABLE bsv20_v2(
     sym TEXT,
     icon BYTEA,
     amt NUMERIC,
-    dec INTEGER
+    dec INTEGER,
+    fund_path TEXT,
+    fund_pkhash BYTEA,
+    fund_total NUMERIC DEFAULT 0,
+    fund_used NUMERIC DEFAULT 0,
+    fund_balance NUMERIC GENERATED ALWAYS AS (fund_total-fund_used) STORED,
 );
 
 CREATE TABLE IF NOT EXISTS bsv20_txos(
@@ -43,11 +48,10 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
     price NUMERIC,
     payout BYTEA,
     price_per_token NUMERIC,
+    script BYTEA,
 	PRIMARY KEY(txid, vout),
     FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE
 );
-
--- CREATE INDEX IF NOT EXISTS idx_bsv20_txos_status ON bsv20_mints(status, height, idx, vout);
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate ON bsv20_txos(op, tick, height, idx, vout)
 WHERE status = 0;

@@ -62,24 +62,22 @@ func main() {
 	err := indexer.Exec(
 		true,
 		false,
-		handleTx,
-		handleBlock,
+		func(ctx *lib.IndexContext) error {
+			opns.ParseOpNS(ctx)
+			return nil
+		},
+		func(height uint32) error {
+			return nil
+		},
 		INDEXER,
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
+		true,
+		true,
 		VERBOSE,
 	)
 	if err != nil {
 		panic(err)
 	}
-}
-
-func handleTx(ctx *lib.IndexContext) error {
-	opns.IndexOpNS(ctx)
-	return nil
-}
-
-func handleBlock(height uint32) error {
-	return nil
 }

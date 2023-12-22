@@ -76,11 +76,7 @@ func main() {
 			}
 
 			log.Printf("Processing %x\n", txid)
-			ctx, err := lib.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex, false)
-			if err != nil {
-				panic(err)
-			}
-			ordinals.IndexInscriptions(ctx, false)
+			ctx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
 
 			for _, txo := range ctx.Txos {
 				if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {

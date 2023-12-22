@@ -28,15 +28,18 @@ type OpNS struct {
 var GENESIS, _ = lib.NewOutpointFromString("58b7558ea379f24266c7e2f5fe321992ad9a724fd7a87423ba412677179ccb25_0")
 
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
-	ctx, err := lib.IndexTxn(rawtx, blockId, height, idx, dryRun)
+	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 	if err != nil {
 		panic(err)
 	}
-	IndexOpNS(ctx)
+	ParseOpNS(ctx)
+	for _, txo := range ctx.Txos {
+		txo.Save()
+	}
 	return
 }
 
-func IndexOpNS(ctx *lib.IndexContext) {
+func ParseOpNS(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
 		if len(txo.PKHash) != 0 {
 			continue
@@ -72,7 +75,6 @@ func IndexOpNS(ctx *lib.IndexContext) {
 				Domain:  insc.Text,
 				Status:  srcMine.Status,
 			})
-			txo.Save()
 		}
 	}
 }

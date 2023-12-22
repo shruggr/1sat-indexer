@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS listings(
     price NUMERIC,
     payout BYTEA,
     origin BYTEA,
-    num BIGINT DEFAULT -1,
     spend BYTEA DEFAULT '\x',
     pkhash BYTEA,
     data JSONB,
@@ -24,8 +23,7 @@ CREATE TABLE IF NOT EXISTS listings(
         )
     ) STORED,
     PRIMARY KEY (txid, vout),
-    FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE,
-    FOREIGN KEY (origin, num) REFERENCES inscriptions(outpoint, num) ON UPDATE CASCADE
+    FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE INDEX idx_listings_bsv20_price_unspent ON listings(bsv20, price)

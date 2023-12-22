@@ -73,6 +73,8 @@ func main() {
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
+		true,
+		true,
 		VERBOSE,
 	)
 	if err != nil {
@@ -81,8 +83,7 @@ func main() {
 }
 
 func handleTx(tx *lib.IndexContext) error {
-	ordinals.IndexInscriptions(tx, false)
-
+	ordinals.ParseInscriptions(tx)
 	for _, txo := range tx.Txos {
 		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
 			bsv20.Save(txo)

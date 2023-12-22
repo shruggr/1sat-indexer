@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -67,60 +66,26 @@ func init() {
 }
 
 func main() {
-	go func() {
-		for height := range settled {
-			var settled uint32
-			if height > 6 {
-				settled = height - 6
-			}
-			var wg sync.WaitGroup
-			wg.Add(2)
-			log.Printf("[ORD]: Block %d completions\n", height)
-			go func(height uint32) {
-				// err := ordinals.SetInscriptionNum(height)
-				// if err != nil {
-				// 	log.Panicln("Error processing inscription ids:", err)
-				// }
-				// ordinals.Db.Exec(context.Background(),
-				// 	`INSERT INTO progress(indexer, height)
-				// 	VALUES ('settled', $1)
-				// 	ON CONFLICT (indexer) DO UPDATE SET height=EXCLUDED.height`,
-				// 	height,
-				// )
-				wg.Done()
-			}(settled)
-
-			go func(height uint32) {
-				// ordinals.ValidateBsv20Deploy(height - 6)
-				// ordinals.ValidateBsv20Transfers(height, 32)
-				wg.Done()
-			}(height)
-
-			wg.Wait()
-		}
-	}()
 	err := indexer.Exec(
 		true,
 		false,
-		handleTx,
-		handleBlock,
+		func(tx *lib.IndexContext) error {
+			ordinals.CalculateOrigins(tx)
+			ordinals.ParseInscriptions(tx)
+			return nil
+		},
+		func(height uint32) error {
+			return nil
+		},
 		INDEXER,
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
+		true,
+		true,
 		VERBOSE,
 	)
 	if err != nil {
 		panic(err)
 	}
-}
-
-func handleTx(tx *lib.IndexContext) error {
-	ordinals.IndexInscriptions(tx, false)
-	return nil
-}
-
-func handleBlock(height uint32) error {
-	// settled <- height
-	return nil
 }

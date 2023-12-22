@@ -65,23 +65,26 @@ func init() {
 }
 
 func main() {
-	err := indexer.Exec(true, false, handleTx, handleBlock,
+	err := indexer.Exec(
+		true,
+		false,
+		func(ctx *lib.IndexContext) error {
+			lock.ParseLocks(ctx)
+			ordinals.CalculateOrigins(ctx)
+			ordinals.ParseInscriptions(ctx)
+			return nil
+		},
+		func(height uint32) error {
+			return nil
+		},
 		INDEXER,
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
+		true,
+		true,
 		VERBOSE)
 	if err != nil {
 		panic(err)
 	}
-}
-
-func handleTx(ctx *lib.IndexContext) error {
-	lock.IndexLocks(ctx)
-	ordinals.IndexInscriptions(ctx, false)
-	return nil
-}
-
-func handleBlock(height uint32) error {
-	return nil
 }

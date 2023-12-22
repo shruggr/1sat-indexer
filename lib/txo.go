@@ -27,6 +27,7 @@ type Txo struct {
 	SpendIdx    uint64    `json:"spend_idx"`
 	Origin      *Outpoint `json:"origin,omitempty"`
 	Data        Map       `json:"data,omitempty"`
+	Script      []byte    `json:"-"`
 }
 
 func (t *Txo) AddData(key string, value interface{}) {

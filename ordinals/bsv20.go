@@ -2,6 +2,8 @@ package ordinals
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,10 +12,14 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/libsv/go-bk/bip32"
+	"github.com/libsv/go-bk/crypto"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
 type Bsv20Status int
+
+var hdKey, _ = bip32.NewKeyFromString("xpub661MyMwAqRbcF221R74MPqdipLsgUevAAX4hZP2rywyEeShpbe3v2r9ciAvSGT6FB22TEmFLdUyeEDJL4ekG8s9H5WXbzDQPr6eW1zEYYy9")
 
 const (
 	Invalid Bsv20Status = -1
@@ -80,10 +86,6 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 		bsv20.Ticker = tick
 	}
 
-	if sym, ok := data["sym"]; ok {
-		bsv20.Symbol = &sym
-	}
-
 	if id, ok := data["id"]; ok && len(id) >= 66 {
 		bsv20.Id, err = lib.NewOutpointFromString(id)
 		if err != nil {
@@ -126,6 +128,9 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 		if bsv20.Amt == nil {
 			return nil, nil
 		}
+		if sym, ok := data["sym"]; ok {
+			bsv20.Symbol = &sym
+		}
 		bsv20.Ticker = ""
 		bsv20.Status = Valid
 		if icon, ok := data["icon"]; ok {
@@ -151,12 +156,25 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 
 func (b *Bsv20) Save(t *lib.Txo) {
 	if b.Op == "deploy" {
-		_, err := Db.Exec(context.Background(), `
-			INSERT INTO bsv20(txid, vout, height, idx, tick, max, lim, dec, status, reason)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		hash := sha256.Sum256([]byte(b.Ticker))
+		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+		ek, err := hdKey.DeriveChildFromPath(path)
+		if err != nil {
+			log.Panic(err)
+		}
+		pubKey, err := ek.ECPubKey()
+		if err != nil {
+			log.Panic(err)
+		}
+
+		_, err = Db.Exec(context.Background(), `
+			INSERT INTO bsv20(txid, vout, height, idx, tick, max, lim, dec, status, reason, fund_path, fund_pkhash)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT(txid, vout) DO UPDATE SET
 				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
+				idx=EXCLUDED.idx,
+				fund_path=EXCLUDED.fund_path,
+				fund_pkhash=EXCLUDED.fund_pkhash`,
 			t.Outpoint.Txid(),
 			t.Outpoint.Vout(),
 			t.Height,
@@ -167,6 +185,8 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.Decimals,
 			b.Status,
 			b.Reason,
+			path,
+			crypto.Hash160(pubKey.SerialiseCompressed()),
 		)
 		if err != nil {
 			log.Panic(err)
@@ -174,12 +194,27 @@ func (b *Bsv20) Save(t *lib.Txo) {
 	}
 	if b.Op == "deploy+mint" {
 		b.Id = t.Outpoint
-		_, err := Db.Exec(context.Background(), `
-			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec)
-			VALUES($1, $2, $3, $4, $5, $6, $7)
+		hash := sha256.Sum256(*b.Id)
+		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+		ek, err := hdKey.DeriveChildFromPath(path)
+		if err != nil {
+			log.Panic(err)
+		}
+		pubKey, err := ek.ECPubKey()
+		if err != nil {
+			log.Panic(err)
+		}
+
+		_, err = Db.Exec(context.Background(), `
+			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec, fund_path, fund_pkhash)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT(id) DO UPDATE SET
 				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
+				idx=EXCLUDED.idx,
+				sym=EXCLUDED.sym,
+				icon=EXCLUDED.icon,
+				fund_path=EXCLUDED.fund_path,
+				fund_pkhash=EXCLUDED.fund_pkhash`,
 			t.Outpoint,
 			t.Height,
 			t.Idx,
@@ -187,6 +222,8 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.Icon,
 			b.Amt,
 			b.Decimals,
+			path,
+			crypto.Hash160(pubKey.SerialiseCompressed()),
 		)
 		if err != nil {
 			log.Panic(err)
@@ -194,14 +231,23 @@ func (b *Bsv20) Save(t *lib.Txo) {
 	}
 	if b.Op == "deploy+mint" || b.Op == "mint" || b.Op == "transfer" {
 		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
+
+		// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
 		_, err := Db.Exec(context.Background(), `
-			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, spend)
-			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, spend
+			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, script, status, spend)
+			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, spend
 			FROM txos
 			WHERE txid=$1 AND vout=$2
 			ON CONFLICT(txid, vout) DO UPDATE SET
 				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
+				idx=EXCLUDED.idx,
+				pkhash=EXCLUDED.pkhash,
+				status=EXCLUDED.status,
+				script=EXCLUDED.script,
+				price=EXCLUDED.price,
+				payout=EXCLUDED.payout,
+				listing=EXCLUDED.listing,
+				price_per_token=EXCLUDED.price_per_token`,
 			t.Outpoint.Txid(),
 			t.Outpoint.Vout(),
 			t.Height,
@@ -215,28 +261,10 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.PayOut,
 			b.Listing,
 			b.PricePerToken,
+			t.Script,
+			b.Status,
 		)
 
-		// log.Println("BSV20 Listing:", t.Outpoint)
-		// _, err := Db.Exec(context.Background(), `
-		// 	INSERT INTO bsv20_txos(txid, vout, height, idx, price, payout, listing)
-		// 	VALUES($1, $2, $3, $4, $5, $6, true)
-		// 	ON CONFLICT(txid, vout) DO UPDATE SET
-		// 		height=EXCLUDED.height,
-		// 		idx=EXCLUDED.idx,
-		// 		price=EXCLUDED.price,
-		// 		payout=EXCLUDED.payout,
-		// 		listing=EXCLUDED.listing`,
-		// 	t.Outpoint.Txid(),
-		// 	t.Outpoint.Vout(),
-		// 	height,
-		// 	t.Idx,
-		// 	l.Price,
-		// 	l.PayOut,
-		// )
-		// if err != nil {
-		// 	log.Panicf("%x %v", t.Outpoint.Txid(), err)
-		// }
 		if err != nil {
 			log.Panicf("%x %v", t.Outpoint.Txid(), err)
 		}
@@ -621,6 +649,7 @@ func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) 
 }
 
 func ValidateTransfer(txid []byte, mined bool) {
+	// log.Printf("Validating Transfer %x\n", txid)
 	invalid := map[string]string{}
 	tokensIn := map[string]uint64{}
 	tickTokens := map[string][]uint32{}
@@ -730,6 +759,7 @@ func ValidateTransfer(txid []byte, mined bool) {
 		var sql string
 		vouts := tickTokens[tick]
 		if reason, ok := invalid[tick]; ok {
+			log.Printf("Transfer Invalid: %x %s\n", txid, reason)
 			_, err := t.Exec(context.Background(), `
 				UPDATE bsv20_txos
 				SET status=-1, reason=$3
@@ -742,6 +772,7 @@ func ValidateTransfer(txid []byte, mined bool) {
 				log.Panicf("%x %s %v\n", txid, sql, err)
 			}
 		} else {
+			log.Printf("Transfer Valid: %x\n", txid)
 			_, err := t.Exec(context.Background(), `
 				UPDATE bsv20_txos
 				SET status=1
@@ -786,7 +817,7 @@ func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
 	rows, err := Db.Query(context.Background(), `
 		SELECT id, height, idx, sym, icon, dec, amt
 		FROM bsv20_v2
-		WHERE tick=$1`,
+		WHERE id=$1`,
 		id,
 	)
 	if err != nil {

@@ -27,8 +27,6 @@ var junglebusClient *junglebus.Client
 
 // var fromBlock uint
 
-var sub *junglebus.Subscription
-
 type Msg struct {
 	Id          string
 	Height      uint32
@@ -53,9 +51,12 @@ func Exec(
 	topic string,
 	fromBlock uint,
 	concurrency int,
+	saveSpends bool,
+	saveTxos bool,
 	verbose int,
 ) (err error) {
 	var wg sync.WaitGroup
+	errors := make(chan error)
 
 	threadLimiter = make(chan struct{}, concurrency)
 
@@ -63,7 +64,7 @@ func Exec(
 	if JUNGLEBUS == "" {
 		JUNGLEBUS = "https://junglebus.gorillapool.io"
 	}
-	fmt.Println("JUNGLEBUS", JUNGLEBUS)
+	fmt.Println("JUNGLEBUS", JUNGLEBUS, topic)
 
 	junglebusClient, err = junglebus.New(
 		junglebus.WithHTTP(JUNGLEBUS),
@@ -105,6 +106,8 @@ func Exec(
 		}
 	}()
 
+	var sub *junglebus.Subscription
+
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
 			if VERBOSE > 0 {
@@ -143,7 +146,8 @@ func Exec(
 			}
 		},
 		OnError: func(err error) {
-			log.Panicf("[ERROR]: %v", err)
+			log.Printf("[ERROR]: %v\n", err)
+			errors <- err
 		},
 	}
 
@@ -163,15 +167,30 @@ func Exec(
 					<-threadLimiter
 					wg.Done()
 				}()
-				txIndex, err := lib.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex, false)
+				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 				if err != nil {
 					log.Panic(err)
 				}
+				if saveSpends {
+					txCtx.SaveSpends()
+				}
 				if txHandler != nil {
-					err = txHandler(txIndex)
+					err = txHandler(txCtx)
 					if err != nil {
 						log.Panic(err)
 					}
+				}
+				if saveTxos {
+					txCtx.Save()
+				}
+				if indexer != "" {
+					Db.Exec(context.Background(),
+						`INSERT INTO txn_indexer(txid, indexer) 
+						VALUES ($1, $2)
+						ON CONFLICT DO NOTHING`,
+						txCtx.Txid,
+						indexer,
+					)
 				}
 			}(txn)
 		}
@@ -188,15 +207,21 @@ func Exec(
 				defer func() {
 					<-threadLimiter
 				}()
-				txIndex, err := lib.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex, false)
+				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 				if err != nil {
 					log.Panic(err)
 				}
+				if saveSpends {
+					txCtx.SaveSpends()
+				}
 				if txHandler != nil {
-					err = txHandler(txIndex)
+					err = txHandler(txCtx)
 					if err != nil {
 						log.Panic(err)
 					}
+				}
+				if saveTxos {
+					txCtx.Save()
 				}
 			}(txn)
 		}
@@ -210,8 +235,11 @@ func Exec(
 		eventHandler,
 	)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
+	defer func() {
+		sub.Unsubscribe()
+	}()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -223,6 +251,6 @@ func Exec(
 		os.Exit(0)
 	}()
 
-	<-make(chan struct{})
-	return
+	err = <-errors
+	return err
 }
