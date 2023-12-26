@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"log"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -31,7 +32,7 @@ func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *lib.IndexContext) {
 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 
 	IndexInscriptions(ctx)
@@ -202,7 +203,7 @@ ordLoop:
 			if err == nil {
 				insType = "json"
 				ins.Json = data
-				bsv20, _ = ParseBsv20(ins.File, txo.Height)
+				bsv20, _ = ParseBsv20(ins.File, txo)
 			} else if AsciiRegexp.Match(ins.File.Content) {
 				if insType == "file" {
 					insType = "text"

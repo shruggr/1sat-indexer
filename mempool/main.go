@@ -162,7 +162,38 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 	ordinals.CalculateOrigins(ctx)
 	ordinals.ParseInscriptions(ctx)
 	lock.ParseLocks(ctx)
-	ordlock.ParseLocks(ctx)
+	id := ordinals.IndexBsv20V2(ctx)
+	if id == nil {
+		ordlock.ParseLocks(ctx)
+	}
 	ctx.Save()
+
+	// if id != nil {
+	// 	txPKHashes := map[string][]byte{}
+	// 	for _, txo := range ctx.Txos {
+	// 		if len(txo.PKHash) > 0 {
+	// 			txPKHashes[hex.EncodeToString(txo.PKHash)] = txo.PKHash
+	// 		}
+	// 	}
+	// 	pkhashes := make([][]byte, 0, len(txPKHashes))
+	// 	for _, pkhash := range txPKHashes {
+	// 		pkhashes = append(pkhashes, pkhash)
+	// 	}
+	// 	if len(pkhashes) > 0 {
+	// 		ordinals.UpdateBsv20V2Funding(pkhashes)
+	// 	}
+	// 	ordinals.ValidateBsvPaid20V2Transfers()
+	// 	ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
+	// 		row := db.QueryRow(
+	// 			`SELECT fund_balance FROM bsv20_v2 WHERE id=$1`,
+	// 			id,
+	// 		)
+	// 		var pkhash []byte
+	// 		row.Scan(&pkhash)
+	// 		if len(pkhash) > 0 {
+
+	// 		}
+	// }
+
 	return ctx, nil
 }

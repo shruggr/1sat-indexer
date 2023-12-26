@@ -64,7 +64,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 		WHERE height IS NULL AND created < NOW() - interval '6h'
 		LIMIT 1000`)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	defer rows.Close()
 
@@ -74,7 +74,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 		var txid []byte
 		err := rows.Scan(&txid)
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 
 		rowCount++
@@ -87,7 +87,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 			}()
 			txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(txid))
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 			if txn.BlockHeight > 0 {
 				// log.Printf("Updating Txn: %x\n", txid)
@@ -100,7 +100,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 					txn.BlockIndex,
 				)
 				if err != nil {
-					panic(err)
+					log.Panicln(err)
 				}
 				cleaned++
 			} else {

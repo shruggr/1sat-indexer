@@ -87,7 +87,7 @@ func main() {
 		VERBOSE,
 	)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 
 }

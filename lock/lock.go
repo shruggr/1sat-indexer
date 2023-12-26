@@ -20,7 +20,7 @@ var LockSuffix, _ = hex.DecodeString("610079040065cd1d9f690079547a75537a537a537a
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	IndexLocks(ctx)
 	return

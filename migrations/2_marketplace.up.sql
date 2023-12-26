@@ -2,10 +2,12 @@ CREATE TABLE IF NOT EXISTS listings(
     txid BYTEA,
     vout INTEGER,
     height INTEGER,
-    idx INTEGER,
+    idx BIGINT,
     price NUMERIC,
     payout BYTEA,
     origin BYTEA,
+    oheight INTEGER.
+    oidx BIGINT,
     spend BYTEA DEFAULT '\x',
     pkhash BYTEA,
     data JSONB,
@@ -29,8 +31,12 @@ CREATE TABLE IF NOT EXISTS listings(
 CREATE INDEX idx_listings_bsv20_price_unspent ON listings(bsv20, price)
 WHERE spend = '\x';
 
-CREATE INDEX idx_listings_bsv20_num_unspent ON listings(bsv20, num)
+-- CREATE INDEX idx_listings_bsv20_num_unspent ON listings(bsv20, oheight, oidx, vout)
+-- WHERE spend = '\x';
+
+CREATE INDEX idx_listings_num_unspent ON listings(oheight, oidx, vout)
 WHERE spend = '\x';
+
 
 CREATE INDEX idx_listings_bsv20_height_idx_unspent ON listings(bsv20, height, idx)
 WHERE spend = '\x';

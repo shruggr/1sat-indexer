@@ -54,7 +54,7 @@ func main() {
 		FROM listings
 		WHERE spend = '\x'`)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	defer rows.Close()
 
@@ -65,7 +65,7 @@ func main() {
 		var vout uint
 		err := rows.Scan(&txid, &vout)
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 
 		wg.Add(1)
@@ -79,11 +79,11 @@ func main() {
 			// log.Println("URL:", url)
 			resp, err := http.Get(url)
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 			spend, err := io.ReadAll(resp.Body)
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 			if len(spend) == 0 {
 				log.Printf("Unpent: %x_%d\n", txid, vout)
@@ -92,7 +92,7 @@ func main() {
 			log.Printf("Spent: %x_%d\n", txid, vout)
 			rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 			lib.IndexTxn(rawtx, "", 0, 0)
 		}(txid, vout)

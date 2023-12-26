@@ -52,7 +52,7 @@ func main() {
 		`SELECT txid FROM bsv20_legacy`,
 	)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	defer rows.Close()
 	limiter := make(chan struct{}, 64)
@@ -61,7 +61,7 @@ func main() {
 		var txid []byte
 		err := rows.Scan(&txid)
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 		limiter <- struct{}{}
 		wg.Add(1)
@@ -72,7 +72,7 @@ func main() {
 			}()
 			tx, err := lib.JB.GetTransaction(context.Background(), hex.EncodeToString(txid))
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 
 			log.Printf("Processing %x\n", txid)

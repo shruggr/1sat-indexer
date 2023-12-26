@@ -30,7 +30,7 @@ var GENESIS, _ = lib.NewOutpointFromString("58b7558ea379f24266c7e2f5fe321992ad9a
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	ParseOpNS(ctx)
 	for _, txo := range ctx.Txos {

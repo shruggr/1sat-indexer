@@ -31,6 +31,11 @@ CREATE TABLE bsv20_v2(
     fund_balance NUMERIC GENERATED ALWAYS AS (fund_total-fund_used) STORED,
 );
 
+CREATE INDEX idx_bsv20_v2_fund_pkhash ON bsv20_v2(fund_pkhash);
+CREATE INDEX idx_bsv20_v2_fund_total ON bsv20_v2(fund_total);
+CREATE INDEX idx_bsv20_v2_fund_used ON bsv20_v2(fund_used);
+CREATE INDEX idx_bsv20_v2_fund_balance ON bsv20_v2(fund_balance);
+
 CREATE TABLE IF NOT EXISTS bsv20_txos(
     txid BYTEA,
     vout INT,
@@ -55,6 +60,15 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate ON bsv20_txos(op, tick, height, idx, vout)
 WHERE status = 0;
+
+CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate_v2 ON bsv20_txos(op, id, height, idx, vout)
+WHERE status = 0;
+
+CREATE INDEX idx_bsv20_txos_id_status ON bsv20_txos(id, status)
+INCLUDE(pkhash)
+WHERE spend='\x';
+
+CREATE INDEX idx_bsv20_txos_pkhash_id_status ON bsv20_txos(pkhash, id, status);
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_price_unspent ON bsv20_txos(price)
 WHERE spend = '\x' AND listing = true;

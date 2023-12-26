@@ -82,10 +82,15 @@ CREATE TABLE txos(
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX idx_txid_vout_spend ON txos(txid, vout, spend);
+CREATE INDEX idx_txo_pkhash_height_idx ON txos(pkhash, height NULLS LAST, idx)
+    WHERE pkhash IS NOT NULL;
 CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
     WHERE spend = '\x' AND pkhash IS NOT NULL;
 CREATE INDEX idx_txo_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
     WHERE spend != '\x' AND pkhash IS NOT NULL;
+CREATE INDEX idx_txo_pkhash_height_idx ON txos(pkhash, height NULLS LAST, idx)
+    WHERE pkhash IS NOT NULL;
+
 CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height NULLS LAST, idx)
     WHERE origin IS NOT NULL;
 CREATE INDEX idx_txos_spend ON txos(spend)

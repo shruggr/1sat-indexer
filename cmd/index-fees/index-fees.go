@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var POSTGRES string
@@ -22,6 +24,7 @@ var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
 var CONCURRENCY int = 64
+var ctx = context.Background()
 
 func init() {
 	wd, _ := os.Getwd()
@@ -58,13 +61,26 @@ func init() {
 }
 
 func main() {
+	blockPKHashes := map[string][]byte{}
 	err := indexer.Exec(
 		true,
 		false,
 		func(ctx *lib.IndexContext) error {
+			for _, txo := range ctx.Txos {
+				if len(txo.PKHash) > 0 {
+					blockPKHashes[hex.EncodeToString(txo.PKHash)] = txo.PKHash
+				}
+			}
 			return nil
 		},
 		func(height uint32) error {
+			pkhashes := make([][]byte, 0, len(blockPKHashes))
+			for _, pkhash := range blockPKHashes {
+				pkhashes = append(pkhashes, pkhash)
+			}
+			ordinals.UpdateBsv20V2Funding(pkhashes)
+
+			blockPKHashes = map[string][]byte{}
 			return nil
 		},
 		INDEXER,
@@ -76,6 +92,6 @@ func main() {
 		VERBOSE,
 	)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 }

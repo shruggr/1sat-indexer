@@ -15,6 +15,7 @@ import (
 	"github.com/libsv/go-bk/bip32"
 	"github.com/libsv/go-bk/crypto"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 type Bsv20Status int
@@ -27,6 +28,10 @@ const (
 	Valid   Bsv20Status = 1
 	MintFee uint64      = 100
 )
+
+const BSV20V2_OP_COST = 1000
+
+var ctx = context.Background()
 
 type Bsv20 struct {
 	Txid          []byte        `json:"-"`
@@ -51,12 +56,43 @@ type Bsv20 struct {
 	PayOut        []byte        `json:"-"`
 	Listing       bool          `json:"-"`
 	PricePerToken float64       `json:"-"`
+	FundPath      string        `json:"-"`
+	FundPKHash    []byte        `json:"-"`
 }
 
-func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
+func IndexBsv20V2(ctx *lib.IndexContext) (id *lib.Outpoint) {
+	// ParseInscriptions(ctx)
+	for _, txo := range ctx.Txos {
+		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
+			if bsv20.Ticker != "" {
+				continue
+			}
+			id = bsv20.Id
+			list := ordlock.ParseScript(txo)
+
+			if list != nil {
+				txo.PKHash = list.PKHash
+				bsv20.PKHash = list.PKHash
+				bsv20.Price = list.Price
+				bsv20.PayOut = list.PayOut
+				bsv20.Listing = true
+				token := LoadTokenById(bsv20.Id)
+				var decimals uint8
+				if token != nil {
+					decimals = token.Decimals
+				}
+				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
+			}
+			bsv20.Save(txo)
+		}
+	}
+	return
+}
+
+func ParseBsv20(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error) {
 	mime := strings.ToLower(ord.Type)
 	if !strings.HasPrefix(mime, "application/bsv-20") &&
-		!(height != nil && *height < 793000 && strings.HasPrefix(mime, "text/plain")) {
+		!(txo.Height != nil && *txo.Height < 793000 && strings.HasPrefix(mime, "text/plain")) {
 		return nil, nil
 	}
 	data := map[string]string{}
@@ -124,6 +160,18 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 				return nil, nil
 			}
 		}
+		hash := sha256.Sum256([]byte(bsv20.Ticker))
+		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+		ek, err := hdKey.DeriveChildFromPath(path)
+		if err != nil {
+			log.Panic(err)
+		}
+		pubKey, err := ek.ECPubKey()
+		if err != nil {
+			log.Panic(err)
+		}
+		bsv20.FundPath = path
+		bsv20.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
 	case "deploy+mint":
 		if bsv20.Amt == nil {
 			return nil, nil
@@ -136,6 +184,19 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 		if icon, ok := data["icon"]; ok {
 			bsv20.Icon, _ = lib.NewOutpointFromString(icon)
 		}
+		bsv20.Id = txo.Outpoint
+		hash := sha256.Sum256(*bsv20.Id)
+		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+		ek, err := hdKey.DeriveChildFromPath(path)
+		if err != nil {
+			log.Panic(err)
+		}
+		pubKey, err := ek.ECPubKey()
+		if err != nil {
+			log.Panic(err)
+		}
+		bsv20.FundPath = path
+		bsv20.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
 	case "mint":
 		if bsv20.Ticker == "" || bsv20.Amt == nil {
 			return nil, nil
@@ -156,18 +217,7 @@ func ParseBsv20(ord *lib.File, height *uint32) (bsv20 *Bsv20, err error) {
 
 func (b *Bsv20) Save(t *lib.Txo) {
 	if b.Op == "deploy" {
-		hash := sha256.Sum256([]byte(b.Ticker))
-		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
-		ek, err := hdKey.DeriveChildFromPath(path)
-		if err != nil {
-			log.Panic(err)
-		}
-		pubKey, err := ek.ECPubKey()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		_, err = Db.Exec(context.Background(), `
+		_, err := Db.Exec(context.Background(), `
 			INSERT INTO bsv20(txid, vout, height, idx, tick, max, lim, dec, status, reason, fund_path, fund_pkhash)
 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT(txid, vout) DO UPDATE SET
@@ -185,27 +235,15 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.Decimals,
 			b.Status,
 			b.Reason,
-			path,
-			crypto.Hash160(pubKey.SerialiseCompressed()),
+			b.FundPath,
+			b.FundPKHash,
 		)
 		if err != nil {
 			log.Panic(err)
 		}
 	}
 	if b.Op == "deploy+mint" {
-		b.Id = t.Outpoint
-		hash := sha256.Sum256(*b.Id)
-		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
-		ek, err := hdKey.DeriveChildFromPath(path)
-		if err != nil {
-			log.Panic(err)
-		}
-		pubKey, err := ek.ECPubKey()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		_, err = Db.Exec(context.Background(), `
+		_, err := Db.Exec(context.Background(), `
 			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec, fund_path, fund_pkhash)
 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT(id) DO UPDATE SET
@@ -222,8 +260,8 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.Icon,
 			b.Amt,
 			b.Decimals,
-			path,
-			crypto.Hash160(pubKey.SerialiseCompressed()),
+			b.FundPath,
+			b.FundPKHash,
 		)
 		if err != nil {
 			log.Panic(err)
@@ -607,17 +645,81 @@ func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
 	wg.Wait()
 }
 
+func ValidateBsvPaid20V2Transfers(concurrency int) {
+	rows, err := Db.Query(context.Background(), `
+		SELECT b.id, b.fund_balance
+		FROM bsv20_v2 b
+		WHERE b.fund_balance >= $1 AND EXISTS (
+			SELECT 1 FROM bsv20_txos WHERE id=b.id AND op='transfer' AND status=0
+		)`,
+		BSV20V2_OP_COST,
+	)
+
+	if err != nil {
+		log.Panic(err)
+	}
+	defer rows.Close()
+
+	limiter := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for rows.Next() {
+		limiter <- struct{}{}
+		wg.Add(1)
+		id := &lib.Outpoint{}
+		var balance int
+		err = rows.Scan(&id, &balance)
+		if err != nil {
+			log.Panic(err)
+		}
+		go func(id *lib.Outpoint, balance int) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			// fmt.Printf("[BSV20] Validating transfers. Id: %s Height %d\n", id, height)
+			sql := `SELECT txid
+				FROM (
+					SELECT txid, MIN(height) as height, MIN(idx) as idx
+					FROM bsv20_txos
+					WHERE status=0 AND op='transfer' AND id=$1
+					GROUP by txid
+				) t
+				ORDER BY height ASC, idx ASC
+				LIMIT $3`
+			// log.Panicln(sql, id.String(), height, balance/BSV20V2_OP_COST)
+
+			rows, err := Db.Query(context.Background(), sql,
+				id,
+				balance/BSV20V2_OP_COST,
+			)
+			if err != nil {
+				log.Panicln(err)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var txid []byte
+				err := rows.Scan(&txid)
+				if err != nil {
+					log.Panicln(err)
+				}
+				ValidateV2Transfer(txid, id, true)
+			}
+		}(id, balance)
+	}
+	wg.Wait()
+}
+
 func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) {
 	// fmt.Printf("[BSV20] Validating transfers. Id: %s Height %d\n", id, height)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid
 		FROM (
-			SELECT txid, MIN(height) as height
+			SELECT txid, MIN(height) as height, MIN(idx) as idx
 			FROM bsv20_txos
-			WHERE status=0 AND op='transfer' AND id=$1 AND height <= $2
+			WHERE status=0 AND op='transfer' AND id=$1 AND height<=$2
 			GROUP by txid
 		) t
-		ORDER BY height ASC`,
+		ORDER BY height ASC, idx ASC`,
 		id,
 		height,
 	)
@@ -648,8 +750,133 @@ func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) 
 	wg.Wait()
 }
 
+func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) {
+	// log.Printf("Validating V2 Transfer %x %s\n", txid, id.String())
+
+	inRows, err := Db.Query(context.Background(), `
+		SELECT txid, vout, status, amt
+		FROM bsv20_txos
+		WHERE spend=$1 AND id=$2`,
+		txid,
+		id,
+	)
+	if err != nil {
+		log.Panicf("%x - %v\n", txid, err)
+	}
+	defer inRows.Close()
+
+	var reason string
+	var tokensIn uint64
+	var tokenOuts []uint32
+	for inRows.Next() {
+		var inTxid []byte
+		var vout uint32
+		var amt uint64
+		var inStatus int
+		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+
+		switch inStatus {
+		case -1:
+			reason = "invalid input"
+		case 0:
+			fmt.Printf("inputs pending %s %x\n", id.String(), txid)
+			return
+		case 1:
+			tokensIn += amt
+		}
+	}
+	inRows.Close()
+
+	if reason == "" {
+		outRows, err := Db.Query(context.Background(), `
+			SELECT vout, status, amt
+			FROM bsv20_txos
+			WHERE txid=$1 AND id=$2`,
+			txid,
+			id,
+		)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+		defer outRows.Close()
+
+		for outRows.Next() {
+			var vout uint32
+			var amt uint64
+			var status int
+			err = outRows.Scan(&vout, &status, &amt)
+			if err != nil {
+				log.Panicf("%x - %v\n", txid, err)
+			}
+			tokenOuts = append(tokenOuts, vout)
+			if amt > tokensIn {
+				reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
+				if !mined {
+					fmt.Printf("%s %s - %x\n", id.String(), reason, txid)
+					return
+				}
+			} else {
+				tokensIn -= amt
+			}
+		}
+	}
+
+	t, err := Db.Begin(context.Background())
+	if err != nil {
+		log.Panic(err)
+	}
+	defer t.Rollback(context.Background())
+
+	if reason != "" {
+		log.Printf("Transfer Invalid: %x %s %s\n", txid, id.String(), reason)
+		_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
+				SET status=-1, reason=$3
+				WHERE txid=$1 AND vout=ANY($2)`,
+			txid,
+			tokenOuts,
+			reason,
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", txid, err)
+		}
+	} else {
+		log.Printf("Transfer Valid: %x %s\n", txid, id.String())
+		_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
+				SET status=1
+				WHERE txid=$1 AND vout=ANY ($2)`,
+			txid,
+			tokenOuts,
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", txid, err)
+		}
+		if id != nil {
+			_, err := t.Exec(context.Background(), `
+					UPDATE bsv20_v2
+					SET fund_used=fund_used+$2
+					WHERE id=$1`,
+				id,
+				BSV20V2_OP_COST*len(tokenOuts),
+			)
+			if err != nil {
+				log.Panicf("%x %v\n", txid, err)
+			}
+		}
+	}
+
+	err = t.Commit(context.Background())
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
 func ValidateTransfer(txid []byte, mined bool) {
-	// log.Printf("Validating Transfer %x\n", txid)
+	log.Printf("Validating Transfer %x\n", txid)
 	invalid := map[string]string{}
 	tokensIn := map[string]uint64{}
 	tickTokens := map[string][]uint32{}
@@ -758,6 +985,8 @@ func ValidateTransfer(txid []byte, mined bool) {
 	for tick := range tickTokens {
 		var sql string
 		vouts := tickTokens[tick]
+		id, _ := lib.NewOutpointFromString(tick)
+
 		if reason, ok := invalid[tick]; ok {
 			log.Printf("Transfer Invalid: %x %s\n", txid, reason)
 			_, err := t.Exec(context.Background(), `
@@ -782,6 +1011,29 @@ func ValidateTransfer(txid []byte, mined bool) {
 			)
 			if err != nil {
 				log.Panicf("%x %s %v\n", txid, sql, err)
+			}
+			if id != nil {
+				_, err := t.Exec(context.Background(), `
+					UPDATE bsv20_v2
+					SET fund_used=fund_used+$2
+					WHERE id=$1`,
+					id,
+					BSV20V2_OP_COST,
+				)
+				if err != nil {
+					log.Panicf("%x %s %v\n", txid, sql, err)
+				}
+			} else {
+				_, err := t.Exec(context.Background(), `
+					UPDATE bsv20
+					SET fund_used=fund_used+$2
+					WHERE tick=$1 AND status=1`,
+					tick,
+					BSV20V2_OP_COST,
+				)
+				if err != nil {
+					log.Panicf("%x %s %v\n", txid, sql, err)
+				}
 			}
 		}
 	}
@@ -863,5 +1115,42 @@ func setValid(t *pgx.Tx, txid []byte, vout uint32, reason string) {
 	_, err := (*t).Exec(context.Background(), sql, txid, vout)
 	if err != nil {
 		log.Panic(err)
+	}
+}
+
+func UpdateBsv20V2Funding(pkhashes [][]byte) {
+	fmt.Print("Updating balance for ")
+	for _, pkhash := range pkhashes {
+		fmt.Printf("%x ", pkhash)
+	}
+	fmt.Print("\n")
+	_, err := Db.Exec(ctx, `UPDATE bsv20_v2 v
+			SET fund_total=s.total
+			FROM (
+				SELECT pkhash, SUM(satoshis) as total 
+				FROM txos
+				GROUP BY pkhash
+			) s
+			WHERE s.pkhash = v.fund_pkhash AND fund_pkhash = ANY($1)`,
+		pkhashes,
+	)
+	if err != nil {
+		log.Panicln(err)
+	}
+}
+
+func UpdateBsv20V2FundingForId(id *lib.Outpoint) {
+	_, err := Db.Exec(ctx, `UPDATE bsv20_v2 v
+		SET fund_total=s.total
+		FROM (
+			SELECT pkhash, SUM(satoshis) as total 
+			FROM txos
+			GROUP BY pkhash
+		) s
+		WHERE s.pkhash = v.fund_pkhash AND v.id=$1`,
+		id,
+	)
+	if err != nil {
+		log.Panicln(err)
 	}
 }

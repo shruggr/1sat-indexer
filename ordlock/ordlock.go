@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/v2"
@@ -62,15 +63,17 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 func (l *Listing) Save(t *lib.Txo) {
 	if _, ok := t.Data["bsv20"]; !ok {
 		_, err := Db.Exec(context.Background(), `
-			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, spend, pkhash, data)
-			SELECT $1, $2, t.height, t.idx, $3, $4, t.origin, t.spend, t.pkhash, o.data
+			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, oheight, oidx, spend, pkhash, data)
+			SELECT $1, $2, t.height, t.idx, $3, $4, t.origin, o.height, o.idx, t.spend, t.pkhash, o.data
 			FROM txos t
 			JOIN txos o ON o.outpoint = t.origin
 			WHERE t.txid=$1 AND t.vout=$2
 			ON CONFLICT(txid, vout) DO UPDATE SET 
 				height=EXCLUDED.height,
 				idx=EXCLUDED.idx,
-				origin=EXCLUDED.origin`,
+				origin=EXCLUDED.origin,
+				oheight=EXCLUDED.oheight,
+				oidx=EXCLUDED.oidx`,
 			t.Outpoint.Txid(),
 			t.Outpoint.Vout(),
 			l.Price,
@@ -78,7 +81,7 @@ func (l *Listing) Save(t *lib.Txo) {
 		)
 
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 	}
 }

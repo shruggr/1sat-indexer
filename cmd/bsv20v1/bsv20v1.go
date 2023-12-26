@@ -70,7 +70,7 @@ func main() {
 		WHERE topic IS NOT NULL`,
 	)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	defer rows.Close()
 	var wg sync.WaitGroup
@@ -84,7 +84,7 @@ func main() {
 
 		err := rows.Scan(&seq, &name, &tick, &id, &topic, &progress)
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 
 		wg.Add(1)
@@ -125,7 +125,7 @@ func main() {
 							height,
 						)
 						if err != nil {
-							panic(err)
+							log.Panicln(err)
 						}
 						return err
 					},

@@ -97,7 +97,7 @@ func SaveMap(origin *lib.Outpoint) {
 		var data lib.Map
 		err = rows.Scan(&data)
 		if err != nil {
-			panic(err)
+			log.Panicln(err)
 		}
 		for k, v := range data {
 			m[k] = v
