@@ -23,11 +23,6 @@ var THREADS uint64 = 16
 
 var db *pgxpool.Pool
 
-// var junglebusClient *junglebus.Client
-// var msgQueue = make(chan *Msg, 1000000)
-// var fromBlock uint32
-// var sub *junglebus.Subscription
-
 type Msg struct {
 	Id          string
 	Height      uint32

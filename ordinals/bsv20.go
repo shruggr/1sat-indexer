@@ -1124,14 +1124,15 @@ func UpdateBsv20V2Funding(pkhashes [][]byte) {
 		fmt.Printf("%x ", pkhash)
 	}
 	fmt.Print("\n")
-	_, err := Db.Exec(ctx, `UPDATE bsv20_v2 v
-			SET fund_total=s.total
-			FROM (
-				SELECT pkhash, SUM(satoshis) as total 
-				FROM txos
-				GROUP BY pkhash
-			) s
-			WHERE s.pkhash = v.fund_pkhash AND fund_pkhash = ANY($1)`,
+	_, err := Db.Exec(context.Background(), `UPDATE bsv20_v2 v
+		SET fund_total=s.total
+		FROM (
+			SELECT pkhash, SUM(satoshis) as total 
+			FROM txos
+			WHERE pkhash = ANY($1)
+			GROUP BY pkhash
+		) s
+		WHERE s.pkhash = v.fund_pkhash AND fund_pkhash = ANY($1)`,
 		pkhashes,
 	)
 	if err != nil {

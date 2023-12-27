@@ -50,10 +50,10 @@ func (ctx *IndexContext) Save() {
 				<-limiter
 				wg.Done()
 			}()
+			txo.Save()
 			if Rdb != nil {
 				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
 			}
-			txo.Save()
 		}(txo)
 	}
 	wg.Wait()
