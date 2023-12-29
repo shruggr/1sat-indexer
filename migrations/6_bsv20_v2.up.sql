@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
     payout BYTEA,
     price_per_token NUMERIC,
     script BYTEA,
+    implied BOOLEAN,
 	PRIMARY KEY(txid, vout),
     FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE
 );

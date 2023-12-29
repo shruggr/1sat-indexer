@@ -66,15 +66,35 @@ func init() {
 	}
 }
 
-// var tokenPKHashes = map[string][]byte{}
-
 func main() {
 	sub := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	subscriber := sub.Subscribe(context.Background())
+	sub1 := sub.Subscribe(context.Background())
+	ch1 := sub1.Channel()
+	go func() {
+		for msg := range ch1 {
+			pkhash, _ := hex.DecodeString(msg.Channel)
+			ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
+			rdb.Publish(context.Background(), "v2xfer", "")
+		}
+	}()
+
+	trig := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	ch2 := trig.Subscribe(context.Background(), "v2xfer").Channel()
+	go func() {
+		for {
+			<-ch2
+			ordinals.ValidatePaidBsv20V2Transfers(CONCURRENCY)
+		}
+	}()
+
 	rows, err := db.Query(ctx,
 		`SELECT fund_pkhash FROM bsv20_v2`,
 	)
@@ -89,9 +109,8 @@ func main() {
 		if err != nil {
 			log.Panicln(err)
 		}
-		subscriber.Subscribe(context.Background(), hex.EncodeToString(pkhash))
+		sub1.Subscribe(context.Background(), hex.EncodeToString(pkhash))
 		pkhashes = append(pkhashes, pkhash)
-		// tokenPKHashes[hex.EncodeToString(pkhash)] = pkhash
 	}
 	rows.Close()
 
@@ -99,26 +118,13 @@ func main() {
 		ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
 	}
 
-	// subscriber.
-	ch := subscriber.Channel()
-
-	go func() {
-		for msg := range ch {
-			pkhash, _ := hex.DecodeString(msg.Channel)
-			ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
-		}
-	}()
-
-	// for _, pkhash := range pkhashes {
-	// 	// ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
-	// }
-	// for i := 0; i < len(pkhashes); i += 25 {
-	// 	if i > len(pkhashes) {
-	// 		ordinals.UpdateBsv20V2Funding(pkhashes[i:])
-	// 	} else {
-	// 		ordinals.UpdateBsv20V2Funding(pkhashes[i : i+25])
+	// var settled = make(chan uint32, 1000)
+	// go func() {
+	// 	for {
+	// 		<-settled
+	// 		ordinals.ValidateBsvPaid20V2Transfers(CONCURRENCY)
 	// 	}
-	// }
+	// }()
 
 	err = indexer.Exec(
 		true,
@@ -133,7 +139,7 @@ func main() {
 					}
 					if len(bsv20.FundPKHash) > 0 {
 						pkhash := hex.EncodeToString(bsv20.FundPKHash)
-						subscriber.Subscribe(context.Background(), pkhash)
+						sub1.Subscribe(context.Background(), pkhash)
 					}
 					list := ordlock.ParseScript(txo)
 
@@ -151,12 +157,14 @@ func main() {
 						bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
 					}
 					bsv20.Save(txo)
+					if bsv20.Op == "transfer" {
+						rdb.Publish(context.Background(), "v2xfer", "")
+					}
 				}
 			}
 			return nil
 		},
 		func(height uint32) error {
-			// settled <- height
 			return nil
 		},
 		INDEXER,

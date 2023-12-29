@@ -645,7 +645,8 @@ func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
 	wg.Wait()
 }
 
-func ValidateBsvPaid20V2Transfers(concurrency int) {
+func ValidatePaidBsv20V2Transfers(concurrency int) {
+	log.Println("Validating Paid V2 Xfers")
 	rows, err := Db.Query(context.Background(), `
 		SELECT b.id, b.fund_balance
 		FROM bsv20_v2 b
@@ -685,7 +686,7 @@ func ValidateBsvPaid20V2Transfers(concurrency int) {
 					GROUP by txid
 				) t
 				ORDER BY height ASC, idx ASC
-				LIMIT $3`
+				LIMIT $2`
 			// log.Panicln(sql, id.String(), height, balance/BSV20V2_OP_COST)
 
 			rows, err := Db.Query(context.Background(), sql,
@@ -707,6 +708,24 @@ func ValidateBsvPaid20V2Transfers(concurrency int) {
 		}(id, balance)
 	}
 	wg.Wait()
+}
+
+func ValidateBsvPaid20V2Transfer(txid []byte, id *lib.Outpoint, mined bool) {
+	rows, err := Db.Query(context.Background(), `
+		SELECT 1
+		FROM bsv20_v2
+		WHERE txid=$1 AND fund_balance>=$2`,
+		txid,
+		BSV20V2_OP_COST,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		ValidateV2Transfer(txid, id, true)
+	}
 }
 
 func ValidateBsv20V2Transfers(id *lib.Outpoint, height uint32, concurrency int) {

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -14,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GorillaPool/go-junglebus"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,6 +33,7 @@ var PORT int
 var db *pgxpool.Pool
 var rdb *redis.Client
 var ctx = context.Background()
+var jb *junglebus.Client
 
 func init() {
 	wd, _ := os.Getwd()
@@ -42,7 +46,15 @@ func init() {
 
 	log.Println("POSTGRES:", POSTGRES)
 	var err error
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	config, err := pgxpool.ParseConfig(POSTGRES)
+	if err != nil {
+		log.Panic(err)
+	}
+	config.MaxConnIdleTime = 15 * time.Second
+
+	db, err = pgxpool.NewWithConfig(context.Background(), config)
+
+	// db, err = pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -53,6 +65,18 @@ func init() {
 		DB:       0,  // use default DB
 	})
 
+	JUNGLEBUS := os.Getenv("JUNGLEBUS")
+	if JUNGLEBUS == "" {
+		JUNGLEBUS = "https://junglebus.gorillapool.io"
+	}
+
+	jb, err = junglebus.New(
+		junglebus.WithHTTP(JUNGLEBUS),
+	)
+	if err != nil {
+		log.Panicln(err.Error())
+	}
+
 	ordinals.Initialize(db, rdb)
 }
 
@@ -62,6 +86,7 @@ func main() {
 
 	app := fiber.New()
 	app.Use(recover.New())
+	app.Use(logger.New())
 
 	app.Get("/yo", func(c *fiber.Ctx) error {
 		return c.SendString("Yo!")
@@ -80,7 +105,7 @@ func main() {
 			log.Println("Frequent Update", address)
 		}
 		url := fmt.Sprintf("%s/v1/address/get/%s/%d", os.Getenv("JUNGLEBUS"), address, height)
-		log.Println("URL:", url)
+		// log.Println("URL:", url)
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
@@ -91,35 +116,53 @@ func main() {
 			return err
 		}
 
-		txids := make([][]byte, len(txns))
+		// txids := make([][]byte, len(txns))
 		toIndex := map[string]*AddressTxn{}
+		batches := [][][]byte{}
+		batch := make([][]byte, 0, 100)
+		// log.Println("Txns:", len(txns))
 		for i, txn := range txns {
-			txids[i] = txn.Txid
+			batch = append(batch, txn.Txid)
 			toIndex[txn.Txid.String()] = txn
 			if txn.Height > height {
 				height = txn.Height
 			}
-		}
 
-		rows, err := db.Query(c.Context(), `
-			SELECT encode(txid, 'hex')
-			FROM txn_indexer 
-			WHERE indexer='ord' AND txid = ANY($1)`,
-			txids,
-		)
-		if err != nil {
-			log.Println(err)
-			return c.SendStatus(http.StatusInternalServerError)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var txid string
-			err := rows.Scan(&txid)
-			if err != nil {
-				return err
+			if i%100 == 99 {
+				batches = append(batches, batch)
+				batch = make([][]byte, 0, 100)
 			}
-			delete(toIndex, txid)
+		}
+		if len(txns)%100 != 99 {
+			batches = append(batches, batch)
+		}
+
+		for _, batch := range batches {
+			// log.Println("Batch", len(batch))
+			if len(batch) == 0 {
+				break
+			}
+			rows, err := db.Query(c.Context(), `
+				SELECT encode(txid, 'hex')
+				FROM txn_indexer 
+				WHERE indexer='ord' AND txid = ANY($1)`,
+				batch,
+			)
+			if err != nil {
+				log.Println(err)
+				return c.SendStatus(http.StatusInternalServerError)
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var txid string
+				err := rows.Scan(&txid)
+				if err != nil {
+					return err
+				}
+				delete(toIndex, txid)
+			}
+			rows.Close()
 		}
 		var wg sync.WaitGroup
 		limiter := make(chan struct{}, 32)
@@ -145,7 +188,7 @@ func main() {
 			INSERT INTO addresses(address, height, updated)
 			VALUES ($1, $2, CURRENT_TIMESTAMP) 
 			ON CONFLICT (address) DO UPDATE SET 
-				height = $2, 
+				height = EXCLUDED.height, 
 				updated = CURRENT_TIMESTAMP`,
 			address,
 			height,
@@ -153,7 +196,7 @@ func main() {
 		if err != nil {
 			log.Panicf("Error updating address: %s", err)
 		}
-		fmt.Println("Finished", address)
+		// fmt.Println("Finished", address)
 		c.SendStatus(http.StatusNoContent)
 		return nil
 	})
@@ -166,15 +209,17 @@ func main() {
 
 		var op lib.Outpoint
 		for {
-			row := db.QueryRow(ctx, `SELECT outpoint
+			row := db.QueryRow(ctx, `
+				SELECT outpoint, height
 				FROM txos
 				WHERE origin = $1
-				ORDER BY height DESC, idx DESC
+				ORDER BY CASE WHEN spend='\x' THEN 1 ELSE 0 END DESC, height DESC, idx DESC
 				LIMIT 1`,
 				origin,
 			)
 			var outpoint []byte
-			err = row.Scan(&outpoint)
+			var height sql.NullInt32
+			err = row.Scan(&outpoint, &height)
 			if err != nil {
 				if err == pgx.ErrNoRows {
 					return c.SendStatus(404)
@@ -182,13 +227,23 @@ func main() {
 				return err
 			}
 			if bytes.Equal(op, outpoint) {
+				// log.Printf("OPs Equal: %x=%x\n", op, outpoint)
 				return c.Send(outpoint)
 			}
 
 			op = lib.Outpoint(outpoint)
 
+			if !height.Valid || height.Int32 == 0 {
+				txn, err := jb.GetTransaction(c.Context(), hex.EncodeToString(op.Txid()))
+				// rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
+				if err != nil {
+					return err
+				}
+				// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))
+				ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+			}
 			url := fmt.Sprintf("%s/v1/txo/spend/%s", os.Getenv("JUNGLEBUS"), op.String())
-			log.Println("URL:", url)
+			// log.Println("URL:", url)
 			resp, err := http.Get(url)
 			if err != nil {
 				return err
@@ -198,13 +253,16 @@ func main() {
 				return err
 			}
 			if len(spend) == 0 {
+				// log.Printf("Empty Spend: %s\n", op.String())
 				return c.Send(outpoint)
 			}
-			rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
+			txn, err := jb.GetTransaction(c.Context(), hex.EncodeToString(spend))
+			// rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
 			if err != nil {
 				return err
 			}
-			ordinals.IndexTxn(rawtx, "", 0, 0)
+			// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))
+			ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 		}
 	})
 

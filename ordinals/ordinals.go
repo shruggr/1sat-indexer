@@ -61,24 +61,6 @@ func ParseInscriptions(ctx *lib.IndexContext) {
 			continue
 		}
 		ParseScript(txo)
-
-		// if len(txo.PKHash) != 0 && Rdb != nil {
-		// 	Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
-		// }
-		// txo.Save()
-		// if insc, ok := txo.Data["insc"].(*Inscription); ok && ctx.Height != nil {
-		// 	insc.Outpoint = txo.Outpoint
-		// 	insc.Height = ctx.Height
-		// 	insc.Idx = ctx.Idx
-		// 	insc.Save()
-		// }
-		// if txo.Origin == nil || txo.Data == nil {
-		// 	continue
-		// }
-
-		// if txo.Data["map"] != nil {
-		// 	SaveMap(txo.Origin)
-		// }
 	}
 }
 

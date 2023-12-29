@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,7 +62,7 @@ func main() {
 
 func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 	rows, err := db.Query(ctx, `SELECT txid FROM txns
-		WHERE height IS NULL AND created < NOW() - interval '6h'
+		WHERE (height IS NULL OR height=0) AND created < NOW() - interval '6h'
 		LIMIT 1000`)
 	if err != nil {
 		log.Panicln(err)
@@ -87,10 +88,32 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 			}()
 			txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(txid))
 			if err != nil {
-				log.Panicln(err.Error())
+				if !strings.HasPrefix(err.Error(), "server error: 404") {
+					log.Panicln(err)
+				}
 			}
-			if txn.BlockHeight > 0 {
+			if txn != nil && txn.BlockHeight > 0 {
 				// log.Printf("Updating Txn: %x\n", txid)
+				_, err = db.Exec(ctx, `UPDATE txos
+					SET height=$2, idx=$3
+					WHERE txid=$1`,
+					txid,
+					txn.BlockHeight,
+					txn.BlockIndex,
+				)
+				if err != nil {
+					log.Panicln(err)
+				}
+				_, err = db.Exec(ctx, `UPDATE txos
+					SET spend_height=$2, spend_idx=$3
+					WHERE spend=$1`,
+					txid,
+					txn.BlockHeight,
+					txn.BlockIndex,
+				)
+				if err != nil {
+					log.Panicln(err)
+				}
 				_, err := db.Exec(ctx, `UPDATE txns
 					SET block_id=decode($2, 'hex'), height=$3, idx=$4
 					WHERE txid=$1`,

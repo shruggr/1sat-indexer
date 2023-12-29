@@ -94,7 +94,7 @@ func ParseTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *Ind
 		Tx:   tx,
 		Txid: txid,
 	}
-	if blockId != "" {
+	if height > 0 {
 		ctx.BlockId = &blockId
 		ctx.Height = &height
 		ctx.Idx = idx

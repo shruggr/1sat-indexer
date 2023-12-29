@@ -32,7 +32,7 @@ CREATE TABLE txns(
 );
 CREATE INDEX idx_txns_block_id_idx ON txns(block_id, idx);
 CREATE INDEX idx_txns_created_unmined ON txns(created)
-    WHERE height IS NULL;
+    WHERE height IS NULL OR height=0;
 
 CREATE TABLE txos(
     outpoint BYTEA PRIMARY KEY,
