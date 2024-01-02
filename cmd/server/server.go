@@ -204,6 +204,7 @@ func main() {
 	app.Get("/origin/:origin/latest", func(c *fiber.Ctx) error {
 		origin, err := lib.NewOutpointFromString(c.Params("origin"))
 		if err != nil {
+			log.Println("Parse origin", err)
 			return err
 		}
 
@@ -222,12 +223,14 @@ func main() {
 			err = row.Scan(&outpoint, &height)
 			if err != nil {
 				if err == pgx.ErrNoRows {
+					log.Println("Lookup latest", err)
 					return c.SendStatus(404)
 				}
+				log.Println("Lookup latest", err)
 				return err
 			}
 			if bytes.Equal(op, outpoint) {
-				// log.Printf("OPs Equal: %x=%x\n", op, outpoint)
+				log.Printf("OPs Equal: %x=%x\n", op, outpoint)
 				return c.Send(outpoint)
 			}
 
@@ -237,7 +240,11 @@ func main() {
 				txn, err := jb.GetTransaction(c.Context(), hex.EncodeToString(op.Txid()))
 				// rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
 				if err != nil {
+					log.Println("GetTransaction", err)
 					return err
+				}
+				if len(txn.Transaction) == 0 {
+					return c.Send(outpoint)
 				}
 				// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))
 				ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
@@ -246,19 +253,26 @@ func main() {
 			// log.Println("URL:", url)
 			resp, err := http.Get(url)
 			if err != nil {
+				log.Println("JB Spend Request", err)
 				return err
+			}
+			if resp.StatusCode == 404 {
+				log.Println("Not Found", url)
+				return c.Send(outpoint)
 			}
 			spend, err := io.ReadAll(resp.Body)
 			if err != nil {
+				log.Println("ReadAll", err)
 				return err
 			}
 			if len(spend) == 0 {
-				// log.Printf("Empty Spend: %s\n", op.String())
+				log.Printf("Empty Spend: %s\n", op.String())
 				return c.Send(outpoint)
 			}
 			txn, err := jb.GetTransaction(c.Context(), hex.EncodeToString(spend))
 			// rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
 			if err != nil {
+				log.Println("GetTransaction", err)
 				return err
 			}
 			// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))

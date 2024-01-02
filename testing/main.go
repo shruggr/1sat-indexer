@@ -41,7 +41,7 @@ func main() {
 
 	// pkhash, _ := hex.DecodeString("f5382d54bf172786cfae6cead77caa4fef957e4c")
 	// ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
-	// ordinals.ValidateBsv20V1Mints(822921, "BSVS")
+	// ordinals.ValidateBsv20V1Mints(840000, "BSVS")
 	ordinals.ValidatePaidBsv20V1Transfers(1)
 
 	// rawtx, err := lib.LoadRawtx("75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f")

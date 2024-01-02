@@ -408,7 +408,7 @@ func ValidateBsv20Deploy(height uint32) {
 
 func ValidateBsv20MintsSubs(height uint32, topic string) {
 	rows, err := Db.Query(context.Background(), `
-		SELECT DISTINCT b.tick
+		SELECT DISTINCT b.tick, b.fund_balance
 		FROM bsv20_subs s
 		JOIN bsv20 b ON b.tick=s.tick AND b.fund_balance>=$2
 		WHERE s.topic=$1 AND b.status=1`,
@@ -423,25 +423,28 @@ func ValidateBsv20MintsSubs(height uint32, topic string) {
 
 	for rows.Next() {
 		var tick string
-		err = rows.Scan(&tick)
+		var balance uint
+		err = rows.Scan(&tick, &balance)
 		if err != nil {
 			log.Panic(err)
 		}
 
-		ValidateBsv20V1Mints(height, tick)
+		ValidateBsv20V1Mints(height, tick, balance/BSV20V1_OP_COST)
 	}
 }
 
-func ValidateBsv20V1Mints(height uint32, tick string) {
+func ValidateBsv20V1Mints(height uint32, tick string, limit uint) {
 	fmt.Println("Validating Mints:", tick, height)
 	ticker := LoadTicker(tick)
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid, vout, height, idx, tick, amt
 		FROM bsv20_txos
 		WHERE op = 'mint' AND tick=$1 AND status=0 AND height<=$2 AND height > 0
-		ORDER BY height ASC, idx ASC, vout ASC`,
+		ORDER BY height ASC, idx ASC, vout ASC
+		LIMIT $3`,
 		tick,
 		height,
+		limit,
 	)
 	if err != nil {
 		log.Panic(err)
@@ -542,7 +545,7 @@ func ValidatePaidBsv20V1Transfers(concurrency int) {
 	rows, err := Db.Query(context.Background(), `
 		SELECT b.tick, b.fund_balance
 		FROM bsv20 b
-		WHERE b.fund_balance >= $1 AND EXISTS (
+		WHERE b.status=1 AND b.fund_balance >= $1 AND EXISTS (
 			SELECT 1 FROM bsv20_txos WHERE tick=b.tick AND op='transfer' AND status=0
 		)`,
 		BSV20V2_OP_COST,
@@ -565,6 +568,7 @@ func ValidatePaidBsv20V1Transfers(concurrency int) {
 			log.Panic(err)
 		}
 		go func(tick string, balance int) {
+			fmt.Println("VALIDATING", tick, balance)
 			defer func() {
 				<-limiter
 				wg.Done()
@@ -574,7 +578,7 @@ func ValidatePaidBsv20V1Transfers(concurrency int) {
 				SELECT txid
 				FROM bsv20_txos
 				WHERE status=0 AND op='transfer' AND tick=$1
-				ORDER BY height
+				ORDER BY height, idx, vout
 				LIMIT $2`,
 				tick,
 				balance/BSV20V1_OP_COST,
@@ -592,8 +596,9 @@ func ValidatePaidBsv20V1Transfers(concurrency int) {
 				if bytes.Equal(prevTxid, txid) {
 					continue
 				}
-				ValidateV1Transfer(txid, tick, true)
+				// fmt.Printf("Vaidating Tx %x %x %s\n", txid, prevTxid, tick)
 				prevTxid = txid
+				ValidateV1Transfer(txid, tick, true)
 
 			}
 		}(tick, balance)
@@ -889,9 +894,9 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) {
 	inRows.Close()
 
 	outRows, err := Db.Query(context.Background(), `
-			SELECT vout, status, amt
-			FROM bsv20_txos
-			WHERE txid=$1 AND id=$2`,
+		SELECT vout, status, amt
+		FROM bsv20_txos
+		WHERE txid=$1 AND id=$2`,
 		txid,
 		id,
 	)

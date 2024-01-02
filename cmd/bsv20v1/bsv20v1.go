@@ -125,7 +125,7 @@ func main() {
 	for _, pkhash := range tickHashes {
 		ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
 	}
-	ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY)
+	// ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY)
 
 	rows, err = db.Query(context.Background(), `
 		SELECT topic, MIN(progress) as progress
@@ -147,6 +147,7 @@ func main() {
 			log.Panicln(err)
 		}
 
+		ordinals.ValidateBsv20MintsSubs(progress-6, topic)
 		wg.Add(1)
 		go func(topic string, progress uint32) {
 			var settled = make(chan uint32, 1000)
@@ -235,9 +236,9 @@ func main() {
 					log.Println("Subscription Error:", topic, err)
 				}
 			}
-
 		}(topic, progress)
 	}
+	rdb.Publish(context.Background(), "v1xfer", "")
 	rows.Close()
 	wg.Wait()
 
