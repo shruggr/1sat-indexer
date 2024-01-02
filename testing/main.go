@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"github.com/libsv/go-bk/bip32"
-	"github.com/libsv/go-bk/chaincfg"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
@@ -42,18 +39,11 @@ func main() {
 		log.Panic(err)
 	}
 
-	ek, err := bip32.NewKeyFromString("xpub661MyMwAqRbcF221R74MPqdipLsgUevAAX4hZP2rywyEeShpbe3v2r9ciAvSGT6FB22TEmFLdUyeEDJL4ekG8s9H5WXbzDQPr6eW1zEYYy9")
-	if err != nil {
-		log.Panic(err)
-	}
+	// pkhash, _ := hex.DecodeString("f5382d54bf172786cfae6cead77caa4fef957e4c")
+	// ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
+	// ordinals.ValidateBsv20V1Mints(822921, "BSVS")
+	ordinals.ValidatePaidBsv20V1Transfers(1)
 
-	fmt.Println(ek.Address(&chaincfg.MainNet))
-	ek, err = ek.DeriveChildFromPath("123/123")
-	if err != nil {
-		log.Panic(err)
-	}
-
-	fmt.Println(ek.Address(&chaincfg.MainNet))
 	// rawtx, err := lib.LoadRawtx("75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f")
 
 	// txnCtx, err := lib.ParseTxn(rawtx, "", 0, 0)

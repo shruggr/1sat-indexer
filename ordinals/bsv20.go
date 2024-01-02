@@ -1,6 +1,7 @@
 package ordinals
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -29,6 +30,7 @@ const (
 	MintFee uint64      = 100
 )
 
+const BSV20V1_OP_COST = 1000
 const BSV20V2_OP_COST = 1000
 
 var ctx = context.Background()
@@ -58,6 +60,7 @@ type Bsv20 struct {
 	PricePerToken float64       `json:"-"`
 	FundPath      string        `json:"-"`
 	FundPKHash    []byte        `json:"-"`
+	FundBalance   int           `json:"-"`
 }
 
 func IndexBsv20V2(ctx *lib.IndexContext) (id *lib.Outpoint) {
@@ -403,100 +406,39 @@ func ValidateBsv20Deploy(height uint32) {
 	}
 }
 
-func ValidateBsv20DeployTick(height uint32, tick string) {
+func ValidateBsv20MintsSubs(height uint32, topic string) {
 	rows, err := Db.Query(context.Background(), `
-		SELECT txid, vout, height, idx, tick, max, lim, supply
-		FROM bsv20
-		WHERE tick=$1 AND status=0 AND height <= $2 AND height IS NOT NULL
-		ORDER BY height ASC, idx ASC, vout ASC`,
-		tick,
-		height,
+		SELECT DISTINCT b.tick
+		FROM bsv20_subs s
+		JOIN bsv20 b ON b.tick=s.tick AND b.fund_balance>=$2
+		WHERE s.topic=$1 AND b.status=1`,
+		topic,
+		BSV20V1_OP_COST,
 	)
+
 	if err != nil {
 		log.Panic(err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		ticker := &Bsv20{}
-		err = rows.Scan(&ticker.Txid, &ticker.Vout, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply)
+		var tick string
+		err = rows.Scan(&tick)
 		if err != nil {
 			log.Panic(err)
 		}
 
-		func(bsv20 *Bsv20) {
-			rows, err := Db.Query(context.Background(), `
-				SELECT txid, vout
-				FROM bsv20
-				WHERE tick=$1 AND status=1 AND (
-					height < $2 OR
-					(height = $2 AND idx < $3) OR 
-					(height = $2 AND idx = $3 AND vout < $4)
-				)
-				LIMIT 1`,
-				bsv20.Ticker,
-				bsv20.Height,
-				bsv20.Idx,
-				bsv20.Vout,
-			)
-			if err != nil {
-				log.Panic(err)
-			}
-			defer rows.Close()
-
-			t, err := Db.Begin(context.Background())
-			if err != nil {
-				log.Panic(err)
-			}
-			defer t.Rollback(context.Background())
-
-			if rows.Next() {
-				_, err = t.Exec(context.Background(), `
-					UPDATE bsv20
-					SET status = -1, reason='duplicate'
-					WHERE txid = $1 AND vout = $2`,
-					bsv20.Txid,
-					bsv20.Vout,
-				)
-				if err != nil {
-					log.Panic(err)
-				}
-
-				setInvalid(&t, bsv20.Txid, bsv20.Vout, "duplicate")
-				err = t.Commit(context.Background())
-				if err != nil {
-					log.Panic(err)
-				}
-				return
-			}
-			_, err = t.Exec(context.Background(), `
-				UPDATE bsv20
-				SET status = 1
-				WHERE txid = $1 AND vout = $2`,
-				bsv20.Txid,
-				bsv20.Vout,
-			)
-			if err != nil {
-				log.Panic(err)
-			}
-			setValid(&t, bsv20.Txid, bsv20.Vout, "")
-			err = t.Commit(context.Background())
-			if err != nil {
-				log.Panic(err)
-			}
-		}(ticker)
+		ValidateBsv20V1Mints(height, tick)
 	}
 }
 
-func ValidateBsv20Mints(height uint32, tick string) {
-	// fmt.Println("[BSV20] Validating mint", tick, "to height", height)
-
+func ValidateBsv20V1Mints(height uint32, tick string) {
+	fmt.Println("Validating Mints:", tick, height)
 	ticker := LoadTicker(tick)
-
 	rows, err := Db.Query(context.Background(), `
 		SELECT txid, vout, height, idx, tick, amt
 		FROM bsv20_txos
-		WHERE op='mint' AND tick=$1 AND status=0 AND height <= $2 AND height > 0
+		WHERE op = 'mint' AND tick=$1 AND status=0 AND height<=$2 AND height > 0
 		ORDER BY height ASC, idx ASC, vout ASC`,
 		tick,
 		height,
@@ -506,18 +448,12 @@ func ValidateBsv20Mints(height uint32, tick string) {
 	}
 	defer rows.Close()
 
-	mints := make([]*Bsv20, 0, 1000)
 	for rows.Next() {
 		bsv20 := &Bsv20{}
 		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt)
 		if err != nil {
 			log.Panic(err)
 		}
-		mints = append(mints, bsv20)
-	}
-
-	for _, bsv20 := range mints {
-		// fmt.Printf("Validating BSV20 mint %s %x\n", tick, bsv20.Txid)
 
 		var reason string
 		if ticker == nil || *ticker.Height > *bsv20.Height || (*ticker.Height == *bsv20.Height && ticker.Idx > bsv20.Idx) {
@@ -528,17 +464,11 @@ func ValidateBsv20Mints(height uint32, tick string) {
 			reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
 		}
 		func() {
-			t, err := Db.Begin(context.Background())
-			if err != nil {
-				log.Panic(err)
-			}
-			defer t.Rollback(context.Background())
-
 			if reason != "" {
 				_, err = Db.Exec(context.Background(), `
-					UPDATE bsv20_txos
-					SET status=-1, reason=$3
-					WHERE txid=$1 AND vout=$2`,
+						UPDATE bsv20_txos
+						SET status=-1, reason=$3
+						WHERE txid=$1 AND vout=$2`,
 					bsv20.Txid,
 					bsv20.Vout,
 					reason,
@@ -546,12 +476,14 @@ func ValidateBsv20Mints(height uint32, tick string) {
 				if err != nil {
 					log.Panic(err)
 				}
-				err = t.Commit(context.Background())
-				if err != nil {
-					log.Panic(err)
-				}
 				return
 			}
+
+			t, err := Db.Begin(context.Background())
+			if err != nil {
+				log.Panic(err)
+			}
+			defer t.Rollback(context.Background())
 
 			var reason string
 			if ticker.Max-ticker.Supply < *bsv20.Amt {
@@ -559,9 +491,9 @@ func ValidateBsv20Mints(height uint32, tick string) {
 				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
 
 				_, err := t.Exec(context.Background(), `
-					UPDATE bsv20_txos
-					SET status=1, amt=$3, reason=$4
-					WHERE txid = $1 AND vout=$2`,
+						UPDATE bsv20_txos
+						SET status=1, amt=$3, reason=$4
+						WHERE txid = $1 AND vout=$2`,
 					bsv20.Txid,
 					bsv20.Vout,
 					*bsv20.Amt,
@@ -572,9 +504,9 @@ func ValidateBsv20Mints(height uint32, tick string) {
 				}
 			} else {
 				_, err := t.Exec(context.Background(), `
-					UPDATE bsv20_txos
-					SET status=1
-					WHERE txid = $1 AND vout=$2`,
+						UPDATE bsv20_txos
+						SET status=1
+						WHERE txid = $1 AND vout=$2`,
 					bsv20.Txid,
 					bsv20.Vout,
 				)
@@ -585,12 +517,13 @@ func ValidateBsv20Mints(height uint32, tick string) {
 
 			ticker.Supply += *bsv20.Amt
 			_, err = t.Exec(context.Background(), `
-				UPDATE bsv20
-				SET supply=$3
-				WHERE txid = $1 AND vout=$2`,
+					UPDATE bsv20
+					SET supply=$3, fund_used=fund_used+$4
+					WHERE txid = $1 AND vout=$2`,
 				ticker.Txid,
 				ticker.Vout,
 				ticker.Supply,
+				BSV20V1_OP_COST,
 			)
 			if err != nil {
 				log.Panic(err)
@@ -604,20 +537,17 @@ func ValidateBsv20Mints(height uint32, tick string) {
 	}
 }
 
-func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
-	// fmt.Printf("[BSV20] Validating transfers. Tick %s Height %d\n", tick, height)
+func ValidatePaidBsv20V1Transfers(concurrency int) {
+	log.Println("Validating Paid V1 Xfers")
 	rows, err := Db.Query(context.Background(), `
-		SELECT txid
-		FROM (
-			SELECT txid, MIN(height) as height
-			FROM bsv20_txos
-			WHERE status=0 AND op='transfer' AND tick=$1 AND height <= $2
-			GROUP by txid
-		) t
-		ORDER BY height ASC`,
-		tick,
-		height,
+		SELECT b.tick, b.fund_balance
+		FROM bsv20 b
+		WHERE b.fund_balance >= $1 AND EXISTS (
+			SELECT 1 FROM bsv20_txos WHERE tick=b.tick AND op='transfer' AND status=0
+		)`,
+		BSV20V2_OP_COST,
 	)
+
 	if err != nil {
 		log.Panic(err)
 	}
@@ -628,21 +558,170 @@ func ValidateBsv20Transfers(tick string, height uint32, concurrency int) {
 	for rows.Next() {
 		limiter <- struct{}{}
 		wg.Add(1)
-		txid := make([]byte, 32)
-		err = rows.Scan(&txid)
+		var tick string
+		var balance int
+		err = rows.Scan(&tick, &balance)
 		if err != nil {
 			log.Panic(err)
 		}
-		go func() {
+		go func(tick string, balance int) {
 			defer func() {
 				<-limiter
 				wg.Done()
 			}()
-			ValidateTransfer(txid, true)
-			// time.Sleep(10 * time.Second)
-		}()
+
+			rows, err := Db.Query(context.Background(), ` 
+				SELECT txid
+				FROM bsv20_txos
+				WHERE status=0 AND op='transfer' AND tick=$1
+				ORDER BY height
+				LIMIT $2`,
+				tick,
+				balance/BSV20V1_OP_COST,
+			)
+			if err != nil {
+				log.Panicln(err)
+			}
+			var prevTxid []byte
+			for rows.Next() {
+				var txid []byte
+				err = rows.Scan(&txid)
+				if err != nil {
+					log.Panicln(err)
+				}
+				if bytes.Equal(prevTxid, txid) {
+					continue
+				}
+				ValidateV1Transfer(txid, tick, true)
+				prevTxid = txid
+
+			}
+		}(tick, balance)
 	}
 	wg.Wait()
+}
+
+func ValidateV1Transfer(txid []byte, tick string, mined bool) {
+	// log.Printf("Validating V2 Transfer %x %s\n", txid, tick)
+
+	inRows, err := Db.Query(context.Background(), `
+		SELECT txid, vout, status, amt
+		FROM bsv20_txos
+		WHERE spend=$1 AND tick=$2`,
+		txid,
+		tick,
+	)
+	if err != nil {
+		log.Panicf("%x - %v\n", txid, err)
+	}
+	defer inRows.Close()
+
+	var reason string
+	var tokensIn uint64
+	var tokenOuts []uint32
+	for inRows.Next() {
+		var inTxid []byte
+		var vout uint32
+		var amt uint64
+		var inStatus int
+		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+
+		switch inStatus {
+		case -1:
+			reason = "invalid input"
+		case 0:
+			fmt.Printf("inputs pending %s %x\n", tick, txid)
+			return
+		case 1:
+			tokensIn += amt
+		}
+	}
+	inRows.Close()
+
+	sql := `SELECT vout, status, amt
+		FROM bsv20_txos
+		WHERE txid=$1 AND tick=$2 AND op='transfer'`
+	outRows, err := Db.Query(context.Background(),
+		sql,
+		txid,
+		tick,
+	)
+	if err != nil {
+		log.Panicf("%x - %v\n", txid, err)
+	}
+	defer outRows.Close()
+
+	for outRows.Next() {
+		var vout uint32
+		var amt uint64
+		var status int
+		err = outRows.Scan(&vout, &status, &amt)
+		if err != nil {
+			log.Panicf("%x - %v\n", txid, err)
+		}
+		tokenOuts = append(tokenOuts, vout)
+		if amt > tokensIn {
+			reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
+			if !mined {
+				fmt.Printf("%s %s - %x\n", tick, reason, txid)
+				return
+			}
+		} else {
+			tokensIn -= amt
+		}
+	}
+
+	t, err := Db.Begin(context.Background())
+	if err != nil {
+		log.Panic(err)
+	}
+	defer t.Rollback(context.Background())
+
+	if reason != "" {
+		log.Printf("Transfer Invalid: %x %s %s\n", txid, tick, reason)
+		sql := `UPDATE bsv20_txos
+			SET status=-1, reason=$3
+			WHERE txid=$1 AND vout=ANY($2)`
+		_, err := t.Exec(context.Background(), sql,
+			txid,
+			tokenOuts,
+			reason,
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", txid, err)
+		}
+	} else {
+		log.Printf("Transfer Valid: %x %s\n", txid, tick)
+		_, err := t.Exec(context.Background(), `
+				UPDATE bsv20_txos
+				SET status=1
+				WHERE txid=$1 AND vout=ANY ($2)`,
+			txid,
+			tokenOuts,
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", txid, err)
+		}
+
+		_, err = t.Exec(context.Background(), `
+			UPDATE bsv20
+			SET fund_used=fund_used+$2
+			WHERE tick=$1 AND status=1`,
+			tick,
+			BSV20V1_OP_COST*len(tokenOuts),
+		)
+		if err != nil {
+			log.Panicf("%x %v\n", txid, err)
+		}
+	}
+
+	err = t.Commit(context.Background())
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func ValidatePaidBsv20V2Transfers(concurrency int) {
@@ -809,37 +888,38 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) {
 	}
 	inRows.Close()
 
-	if reason == "" {
-		outRows, err := Db.Query(context.Background(), `
+	outRows, err := Db.Query(context.Background(), `
 			SELECT vout, status, amt
 			FROM bsv20_txos
 			WHERE txid=$1 AND id=$2`,
-			txid,
-			id,
-		)
+		txid,
+		id,
+	)
+	if err != nil {
+		log.Panicf("%x - %v\n", txid, err)
+	}
+	defer outRows.Close()
+
+	for outRows.Next() {
+		var vout uint32
+		var amt uint64
+		var status int
+		err = outRows.Scan(&vout, &status, &amt)
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
-		defer outRows.Close()
-
-		for outRows.Next() {
-			var vout uint32
-			var amt uint64
-			var status int
-			err = outRows.Scan(&vout, &status, &amt)
-			if err != nil {
-				log.Panicf("%x - %v\n", txid, err)
+		tokenOuts = append(tokenOuts, vout)
+		if reason != "" {
+			continue
+		}
+		if amt > tokensIn {
+			reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
+			if !mined {
+				fmt.Printf("%s %s - %x\n", id.String(), reason, txid)
+				return
 			}
-			tokenOuts = append(tokenOuts, vout)
-			if amt > tokensIn {
-				reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
-				if !mined {
-					fmt.Printf("%s %s - %x\n", id.String(), reason, txid)
-					return
-				}
-			} else {
-				tokensIn -= amt
-			}
+		} else {
+			tokensIn -= amt
 		}
 	}
 
@@ -1065,7 +1145,7 @@ func ValidateTransfer(txid []byte, mined bool) {
 
 func LoadTicker(tick string) (ticker *Bsv20) {
 	rows, err := Db.Query(context.Background(), `
-		SELECT txid, vout, height, idx, tick, max, lim, supply
+		SELECT txid, vout, height, idx, tick, max, lim, supply, fund_balance
 		FROM bsv20
 		WHERE tick=$1 AND status=1`,
 		tick,
@@ -1076,7 +1156,7 @@ func LoadTicker(tick string) (ticker *Bsv20) {
 	defer rows.Close()
 	if rows.Next() {
 		ticker = &Bsv20{}
-		err = rows.Scan(&ticker.Txid, &ticker.Vout, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply)
+		err = rows.Scan(&ticker.Txid, &ticker.Vout, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply, &ticker.FundBalance)
 		if err != nil {
 			log.Panicln(tick, err)
 		}
@@ -1086,7 +1166,7 @@ func LoadTicker(tick string) (ticker *Bsv20) {
 
 func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
 	rows, err := Db.Query(context.Background(), `
-		SELECT id, height, idx, sym, icon, dec, amt
+		SELECT id, height, idx, sym, icon, dec, amt, fund_balance
 		FROM bsv20_v2
 		WHERE id=$1`,
 		id,
@@ -1097,7 +1177,7 @@ func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
 	defer rows.Close()
 	if rows.Next() {
 		token = &Bsv20{}
-		err = rows.Scan(&token.Id, &token.Height, &token.Idx, &token.Symbol, &token.Icon, &token.Decimals, &token.Amt)
+		err = rows.Scan(&token.Id, &token.Height, &token.Idx, &token.Symbol, &token.Icon, &token.Decimals, &token.Amt, &token.FundBalance)
 		if err != nil {
 			log.Panicln(id, err)
 		}
@@ -1134,6 +1214,28 @@ func setValid(t *pgx.Tx, txid []byte, vout uint32, reason string) {
 	_, err := (*t).Exec(context.Background(), sql, txid, vout)
 	if err != nil {
 		log.Panic(err)
+	}
+}
+
+func UpdateBsv20V1Funding(pkhashes [][]byte) {
+	fmt.Print("Updating balance for ")
+	for _, pkhash := range pkhashes {
+		fmt.Printf("%x ", pkhash)
+	}
+	fmt.Print("\n")
+	_, err := Db.Exec(context.Background(), `UPDATE bsv20 v
+		SET fund_total=s.total
+		FROM (
+			SELECT pkhash, SUM(satoshis) as total 
+			FROM txos
+			WHERE pkhash = ANY($1)
+			GROUP BY pkhash
+		) s
+		WHERE s.pkhash = v.fund_pkhash AND fund_pkhash = ANY($1)`,
+		pkhashes,
+	)
+	if err != nil {
+		log.Panicln(err)
 	}
 }
 

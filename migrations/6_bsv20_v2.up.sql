@@ -59,8 +59,10 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
     FOREIGN KEY (txid, vout, spend) REFERENCES txos (txid, vout, spend) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate ON bsv20_txos(op, tick, height, idx, vout)
-WHERE status = 0;
+-- CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate ON bsv20_txos(op, tick, height, idx, vout)
+-- WHERE status = 0;
+CREATE INDEX idx_bsv20_txo_validate ON bsv20_txos(status, op, tick, height, idx, vout)
+
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate_v2 ON bsv20_txos(op, id, height, idx, vout)
 WHERE status = 0;
