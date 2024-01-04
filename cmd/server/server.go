@@ -230,7 +230,7 @@ func main() {
 				return err
 			}
 			if bytes.Equal(op, outpoint) {
-				log.Printf("OPs Equal: %x=%x\n", op, outpoint)
+				// log.Printf("OPs Equal: %x=%x\n", op, outpoint)
 				return c.Send(outpoint)
 			}
 
@@ -256,8 +256,8 @@ func main() {
 				log.Println("JB Spend Request", err)
 				return err
 			}
-			if resp.StatusCode == 404 {
-				log.Println("Not Found", url)
+			if resp.StatusCode >= 300 {
+				// log.Println("Not Found", url)
 				return c.Send(outpoint)
 			}
 			spend, err := io.ReadAll(resp.Body)
@@ -266,7 +266,7 @@ func main() {
 				return err
 			}
 			if len(spend) == 0 {
-				log.Printf("Empty Spend: %s\n", op.String())
+				// log.Printf("Empty Spend: %s\n", op.String())
 				return c.Send(outpoint)
 			}
 			txn, err := jb.GetTransaction(c.Context(), hex.EncodeToString(spend))

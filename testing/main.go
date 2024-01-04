@@ -5,17 +5,17 @@ import (
 	"log"
 	"os"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f"
+var hexId = "3258136ce310066536524c67bd88d91ed4662e0a1644dd1a17f93c3c3e038541"
 
 func main() {
 	godotenv.Load("../.env")
@@ -34,45 +34,90 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	err = ordinals.Initialize(db, rdb)
+	// err = ordinals.Initialize(db, rdb)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+
+	// err = ordlock.Initialize(db, rdb)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+
+	// rawtx, err := lib.LoadRawtx(hexId)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ctx, err := lib.ParseTxn(rawtx, "", 0, 0)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// ctx.SaveSpends()
+	// ordinals.CalculateOrigins(ctx)
+	// ordinals.ParseInscriptions(ctx)
+	// lock.ParseLocks(ctx)
+	// ordlock.ParseOrdinalLocks(ctx)
+	// ctx.Save()
+
+	rows, err := db.Query(context.Background(), `
+		SELECT txid, status, op
+		FROM bsv20_txos t
+		WHERE spend IN (
+			SELECT txid
+			FROM bsv20_txos t
+			JOIN bsv20_subs s ON s.tick=t.tick
+			WHERE op='transfer' AND status=-1
+		)`)
 	if err != nil {
-		log.Panic(err)
+		panic(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var txid []byte
+		var status int
+		var op string
+		err = rows.Scan(&txid, &status, &op)
+		if err != nil {
+			panic(err)
+		}
+
+		for {
+			if op == "mint" {
+				if status == -1 {
+					// log.Printf("Invalid Mint: %x\n", txid)
+				} else if status == 0 {
+					log.Printf("Pending Mint: %x\n", txid)
+				} else {
+					log.Printf("Valid Mint: %x\n", txid)
+				}
+				break
+			}
+			row := db.QueryRow(context.Background(), `
+				SELECT txid, status, op
+				FROM bsv20_txos
+				WHERE spend = $1`,
+				txid,
+			)
+			err = row.Scan(&txid, &status, &op)
+			if err == pgx.ErrNoRows {
+				log.Printf("Investigate: %x\n", txid)
+				break
+			}
+		}
 	}
 
-	// pkhash, _ := hex.DecodeString("f5382d54bf172786cfae6cead77caa4fef957e4c")
-	// ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
-	// ordinals.ValidateBsv20V1Mints(840000, "BSVS")
-	ordinals.ValidatePaidBsv20V1Transfers(1)
-
-	// rawtx, err := lib.LoadRawtx("75ea3982da6b23e08167d0b6e70e5b4b5bebf081299b9f54e011ca1c0f60181f")
-
-	// txnCtx, err := lib.ParseTxn(rawtx, "", 0, 0)
-
-	// ordinals.ParseInscriptions(txnCtx)
-
-	// for _, txo := range txnCtx.Txos {
-	// 	if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-	// 		list := ordlock.ParseScript(txo)
-
-	// 		if list != nil {
-	// 			txo.PKHash = list.PKHash
-	// 			bsv20.PKHash = list.PKHash
-	// 			bsv20.Price = list.Price
-	// 			bsv20.PayOut = list.PayOut
-	// 			bsv20.Listing = true
-	// 			var token *ordinals.Bsv20
-	// 			if bsv20.Id != nil {
-	// 				token = ordinals.LoadTokenById(bsv20.Id)
-	// 			} else if bsv20.Ticker != "" {
-	// 				token = ordinals.LoadTicker(bsv20.Ticker)
-	// 			}
-	// 			var decimals uint8
-	// 			if token != nil {
-	// 				decimals = token.Decimals
-	// 			}
-	// 			bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
+	// token := ordinals.IndexBsv20(ctx)
+	// if token == nil {
+	// 	for _, txo := range ctx.Txos {
+	// 		if list, ok := txo.Data["list"].(*ordlock.Listing); ok {
+	// 			list.Save(txo)
 	// 		}
-	// 		bsv20.Save(txo)
+	// 	}
+	// } else {
+	// 	if token.Ticker != "" {
+	// 		rdb.Publish(context.Background(), "v1xfer", token.Ticker)
+	// 	} else {
+	// 		rdb.Publish(context.Background(), "v2xfer", "")
 	// 	}
 	// }
 

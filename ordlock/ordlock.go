@@ -29,9 +29,13 @@ func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
 	return
 }
 
-func ParseLocks(ctx *lib.IndexContext) {
+func ParseOrdinalLocks(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		ParseScript(txo)
+		list := ParseScript(txo)
+		if list != nil {
+			txo.AddData("list", list)
+			txo.PKHash = list.PKHash
+		}
 	}
 }
 

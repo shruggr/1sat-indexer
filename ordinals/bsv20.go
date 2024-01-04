@@ -63,14 +63,14 @@ type Bsv20 struct {
 	FundBalance   int           `json:"-"`
 }
 
-func IndexBsv20V2(ctx *lib.IndexContext) (id *lib.Outpoint) {
-	// ParseInscriptions(ctx)
+func IndexBsv20(ctx *lib.IndexContext) (token *Bsv20) {
 	for _, txo := range ctx.Txos {
 		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
 			if bsv20.Ticker != "" {
-				continue
+				token = LoadTicker(bsv20.Ticker)
+			} else {
+				token = LoadTokenById(bsv20.Id)
 			}
-			id = bsv20.Id
 			list := ordlock.ParseScript(txo)
 
 			if list != nil {
@@ -79,7 +79,7 @@ func IndexBsv20V2(ctx *lib.IndexContext) (id *lib.Outpoint) {
 				bsv20.Price = list.Price
 				bsv20.PayOut = list.PayOut
 				bsv20.Listing = true
-				token := LoadTokenById(bsv20.Id)
+
 				var decimals uint8
 				if token != nil {
 					decimals = token.Decimals
@@ -599,7 +599,6 @@ func ValidatePaidBsv20V1Transfers(concurrency int) {
 				// fmt.Printf("Vaidating Tx %x %x %s\n", txid, prevTxid, tick)
 				prevTxid = txid
 				ValidateV1Transfer(txid, tick, true)
-
 			}
 		}(tick, balance)
 	}

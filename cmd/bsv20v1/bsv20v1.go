@@ -176,12 +176,12 @@ func main() {
 								if bsv20.Ticker == "" {
 									continue
 								}
-								if len(bsv20.FundPKHash) > 0 {
-									pkhash := hex.EncodeToString(bsv20.FundPKHash)
-									sub1.Subscribe(context.Background(), pkhash)
-									tickHashes[bsv20.Ticker] = bsv20.FundPKHash
-									pkhashTicks[pkhash] = bsv20.Ticker
-								}
+								// if len(bsv20.FundPKHash) > 0 &&  {
+								// 	pkhash := hex.EncodeToString(bsv20.FundPKHash)
+								// 	sub1.Subscribe(context.Background(), pkhash)
+								// 	tickHashes[bsv20.Ticker] = bsv20.FundPKHash
+								// 	pkhashTicks[pkhash] = bsv20.Ticker
+								// }
 								list := ordlock.ParseScript(txo)
 
 								if list != nil {
@@ -203,7 +203,7 @@ func main() {
 									bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
 								}
 								bsv20.Save(txo)
-								if bsv20.Op == "transfer" {
+								if _, ok := tickHashes[bsv20.Ticker]; ok && bsv20.Op == "transfer" {
 									rdb.Publish(context.Background(), "v1xfer", bsv20.Ticker)
 								}
 							}
@@ -211,7 +211,7 @@ func main() {
 						return nil
 					},
 					func(height uint32) error {
-						settled <- height
+						// settled <- height
 						_, err := db.Exec(context.Background(), `
 							UPDATE bsv20_subs
 							SET progress=$2

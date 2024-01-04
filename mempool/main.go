@@ -73,6 +73,11 @@ func init() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	err = ordlock.Initialize(db, rdb)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func main() {
@@ -157,14 +162,22 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 	ordinals.CalculateOrigins(ctx)
 	ordinals.ParseInscriptions(ctx)
 	lock.ParseLocks(ctx)
-	id := ordinals.IndexBsv20V2(ctx)
-	if id == nil {
-		ordlock.ParseLocks(ctx)
-	}
+	ordlock.ParseOrdinalLocks(ctx)
 	ctx.Save()
 
-	if id != nil {
-		rdb.Publish(context.Background(), "v2xfer", "")
+	token := ordinals.IndexBsv20(ctx)
+	if token == nil {
+		for _, txo := range ctx.Txos {
+			if list, ok := txo.Data["list"].(*ordlock.Listing); ok {
+				list.Save(txo)
+			}
+		}
+	} else {
+		if token.Ticker != "" {
+			rdb.Publish(context.Background(), "v1xfer", token.Ticker)
+		} else {
+			rdb.Publish(context.Background(), "v2xfer", "")
+		}
 	}
 
 	return ctx, nil
