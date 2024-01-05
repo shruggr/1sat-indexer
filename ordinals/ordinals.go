@@ -185,7 +185,7 @@ ordLoop:
 			if err == nil {
 				insType = "json"
 				ins.Json = data
-				bsv20, _ = ParseBsv20(ins.File, txo)
+				bsv20, _ = ParseBsv20Inscription(ins.File, txo)
 			} else if AsciiRegexp.Match(ins.File.Content) {
 				if insType == "file" {
 					insType = "text"

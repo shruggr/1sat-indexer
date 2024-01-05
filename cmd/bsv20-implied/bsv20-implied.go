@@ -77,22 +77,29 @@ func main() {
 		var idx uint64
 		err := rows.Scan(&txid, &vout, &height, &idx)
 		if err != nil {
+			log.Printf("Implied: %x %d\n", txid, vout)
 			log.Panicln(err)
 		}
 
 		txn, err := lib.JB.GetTransaction(context.Background(), hex.EncodeToString(txid))
 		if err != nil {
+			log.Printf("Implied: %x %d\n", txid, vout)
 			panic(err)
 		}
 		ctx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 		if err != nil {
+			log.Printf("Implied: %x %d\n", txid, vout)
 			panic(err)
 		}
 		ordinals.IndexInscriptions(ctx)
-		t := ordinals.IndexBsv20(ctx)
-		if t != nil {
-			return
+		for _, txo := range ctx.Txos {
+			if _, ok := txo.Data["bsv20"]; ok {
+				ordinals.IndexBsv20(ctx)
+				log.Printf("Not Implied: %x %d\n", txid, vout)
+				return
+			}
 		}
+
 		txo := ctx.Txos[vout]
 
 		txoRow := db.QueryRow(context.Background(), `
@@ -103,17 +110,31 @@ func main() {
 		)
 
 		// var amt uint64
-		bsv20 := &ordinals.Bsv20{
+		b := &ordinals.Bsv20{
 			Op:      "transfer",
 			Implied: true,
 		}
-		err = txoRow.Scan(&bsv20.Ticker, &bsv20.Amt)
+		err = txoRow.Scan(&b.Ticker, &b.Amt)
 		if err != nil {
+			log.Printf("Implied: %x %d\n", txid, vout)
 			panic(err)
 		}
+		txo.AddData("bsv20", b)
+		ordinals.IndexBsv20(ctx)
 		// bsv20.Amt = &amt
 
-		bsv20.Save(txo)
+		log.Printf("Saving Implied: %s\n", txo.Outpoint.String())
+		_, err = db.Exec(context.Background(), `
+			UPDATE bsv20_txos
+			SET implied=true
+			WHERE txid=$1 AND vout=$2`,
+			txid,
+			vout,
+		)
+
+		if err != nil {
+			log.Panicf("%x %v", txid, err)
+		}
 		// // onesats := make([]uint32, 0, len(ctx.Txos))
 		// // for vout, txo := range ctx.Txos {
 		// // 	if _, ok := txo.Data["bsv20"]; ok {

@@ -92,7 +92,7 @@ func IndexBsv20(ctx *lib.IndexContext) (token *Bsv20) {
 	return
 }
 
-func ParseBsv20(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error) {
+func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error) {
 	mime := strings.ToLower(ord.Type)
 	if !strings.HasPrefix(mime, "application/bsv-20") &&
 		!(txo.Height != nil && *txo.Height < 793000 && strings.HasPrefix(mime, "text/plain")) {
