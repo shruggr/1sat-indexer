@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS listings(
     price NUMERIC,
     payout BYTEA,
     origin BYTEA,
-    oheight INTEGER.
+    oheight INTEGER,
     oidx BIGINT,
     spend BYTEA DEFAULT '\x',
     pkhash BYTEA,

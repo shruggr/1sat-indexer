@@ -28,7 +28,7 @@ CREATE TABLE bsv20_v2(
     fund_pkhash BYTEA,
     fund_total NUMERIC DEFAULT 0,
     fund_used NUMERIC DEFAULT 0,
-    fund_balance NUMERIC GENERATED ALWAYS AS (fund_total-fund_used) STORED,
+    fund_balance NUMERIC GENERATED ALWAYS AS (fund_total-fund_used) STORED
 );
 
 CREATE INDEX idx_bsv20_v2_fund_pkhash ON bsv20_v2(fund_pkhash);
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS bsv20_txos(
 
 -- CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate ON bsv20_txos(op, tick, height, idx, vout)
 -- WHERE status = 0;
-CREATE INDEX idx_bsv20_txo_validate ON bsv20_txos(status, op, tick, height, idx, vout)
+CREATE INDEX idx_bsv20_txo_validate ON bsv20_txos(status, op, tick, height, idx, vout);
 
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txo_validate_v2 ON bsv20_txos(op, id, height, idx, vout)

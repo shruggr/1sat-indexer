@@ -88,8 +88,6 @@ CREATE INDEX idx_txos_pkhash_unspent ON txos(pkhash, height NULLS LAST, idx)
     WHERE spend = '\x' AND pkhash IS NOT NULL;
 CREATE INDEX idx_txo_pkhash_spent ON txos(pkhash, height NULLS LAST, idx)
     WHERE spend != '\x' AND pkhash IS NOT NULL;
-CREATE INDEX idx_txo_pkhash_height_idx ON txos(pkhash, height NULLS LAST, idx)
-    WHERE pkhash IS NOT NULL;
 
 CREATE INDEX idx_txos_origin_height_idx ON txos(origin, height NULLS LAST, idx)
     WHERE origin IS NOT NULL;
@@ -113,14 +111,13 @@ CREATE INDEX idx_txos_type_height_idx ON txos(type, height NULLS LAST, idx)
     WHERE type IS NOT NULL;
 
 CREATE TABLE inscriptions(
-    outpoint BYTEA PRIMARY KEY,
     height INTEGER,
     idx BIGINT,
-    num BIGINT DEFAULT -1
+    vout INTEGER,
+    num BIGINT DEFAULT -1,
+    PRIMARY KEY(height, idx, vout)
 );
-CREATE UNIQUE INDEX idx_inscriptions_outpoint_num ON inscriptions(outpoint, num);
-CREATE INDEX idx_origins_height_idx_vout ON inscriptions(height, idx)
-	WHERE height IS NOT NULL AND num = -1;
+CREATE INDEX idx_inscriptions_num ON inscriptions(num, height, idx, vout);
     
 CREATE TABLE origins(
     origin BYTEA PRIMARY KEY,
