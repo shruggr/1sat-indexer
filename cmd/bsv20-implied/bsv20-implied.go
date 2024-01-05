@@ -105,7 +105,9 @@ func main() {
 		txoRow := db.QueryRow(context.Background(), `
 			SELECT tick, amt 
 			FROM bsv20_txos
-			WHERE spend=$1 and vout=0`,
+			WHERE spend=$1
+			ORDER BY vout
+			LIMIT 1`,
 			txid,
 		)
 

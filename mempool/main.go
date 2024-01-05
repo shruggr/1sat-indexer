@@ -174,9 +174,9 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 		}
 	} else {
 		if token.Ticker != "" {
-			rdb.Publish(context.Background(), "v1xfer", token.Ticker)
+			rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, token.Ticker))
 		} else {
-			rdb.Publish(context.Background(), "v2xfer", "")
+			rdb.Publish(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, token.Id.String()))
 		}
 	}
 

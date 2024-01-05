@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,10 +65,11 @@ func init() {
 	}
 }
 
-var tickHashes = map[string][]byte{}
-var pkhashTicks = map[string]string{}
+var pkhashFunds = map[string]*ordinals.TokenFunds{}
+var tickFunds map[string]*ordinals.TokenFunds
 
 func main() {
+	tickFunds = ordinals.UpdateBsv20V1Funding()
 	sub := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
@@ -77,13 +79,26 @@ func main() {
 	ch1 := sub1.Channel()
 	go func() {
 		for msg := range ch1 {
-			pkhash, _ := hex.DecodeString(msg.Channel)
-			ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
-			if tick, ok := pkhashTicks[msg.Channel]; ok {
-				rdb.Publish(context.Background(), "v1xfer", tick)
+			// pkhash, _ := hex.DecodeString(msg.Channel)
+			row := db.QueryRow(context.Background(), `
+				SELECT SUM(satoshis) as total 
+				FROM txos
+				WHERE pkhash = decode($1, 'hex')`,
+				msg.Channel,
+			)
+			funds := tickFunds[msg.Channel]
+			err := row.Scan(&funds.Total)
+			if err != nil {
+				log.Println(err)
 			}
 		}
 	}()
+
+	for _, funds := range tickFunds {
+		pkhashHex := hex.EncodeToString(funds.PKHash)
+		pkhashFunds[pkhashHex] = funds
+		sub1.Subscribe(context.Background(), pkhashHex)
+	}
 
 	trig := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -92,42 +107,17 @@ func main() {
 	})
 	ch2 := trig.Subscribe(context.Background(), "v1xfer").Channel()
 	go func() {
-		for {
-			<-ch2
-			ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY)
+		for msg := range ch2 {
+			parts := strings.Split(msg.Payload, ":")
+			txid, err := hex.DecodeString(parts[0])
+			if err != nil {
+				continue
+			}
+			ordinals.ValidateV1Transfer(txid, parts[1], false)
 		}
 	}()
 
-	rows, err := db.Query(ctx, `
-		SELECT b.tick, b.fund_pkhash
-		FROM bsv20 b
-		JOIN bsv20_subs s ON s.tick=b.tick AND b.status=1`,
-	)
-	if err != nil {
-		log.Panicln(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tick string
-		var pkhash []byte
-		err := rows.Scan(&tick, &pkhash)
-		if err != nil {
-			log.Panicln(err)
-		}
-		pkhashHex := hex.EncodeToString(pkhash)
-		sub1.Subscribe(context.Background(), pkhashHex)
-		pkhashTicks[pkhashHex] = tick
-		tickHashes[tick] = pkhash
-	}
-	rows.Close()
-
-	for _, pkhash := range tickHashes {
-		ordinals.UpdateBsv20V1Funding([][]byte{pkhash})
-	}
-	// ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY)
-
-	rows, err = db.Query(context.Background(), `
+	rows, err := db.Query(context.Background(), `
 		SELECT topic, MIN(progress) as progress
 		FROM bsv20_subs
 		WHERE topic IS NOT NULL
@@ -153,17 +143,14 @@ func main() {
 			var settled = make(chan uint32, 1000)
 			go func() {
 				for height := range settled {
-					var settled uint32
-					if height > 6 {
-						settled = height - 6
-					}
-
-					ordinals.ValidateBsv20MintsSubs(settled, topic)
+					tickFunds = ordinals.UpdateBsv20V1Funding()
+					ordinals.ValidateBsv20MintsSubs(height-6, topic)
+					ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY, height)
 				}
 			}()
 
-			if progress < lib.TRIGGER {
-				progress = lib.TRIGGER
+			if progress < 807000 {
+				progress = 807000
 			}
 			for {
 				err = indexer.Exec(
@@ -176,12 +163,7 @@ func main() {
 								if bsv20.Ticker == "" {
 									continue
 								}
-								// if len(bsv20.FundPKHash) > 0 &&  {
-								// 	pkhash := hex.EncodeToString(bsv20.FundPKHash)
-								// 	sub1.Subscribe(context.Background(), pkhash)
-								// 	tickHashes[bsv20.Ticker] = bsv20.FundPKHash
-								// 	pkhashTicks[pkhash] = bsv20.Ticker
-								// }
+
 								list := ordlock.ParseScript(txo)
 
 								if list != nil {
@@ -203,15 +185,15 @@ func main() {
 									bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
 								}
 								bsv20.Save(txo)
-								if _, ok := tickHashes[bsv20.Ticker]; ok && bsv20.Op == "transfer" {
-									rdb.Publish(context.Background(), "v1xfer", bsv20.Ticker)
-								}
+								// if _, ok := tickFunds[bsv20.Ticker]; ok && bsv20.Op == "transfer" {
+								// 	rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Ticker)
+								// }
 							}
 						}
 						return nil
 					},
 					func(height uint32) error {
-						// settled <- height
+						settled <- height
 						_, err := db.Exec(context.Background(), `
 							UPDATE bsv20_subs
 							SET progress=$2
@@ -236,15 +218,10 @@ func main() {
 					log.Println("Subscription Error:", topic, err)
 				}
 			}
-		}(topic, progress)
+		}(topic, progress-6)
 	}
-	rdb.Publish(context.Background(), "v1xfer", "")
+	// rdb.Publish(context.Background(), "v1xfer", "")
 	rows.Close()
 	wg.Wait()
 
 }
-
-// func handleBlock(height uint32) error {
-
-// 	return nil
-// }
