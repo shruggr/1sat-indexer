@@ -88,6 +88,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 			}()
 			txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(txid))
 			if err != nil {
+				log.Println("Validating", hex.EncodeToString(txid), err)
 				if !strings.HasPrefix(err.Error(), "server error: 404") {
 					log.Panicln(err)
 				}
