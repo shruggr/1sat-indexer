@@ -81,17 +81,17 @@ func main() {
 	ch1 := sub1.Channel()
 	go func() {
 		for msg := range ch1 {
-			row := db.QueryRow(context.Background(), `
-				SELECT SUM(satoshis) as total 
-				FROM txos
-				WHERE pkhash = decode($1, 'hex')`,
-				msg.Channel,
-			)
-			funds := tickFunds[msg.Channel]
-			err := row.Scan(&funds.Total)
-			if err != nil {
-				log.Println(err)
+			if msg.Channel == "v1xfer" {
+				parts := strings.Split(msg.Payload, ":")
+				txid, err := hex.DecodeString(parts[0])
+				if err != nil {
+					continue
+				}
+				id, err := lib.NewOutpointFromString(parts[1])
+				ordinals.ValidateV2Transfer(txid, id, false)
+				continue
 			}
+			tickFunds = ordinals.UpdateBsv20V2Funding()
 		}
 	}()
 
@@ -101,63 +101,10 @@ func main() {
 		sub1.Subscribe(context.Background(), pkhashHex)
 	}
 
-	trig := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	ch2 := trig.Subscribe(context.Background(), "v2xfer").Channel()
-	go func() {
-		for msg := range ch2 {
-			parts := strings.Split(msg.Payload, ":")
-			txid, err := hex.DecodeString(parts[0])
-			if err != nil {
-				continue
-			}
-			id, err := lib.NewOutpointFromString(parts[1])
-			if err != nil {
-				log.Println("Invalid Outpoint:", parts[1])
-				continue
-			}
-			ordinals.ValidateV2Transfer(txid, id, false)
-		}
-	}()
-
-	// rows, err := db.Query(ctx,
-	// 	`SELECT fund_pkhash FROM bsv20_v2`,
-	// )
-	// if err != nil {
-	// 	log.Panicln(err)
-	// }
-	// defer rows.Close()
-	// pkhashes := [][]byte{}
-	// for rows.Next() {
-	// 	var pkhash []byte
-	// 	err := rows.Scan(&pkhash)
-	// 	if err != nil {
-	// 		log.Panicln(err)
-	// 	}
-	// 	sub1.Subscribe(context.Background(), hex.EncodeToString(pkhash))
-	// 	pkhashes = append(pkhashes, pkhash)
-	// }
-	// rows.Close()
-
-	// for _, pkhash := range pkhashes {
-	// 	ordinals.UpdateBsv20V2Funding([][]byte{pkhash})
-	// }
-
-	// var settled = make(chan uint32, 1000)
-	// go func() {
-	// 	for {
-	// 		<-settled
-	// 		ordinals.ValidateBsvPaid20V2Transfers(CONCURRENCY)
-	// 	}
-	// }()
 	var settled = make(chan uint32, 1000)
 	go func() {
 		for height := range settled {
 			tickFunds = ordinals.UpdateBsv20V2Funding()
-			// ordinals.ValidateBsv20MintsSubs(height-6, topic)
 			ordinals.ValidatePaidBsv20V2Transfers(CONCURRENCY, height)
 		}
 	}()
