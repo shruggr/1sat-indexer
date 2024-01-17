@@ -110,14 +110,14 @@ func main() {
 		if err != nil {
 			return err
 		}
-		txns := []*AddressTxn{}
+		txns := []*lib.AddressTxn{}
 		err = json.NewDecoder(resp.Body).Decode(&txns)
 		if err != nil {
 			return err
 		}
 
 		// txids := make([][]byte, len(txns))
-		toIndex := map[string]*AddressTxn{}
+		toIndex := map[string]*lib.AddressTxn{}
 		batches := [][][]byte{}
 		batch := make([][]byte, 0, 100)
 		// log.Println("Txns:", len(txns))
@@ -169,7 +169,7 @@ func main() {
 		for txid, txn := range toIndex {
 			wg.Add(1)
 			limiter <- struct{}{}
-			go func(txid string, txn *AddressTxn) {
+			go func(txid string, txn *lib.AddressTxn) {
 				defer func() {
 					wg.Done()
 					<-limiter

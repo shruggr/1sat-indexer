@@ -65,8 +65,8 @@ func init() {
 	}
 }
 
-var pkhashFunds = map[string]*ordinals.TokenFunds{}
-var tickFunds map[string]*ordinals.TokenFunds
+var pkhashFunds = map[string]*ordinals.V1TokenFunds{}
+var tickFunds map[string]*ordinals.V1TokenFunds
 
 func main() {
 	tickFunds = ordinals.UpdateBsv20V1Funding()
@@ -185,9 +185,9 @@ func main() {
 									bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
 								}
 								bsv20.Save(txo)
-								// if _, ok := tickFunds[bsv20.Ticker]; ok && bsv20.Op == "transfer" {
-								// 	rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Ticker)
-								// }
+								if _, ok := tickFunds[bsv20.Ticker]; ok && bsv20.Op == "transfer" {
+									rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Ticker))
+								}
 							}
 						}
 						return nil

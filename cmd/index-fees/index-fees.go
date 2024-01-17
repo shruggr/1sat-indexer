@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/libsv/go-bt/v2/bscript"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -60,26 +63,16 @@ func init() {
 }
 
 func main() {
-	// blockPKHashes := map[string][]byte{}
+	initializeV1Funding()
+	initializeV2Funding()
+
 	err := indexer.Exec(
 		true,
 		false,
 		func(ctx *lib.IndexContext) error {
-			// for _, txo := range ctx.Txos {
-			// 	if len(txo.PKHash) > 0 {
-			// 		blockPKHashes[hex.EncodeToString(txo.PKHash)] = txo.PKHash
-			// 	}
-			// }
 			return nil
 		},
 		func(height uint32) error {
-			// pkhashes := make([][]byte, 0, len(blockPKHashes))
-			// for _, pkhash := range blockPKHashes {
-			// 	pkhashes = append(pkhashes, pkhash)
-			// }
-			// ordinals.UpdateBsv20V2Funding(pkhashes)
-
-			// blockPKHashes = map[string][]byte{}
 			return nil
 		},
 		INDEXER,
@@ -93,4 +86,86 @@ func main() {
 	if err != nil {
 		log.Panicln(err)
 	}
+}
+
+func initializeV1Funding() {
+	limiter := make(chan struct{}, CONCURRENCY)
+	var wg sync.WaitGroup
+	rows, err := db.Query(context.Background(), `
+		SELECT DISTINCT fund_pkhash
+		FROM bsv20`,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	fmt.Println("Processing v1 funding")
+	for rows.Next() {
+		var pkhash []byte
+		err = rows.Scan(&pkhash)
+		if err != nil {
+			panic(err)
+		}
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(pkhash []byte) {
+			defer func() {
+				wg.Done()
+				<-limiter
+			}()
+			add, err := bscript.NewAddressFromPublicKeyHash(pkhash, true)
+			if err != nil {
+				log.Panicln(err)
+			}
+			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
+			log.Println("URL:", url)
+			resp, err := http.Get(url)
+			if err != nil {
+				log.Panicln(err)
+			}
+			defer resp.Body.Close()
+		}(pkhash)
+	}
+	wg.Wait()
+}
+
+func initializeV2Funding() {
+	limiter := make(chan struct{}, CONCURRENCY)
+	var wg sync.WaitGroup
+	rows, err := db.Query(context.Background(), `
+		SELECT fund_pkhash
+		FROM bsv20_v2`,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	fmt.Println("Processing v2 funding")
+	for rows.Next() {
+		var pkhash []byte
+		err = rows.Scan(&pkhash)
+		if err != nil {
+			panic(err)
+		}
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(pkhash []byte) {
+			defer func() {
+				wg.Done()
+				<-limiter
+			}()
+			add, err := bscript.NewAddressFromPublicKeyHash(pkhash, true)
+			if err != nil {
+				log.Panicln(err)
+			}
+			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
+			log.Println("URL:", url)
+			resp, err := http.Get(url)
+			if err != nil {
+				log.Panicln(err)
+			}
+			defer resp.Body.Close()
+		}(pkhash)
+	}
+	wg.Wait()
 }

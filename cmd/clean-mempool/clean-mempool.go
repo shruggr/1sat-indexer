@@ -55,7 +55,7 @@ func main() {
 		rowCount, cleaned, cleared := cleanupTxns()
 		log.Printf("Rows:%d Updated:%d Cleared:%d\n", rowCount, cleaned, cleared)
 		if rowCount == 0 {
-			time.Sleep(10 * time.Second)
+			time.Sleep(time.Minute)
 		}
 	}
 }
