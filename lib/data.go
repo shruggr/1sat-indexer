@@ -27,6 +27,7 @@ func Initialize(postgres *pgxpool.Pool, rdb *redis.Client) (err error) {
 	Db = postgres
 	Rdb = rdb
 
+	log.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
 	if os.Getenv("JUNGLEBUS") != "" {
 		JB, err = junglebus.New(
 			junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),

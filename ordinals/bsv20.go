@@ -490,8 +490,8 @@ func ValidateBsv20V1Mints(height uint32, tick string, limit uint) {
 
 			var reason string
 			if ticker.Max-ticker.Supply < *bsv20.Amt {
-				*bsv20.Amt = ticker.Max - ticker.Supply
 				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
+				*bsv20.Amt = ticker.Max - ticker.Supply
 
 				_, err := t.Exec(context.Background(), `
 						UPDATE bsv20_txos
@@ -604,7 +604,6 @@ func ValidatePaidBsv20V1Transfers(concurrency int, height uint32) {
 		}(tick, balance)
 	}
 	wg.Wait()
-	UpdateBsv20V1Funding()
 }
 
 func ValidateV1Transfer(txid []byte, tick string, mined bool) {

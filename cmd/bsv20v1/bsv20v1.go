@@ -75,22 +75,20 @@ func main() {
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	sub1 := sub.Subscribe(context.Background())
+	sub1 := sub.Subscribe(context.Background(), "v1xfer")
 	ch1 := sub1.Channel()
 	go func() {
 		for msg := range ch1 {
-			// pkhash, _ := hex.DecodeString(msg.Channel)
-			row := db.QueryRow(context.Background(), `
-				SELECT SUM(satoshis) as total 
-				FROM txos
-				WHERE pkhash = decode($1, 'hex')`,
-				msg.Channel,
-			)
-			funds := tickFunds[msg.Channel]
-			err := row.Scan(&funds.Total)
-			if err != nil {
-				log.Println(err)
+			if msg.Channel == "v1xfer" {
+				parts := strings.Split(msg.Payload, ":")
+				txid, err := hex.DecodeString(parts[0])
+				if err != nil {
+					continue
+				}
+				ordinals.ValidateV1Transfer(txid, parts[1], false)
+				continue
 			}
+			tickFunds = ordinals.UpdateBsv20V1Funding()
 		}
 	}()
 
@@ -99,23 +97,6 @@ func main() {
 		pkhashFunds[pkhashHex] = funds
 		sub1.Subscribe(context.Background(), pkhashHex)
 	}
-
-	trig := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-	ch2 := trig.Subscribe(context.Background(), "v1xfer").Channel()
-	go func() {
-		for msg := range ch2 {
-			parts := strings.Split(msg.Payload, ":")
-			txid, err := hex.DecodeString(parts[0])
-			if err != nil {
-				continue
-			}
-			ordinals.ValidateV1Transfer(txid, parts[1], false)
-		}
-	}()
 
 	rows, err := db.Query(context.Background(), `
 		SELECT topic, MIN(progress) as progress
