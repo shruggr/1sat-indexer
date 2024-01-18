@@ -17,7 +17,7 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-var VERBOSE int
+// var VERBOSE int
 var CONCURRENCY int = 64
 var threadLimiter chan struct{}
 
@@ -110,7 +110,7 @@ func Exec(
 
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
-			if VERBOSE > 0 {
+			if verbose > 0 {
 				log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
 			}
 			if status.StatusCode == 200 {
@@ -153,7 +153,7 @@ func Exec(
 
 	if indexBlocks {
 		eventHandler.OnTransaction = func(txn *models.TransactionResponse) {
-			if VERBOSE > 0 {
+			if verbose > 0 {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
 			threadLimiter <- struct{}{}
@@ -197,7 +197,7 @@ func Exec(
 	}
 	if indexMempool {
 		eventHandler.OnMempool = func(txn *models.TransactionResponse) {
-			if VERBOSE > 0 {
+			if verbose > 0 {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
 			threadLimiter <- struct{}{}
