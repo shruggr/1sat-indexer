@@ -14,3 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_bsv20_txos_spend ON bsv20_txos(spend)
 WHERE spend != '\x';
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_sales ON bsv20_txos(sale, spend_height, spend_idx)
 WHERE spend != '\x';
+CREATE INDEX IF NOT EXISTS idx_bsv20_txos_tick_sales ON bsv20_txos(tick, spend_height, spend_idx)
+WHERE spend != '\x' AND tick != '' AND sale = true;
+CREATE INDEX IF NOT EXISTS idx_bsv20_txos_id_sales ON bsv20_txos(id, spend_height, spend_idx)
+WHERE spend != '\x' AND id != '\x' AND sale = true;

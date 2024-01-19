@@ -84,7 +84,7 @@ func IndexBsv20(ctx *lib.IndexContext) (token *Bsv20) {
 				if token != nil {
 					decimals = token.Decimals
 				}
-				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
+				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt) * float64(10^uint64(decimals))
 			}
 			bsv20.Save(txo)
 		}
