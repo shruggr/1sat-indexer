@@ -58,7 +58,6 @@ func init() {
 }
 
 func main() {
-	// token := ordinals.LoadTicker(TICK)
 	rows, err := db.Query(context.Background(), `
 		SELECT txid, vout, height, idx
 		FROM implied
@@ -68,8 +67,6 @@ func main() {
 		log.Panicln(err)
 	}
 	defer rows.Close()
-	// limiter := make(chan struct{}, 64)
-	// var wg sync.WaitGroup
 	for rows.Next() {
 		var txid []byte
 		var vout uint32
@@ -111,7 +108,6 @@ func main() {
 			txid,
 		)
 
-		// var amt uint64
 		b := &ordinals.Bsv20{
 			Op:      "transfer",
 			Implied: true,
@@ -123,7 +119,6 @@ func main() {
 		}
 		txo.AddData("bsv20", b)
 		ordinals.IndexBsv20(ctx)
-		// bsv20.Amt = &amt
 
 		log.Printf("Saving Implied: %s\n", txo.Outpoint.String())
 		_, err = db.Exec(context.Background(), `
@@ -137,80 +132,5 @@ func main() {
 		if err != nil {
 			log.Panicf("%x %v", txid, err)
 		}
-		// // onesats := make([]uint32, 0, len(ctx.Txos))
-		// // for vout, txo := range ctx.Txos {
-		// // 	if _, ok := txo.Data["bsv20"]; ok {
-		// // 		log.Printf("Not Implied %x %d\n", txid, vout)
-		// // 		return
-		// // 	}
-		// // 	if txo.Satoshis == 1 {
-		// // 		// satsIn := uint64(0)
-		// // 		// for vin, txin := range ctx.Tx.Inputs {
-		// // 		// 	inTxn, err := lib.JB.GetTransaction(context.Background(), txin.PreviousTxIDStr())
-		// // 		// 	if err != nil {
-		// // 		// 		panic(err)
-		// // 		// 	}
-		// // 		// 	ctx, err := lib.ParseTxn(inTxn.Transaction, inTxn.BlockHash, inTxn.BlockHeight, inTxn.BlockIndex)
-		// // 		// 	if err != nil {
-		// // 		// 		panic(err)
-		// // 		// 	}
-		// // 		// 	ordinals.IndexInscriptions(ctx)
-		// // 		// 	ordinals.IndexBsv20(ctx)
-		// // 		// 	if satsIn == txo.OutAcc {
-		// // 		// 	}
-		// // 		// 	satsIn += inTx.Outputs[txin.PreviousTxOutIndex].Satoshis
-		// // 		// }
-		// // 	}
-		// // }
-
-		// url := fmt.Sprintf("%s/v1/txo/spend/%x_%d", os.Getenv("JUNGLEBUS"), txid, vout)
-		// // log.Println("URL:", url)
-		// resp, err := http.Get(url)
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// if resp.StatusCode == 404 {
-		// 	log.Panicf("Not Found: %s\n", url)
-		// }
-		// spend, err := io.ReadAll(resp.Body)
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// if len(spend) == 0 {
-		// 	return
-		// }
-
-		// // token := ordinals.IndexBsv20(ctx)
-		// // if token != nil {
-		// // 	return
-		// // }
-		// outSats := uint64(0)
-		// for _, txo := range ctx.Txos {
-		// 	if outSats == outacc && txo.Satoshis == 1 {
-		// 		bsv20 := &ordinals.Bsv20{
-		// 			Ticker:  TICK,
-		// 			Op:      "transfer",
-		// 			Amt:     &amt,
-		// 			Implied: true,
-		// 		}
-		// 		list := ordlock.ParseScript(txo)
-
-		// 		if list != nil {
-		// 			txo.PKHash = list.PKHash
-		// 			bsv20.PKHash = list.PKHash
-		// 			bsv20.Price = list.Price
-		// 			bsv20.PayOut = list.PayOut
-		// 			bsv20.Listing = true
-
-		// 			var decimals uint8
-		// 			if token != nil {
-		// 				decimals = token.Decimals
-		// 			}
-		// 			bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
-		// 		}
-		// 		// bsv20.Save(txo)
-		// 		log.Printf("Saving Implied: %s\n", txo.Outpoint)
-		// 		return
-		// 	}
 	}
 }

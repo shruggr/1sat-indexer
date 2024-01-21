@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,12 +79,12 @@ func main() {
 	go func() {
 		for msg := range ch1 {
 			if msg.Channel == "v1xfer" {
-				parts := strings.Split(msg.Payload, ":")
-				txid, err := hex.DecodeString(parts[0])
-				if err != nil {
-					continue
-				}
-				ordinals.ValidateV1Transfer(txid, parts[1], false)
+				// parts := strings.Split(msg.Payload, ":")
+				// txid, err := hex.DecodeString(parts[0])
+				// if err != nil {
+				// 	continue
+				// }
+				// ordinals.ValidateV1Transfer(txid, parts[1], false)
 				continue
 			}
 			tickFunds = ordinals.UpdateBsv20V1Funding()
@@ -118,7 +117,6 @@ func main() {
 			log.Panicln(err)
 		}
 
-		ordinals.ValidateBsv20MintsSubs(progress-6, topic)
 		wg.Add(1)
 		go func(topic string, progress uint32) {
 			var settled = make(chan uint32, 1000)
@@ -126,9 +124,11 @@ func main() {
 				for height := range settled {
 					tickFunds = ordinals.UpdateBsv20V1Funding()
 					ordinals.ValidateBsv20MintsSubs(height-6, topic)
-					ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY, height)
+					ordinals.ValidatePaidBsv20V1Transfers(CONCURRENCY, topic, height)
 				}
 			}()
+
+			settled <- progress
 
 			if progress < 807000 {
 				progress = 807000
@@ -189,11 +189,11 @@ func main() {
 					},
 					"",
 					topic,
-					uint(progress),
+					uint(progress)-6,
 					CONCURRENCY,
 					true,
 					true,
-					1,
+					0,
 				)
 				if err != nil {
 					log.Println("Subscription Error:", topic, err)
