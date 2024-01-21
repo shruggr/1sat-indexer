@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -45,7 +44,7 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err = pgxpool.New(ctx, POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -77,34 +76,40 @@ func main() {
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	sub1 := sub.Subscribe(context.Background())
+	sub1 := sub.Subscribe(ctx, "v2xfer")
 	ch1 := sub1.Channel()
 	go func() {
 		for msg := range ch1 {
-			if msg.Channel == "v1xfer" {
-				parts := strings.Split(msg.Payload, ":")
-				txid, err := hex.DecodeString(parts[0])
-				if err != nil {
-					continue
-				}
-				id, err := lib.NewOutpointFromString(parts[1])
-				ordinals.ValidateV2Transfer(txid, id, false)
+			if msg.Channel == "v2xfer" {
+				// parts := strings.Split(msg.Payload, ":")
+				// txid, err := hex.DecodeString(parts[0])
+				// if err != nil {
+				// 	continue
+				// }
+				// id, err := lib.NewOutpointFromString(parts[1])
+				// if err != nil {
+				// 	continue
+				// }
+				// ordinals.ValidateV2Transfer(txid, id, false)
 				continue
+			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
+				ordinals.UpdateBsv20V2TokenFunding(funds)
 			}
-			tickFunds = ordinals.UpdateBsv20V2Funding()
 		}
 	}()
 
 	for _, funds := range tickFunds {
 		pkhashHex := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhashHex] = funds
-		sub1.Subscribe(context.Background(), pkhashHex)
+		sub1.Subscribe(ctx, pkhashHex)
 	}
 
 	var settled = make(chan uint32, 1000)
 	go func() {
 		for height := range settled {
-			tickFunds = ordinals.UpdateBsv20V2Funding()
+			fmt.Println("Settled", height)
+			// tickFunds = ordinals.UpdateBsv20V2Funding()
+			// fmt.Println("Update funding", height)
 			ordinals.ValidatePaidBsv20V2Transfers(CONCURRENCY, height)
 		}
 	}()
@@ -122,7 +127,7 @@ func main() {
 					}
 					if len(bsv20.FundPKHash) > 0 {
 						pkhash := hex.EncodeToString(bsv20.FundPKHash)
-						sub1.Subscribe(context.Background(), pkhash)
+						sub1.Subscribe(ctx, pkhash)
 					}
 					list := ordlock.ParseScript(txo)
 
@@ -141,13 +146,14 @@ func main() {
 					}
 					bsv20.Save(txo)
 					if bsv20.Op == "transfer" {
-						rdb.Publish(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Id.String()))
+						rdb.Publish(ctx, "v2xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Id.String()))
 					}
 				}
 			}
 			return nil
 		},
 		func(height uint32) error {
+			settled <- height
 			return nil
 		},
 		INDEXER,
@@ -156,7 +162,7 @@ func main() {
 		CONCURRENCY,
 		true,
 		true,
-		VERBOSE,
+		1,
 	)
 	if err != nil {
 		log.Panicln(err)
