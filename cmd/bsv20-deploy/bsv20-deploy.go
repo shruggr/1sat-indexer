@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -85,7 +86,7 @@ func main() {
 func handleTx(tx *lib.IndexContext) error {
 	ordinals.ParseInscriptions(tx)
 	for _, txo := range tx.Txos {
-		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok && strings.HasPrefix(bsv20.Op, "deploy") {
 			bsv20.Save(txo)
 		}
 	}

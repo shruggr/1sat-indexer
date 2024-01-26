@@ -78,11 +78,7 @@ func main() {
 			log.Printf("Processing %x\n", txid)
 			ctx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
 
-			for _, txo := range ctx.Txos {
-				if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-					bsv20.Save(txo)
-				}
-			}
+			ordinals.IndexBsv20(ctx)
 		}(txid)
 	}
 	wg.Wait()

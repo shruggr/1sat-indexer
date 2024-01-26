@@ -165,18 +165,43 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 	ordlock.ParseOrdinalLocks(ctx)
 	ctx.Save()
 
-	token := ordinals.IndexBsv20(ctx)
-	if token == nil {
-		for _, txo := range ctx.Txos {
-			if list, ok := txo.Data["list"].(*ordlock.Listing); ok {
-				list.Save(txo)
+	tokens := map[string]struct{}{}
+	for _, txo := range ctx.Txos {
+		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+			list := ordlock.ParseScript(txo)
+
+			if list != nil {
+				txo.PKHash = list.PKHash
+				bsv20.PKHash = list.PKHash
+				bsv20.Price = list.Price
+				bsv20.PayOut = list.PayOut
+				bsv20.Listing = true
+
+				var decimals uint8
+				if bsv20.Ticker != "" {
+					token := ordinals.LoadTicker(bsv20.Ticker)
+					decimals = token.Decimals
+				} else if bsv20.Id != nil {
+					token := ordinals.LoadTokenById(bsv20.Id)
+					decimals = token.Decimals
+				}
+				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt) * float64(10^uint64(decimals))
+			}
+			if bsv20.Ticker != "" {
+				tokens[bsv20.Ticker] = struct{}{}
+			} else if bsv20.Id != nil {
+				tokens[bsv20.Id.String()] = struct{}{}
+			}
+			if bsv20.Op == "transfer" {
+				bsv20.Save(txo)
 			}
 		}
-	} else {
-		if token.Ticker != "" {
-			rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, token.Ticker))
+	}
+	for tick, _ := range tokens {
+		if len(tick) <= 16 {
+			rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
 		} else {
-			rdb.Publish(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, token.Id.String()))
+			rdb.Publish(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
 		}
 	}
 

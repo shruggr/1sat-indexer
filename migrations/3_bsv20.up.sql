@@ -27,19 +27,19 @@ CREATE INDEX IF NOT EXISTS idx_bsv20_height_idx ON bsv20(height, idx, vout);
 CREATE INDEX IF NOT EXISTS idx_bsv20_to_validate ON bsv20(height, idx, vout)
     WHERE status = 0;
 
-CREATE TABLE IF NOT EXISTS bsv20_mints (
-    txid BYTEA,
-    vout INT,
-    height INT,
-    idx BIGINT,
-    tick TEXT,
-    amt NUMERIC NOT NULL,
-    status INT DEFAULT 0,
-    reason TEXT,
-    PRIMARY KEY(txid, vout)
-);
+-- CREATE TABLE IF NOT EXISTS bsv20_mints (
+--     txid BYTEA,
+--     vout INT,
+--     height INT,
+--     idx BIGINT,
+--     tick TEXT,
+--     amt NUMERIC NOT NULL,
+--     status INT DEFAULT 0,
+--     reason TEXT,
+--     PRIMARY KEY(txid, vout)
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_bsv20_mints_status ON bsv20_mints(status, height, idx, vout);
+-- CREATE INDEX IF NOT EXISTS idx_bsv20_mints_status ON bsv20_mints(status, height, idx, vout);
 
-CREATE INDEX IF NOT EXISTS idx_bsv20_mints_tick_validate ON bsv20_mints(tick, height, idx, vout)
-    WHERE status = 0;
+-- CREATE INDEX IF NOT EXISTS idx_bsv20_mints_tick_validate ON bsv20_mints(tick, height, idx, vout)
+--     WHERE status = 0;
