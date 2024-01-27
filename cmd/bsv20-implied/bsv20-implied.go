@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -83,12 +84,8 @@ func main() {
 			log.Printf("Implied: %x %d\n", txid, vout)
 			panic(err)
 		}
-		ctx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
-		if err != nil {
-			log.Printf("Implied: %x %d\n", txid, vout)
-			panic(err)
-		}
-		ordinals.IndexInscriptions(ctx)
+
+		ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 		for _, txo := range ctx.Txos {
 			if _, ok := txo.Data["bsv20"]; ok {
 				ordinals.IndexBsv20(ctx)
@@ -114,8 +111,37 @@ func main() {
 		}
 		err = txoRow.Scan(&b.Ticker, &b.Amt)
 		if err != nil {
-			log.Printf("Implied: %x %d\n", txid, vout)
-			panic(err)
+			if err != pgx.ErrNoRows {
+				log.Printf("Implied: %x %d\n", txid, vout)
+				panic(err)
+			}
+			for _, spend := range ctx.Spends {
+				txn, err := lib.JB.GetTransaction(context.Background(), hex.EncodeToString(spend.Outpoint.Txid()))
+				if err != nil {
+					log.Printf("Implied Parent: %x %d\n", txid, vout)
+					panic(err)
+				}
+				ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+				for _, txo := range ctx.Txos {
+					if _, ok := txo.Data["bsv20"]; ok {
+						ordinals.IndexBsv20(ctx)
+						break
+					}
+				}
+			}
+			txoRow := db.QueryRow(context.Background(), `
+				SELECT tick, amt 
+				FROM bsv20_txos
+				WHERE spend=$1
+				ORDER BY vout
+				LIMIT 1`,
+				txid,
+			)
+			err = txoRow.Scan(&b.Ticker, &b.Amt)
+			if err != nil {
+				log.Printf("Implied Missing Parents: %x %d\n", txid, vout)
+				panic(err)
+			}
 		}
 		txo.AddData("bsv20", b)
 		ordinals.IndexBsv20(ctx)

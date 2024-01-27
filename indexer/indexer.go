@@ -169,7 +169,7 @@ func Exec(
 				}()
 				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 				if err != nil {
-					log.Panic(err)
+					log.Panicln(err)
 				}
 				if saveSpends {
 					txCtx.SaveSpends()
@@ -177,7 +177,7 @@ func Exec(
 				if txHandler != nil {
 					err = txHandler(txCtx)
 					if err != nil {
-						log.Panic(err)
+						log.Panicln(err)
 					}
 				}
 				if saveTxos {

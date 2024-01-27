@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -14,9 +17,9 @@ import (
 	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
+// var settled = make(chan uint32, 1000)
 var POSTGRES string
 var db *pgxpool.Pool
 var rdb *redis.Client
@@ -24,7 +27,7 @@ var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
-var CONCURRENCY int = 64
+var CONCURRENCY int = 8
 var ctx = context.Background()
 
 func init() {
@@ -32,12 +35,8 @@ func init() {
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
-	flag.StringVar(&INDEXER, "id", "", "Indexer name")
-	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
-	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
-	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
-	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
-	flag.Parse()
+	// flag.IntVar(&CONCURRENCY, "c", 32, "Concurrency Limit")
+	// flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
@@ -60,111 +59,195 @@ func init() {
 		log.Panic(err)
 	}
 
-	err = ordinals.Initialize(db, rdb)
+	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
 	if err != nil {
 		log.Panic(err)
 	}
 }
 
 var pkhashFunds = map[string]*ordinals.V2TokenFunds{}
-var tickFunds map[string]*ordinals.V2TokenFunds
+var idFunds map[string]*ordinals.V2TokenFunds
+
+var limiter chan struct{}
+var sub *redis.PubSub
 
 func main() {
-	tickFunds = ordinals.UpdateBsv20V2Funding()
-	sub := redis.NewClient(&redis.Options{
+	limiter = make(chan struct{}, CONCURRENCY)
+	idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
+
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
+		}
+	}()
+
+	subRdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	sub1 := sub.Subscribe(ctx, "v2xfer")
-	ch1 := sub1.Channel()
+	sub = subRdb.Subscribe(ctx, "v2xfer")
+	ch1 := sub.Channel()
+	for _, funds := range idFunds {
+		pkhash := hex.EncodeToString(funds.PKHash)
+		pkhashFunds[pkhash] = funds
+		sub.Subscribe(ctx, pkhash)
+	}
 	go func() {
 		for msg := range ch1 {
 			if msg.Channel == "v2xfer" {
-				// parts := strings.Split(msg.Payload, ":")
-				// txid, err := hex.DecodeString(parts[0])
-				// if err != nil {
-				// 	continue
-				// }
-				// id, err := lib.NewOutpointFromString(parts[1])
-				// if err != nil {
-				// 	continue
-				// }
-				// ordinals.ValidateV2Transfer(txid, id, false)
+				parts := strings.Split(msg.Payload, ":")
+				txid, err := hex.DecodeString(parts[0])
+				if err != nil {
+					log.Println("Decode err", err)
+					continue
+				}
+				tokenId, err := lib.NewOutpointFromString(parts[1])
+				if err != nil {
+					log.Println("NewOutpointFromString err", err)
+					continue
+				}
+				if funds, ok := idFunds[tokenId.String()]; ok {
+					outputs := ordinals.ValidateV2Transfer(txid, tokenId, false)
+					funds.Used += int64(outputs) * ordinals.BSV20V2_OP_COST
+				}
 				continue
 			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
 				ordinals.UpdateBsv20V2TokenFunding(funds)
 			}
+			if funds, ok := pkhashFunds[msg.Channel]; ok {
+				funds.UpdateFunding()
+			}
 		}
 	}()
 
-	for _, funds := range tickFunds {
-		pkhashHex := hex.EncodeToString(funds.PKHash)
-		pkhashFunds[pkhashHex] = funds
-		sub1.Subscribe(ctx, pkhashHex)
+	for {
+		if !processV2() {
+			log.Println("No work to do")
+			time.Sleep(time.Minute)
+		}
 	}
+}
 
-	var settled = make(chan uint32, 1000)
-	go func() {
-		for height := range settled {
-			fmt.Println("Settled", height)
-			// tickFunds = ordinals.UpdateBsv20V2Funding()
-			// fmt.Println("Update funding", height)
-			ordinals.ValidatePaidBsv20V2Transfers(CONCURRENCY, height)
+func processV2() (didWork bool) {
+	var wg sync.WaitGroup
+	for _, funds := range idFunds {
+		if funds.Balance() < ordinals.BSV20V2_OP_COST {
+			continue
 		}
-	}()
 
-	err := indexer.Exec(
-		true,
-		false,
-		func(tx *lib.IndexContext) error {
-			ordinals.ParseInscriptions(tx)
-			for _, txo := range tx.Txos {
-				// pkhash := hex.EncodeToString(txo.PKHash)
-				if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-					if bsv20.Ticker != "" {
-						continue
-					}
-					if len(bsv20.FundPKHash) > 0 {
-						pkhash := hex.EncodeToString(bsv20.FundPKHash)
-						sub1.Subscribe(ctx, pkhash)
-					}
-					list := ordlock.ParseScript(txo)
+		log.Println("Processing V2", funds.Id.String(), funds.Balance())
+		wg.Add(1)
+		limiter <- struct{}{}
+		go func(funds *ordinals.V2TokenFunds) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			rows, err := db.Query(ctx, `
+				SELECT txid, height, idx, txouts
+				FROM bsv20v2_txns
+				WHERE processed=false AND id=$1
+				ORDER BY height ASC, idx ASC`,
+				funds.Id,
+			)
+			if err != nil {
+				log.Panic(err)
+			}
+			defer rows.Close()
+			balance := funds.Balance()
 
-					if list != nil {
-						txo.PKHash = list.PKHash
-						bsv20.PKHash = list.PKHash
-						bsv20.Price = list.Price
-						bsv20.PayOut = list.PayOut
-						bsv20.Listing = true
-						token := ordinals.LoadTokenById(bsv20.Id)
-						var decimals uint8
-						if token != nil {
-							decimals = token.Decimals
+			for rows.Next() {
+				var txid []byte
+				var height uint32
+				var idx uint64
+				var txouts int64
+				err = rows.Scan(&txid, &height, &idx, &txouts)
+				if err != nil {
+					log.Panic(err)
+				}
+				if balance < txouts*ordinals.BSV20V2_OP_COST {
+					log.Printf("Insufficient Balance %s %x\n", funds.Id.String(), txid)
+					break
+				}
+				log.Printf("Loading %s %x\n", funds.Id.String(), txid)
+				rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
+				if err != nil {
+					log.Panic(err)
+				}
+
+				log.Printf("Parsing %s %x\n", funds.Id.String(), txid)
+				txn := ordinals.IndexTxn(rawtx, "", height, idx)
+				ordinals.ParseBsv20(txn)
+				log.Printf("Parsed %s %x\n", funds.Id.String(), txid)
+				for _, txo := range txn.Txos {
+					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+						if !bytes.Equal(*funds.Id, *bsv20.Id) {
+							continue
 						}
-						bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt*(10^uint64(decimals)))
-					}
-					bsv20.Save(txo)
-					if bsv20.Op == "transfer" {
-						rdb.Publish(ctx, "v2xfer", fmt.Sprintf("%x:%s", tx.Txid, bsv20.Id.String()))
+						if bsv20.Op == "transfer" {
+							balance -= ordinals.BSV20V2_OP_COST
+						}
+						log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())
+						bsv20.Save(txo)
 					}
 				}
+				log.Printf("Updating %s %x\n", funds.Id.String(), txid)
+				_, err = db.Exec(ctx, `
+					UPDATE bsv20v2_txns
+					SET processed=true
+					WHERE txid=$1 AND id=$2`,
+					txn.Txid,
+					funds.Id,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+				didWork = true
+				if balance < ordinals.BSV20V2_OP_COST {
+					break
+				}
 			}
-			return nil
-		},
-		func(height uint32) error {
-			settled <- height
-			return nil
-		},
-		INDEXER,
-		TOPIC,
-		FROM_BLOCK,
-		CONCURRENCY,
-		true,
-		true,
-		1,
-	)
-	if err != nil {
-		log.Panicln(err)
+			rows.Close()
+
+			rows, err = db.Query(ctx, `
+				SELECT txid, vout, height, idx, id, amt
+				FROM bsv20_txos
+				WHERE op='transfer' AND id=$1 AND status=0 AND height > 0 AND height IS NOT NULL
+				ORDER BY height ASC, idx ASC, vout ASC
+				LIMIT $2`,
+				funds.Id,
+				funds.Balance()/ordinals.BSV20V2_OP_COST,
+			)
+			if err != nil {
+				log.Panic(err)
+			}
+			defer rows.Close()
+
+			var prevTxid []byte
+			// fmt.Printf("Validating Transfers: %s\n", funds.Id.String())
+			for rows.Next() {
+				bsv20 := &ordinals.Bsv20{}
+				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Id, &bsv20.Amt)
+				if err != nil {
+					log.Panicln(err)
+				}
+				// fmt.Printf("Validating Transfer: %s %x\n", funds.Id.String(), bsv20.Txid)
+
+				if bytes.Equal(prevTxid, bsv20.Txid) {
+					// fmt.Printf("Skipping: %s %x\n", funds.Id.String(), bsv20.Txid)
+					continue
+				}
+				didWork = true
+				prevTxid = bsv20.Txid
+				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, true)
+				funds.Used += int64(outputs) * ordinals.BSV20V2_OP_COST
+				fmt.Printf("Validated Transfer: %s %x\n", funds.Id.String(), bsv20.Txid)
+			}
+		}(funds)
 	}
+	wg.Wait()
+
+	return
 }

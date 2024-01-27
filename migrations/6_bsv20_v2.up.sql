@@ -81,3 +81,32 @@ WHERE spend = '\x' AND listing = true;
 
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_height_idx_unspent ON bsv20_txos(height, idx, vout)
 WHERE spend = '\x';
+
+CREATE TABLE bsv20v1_txns(
+    txid BYTEA,
+    tick TEXT DEFAULT '',
+    height INTEGER,
+    idx BIGINT,
+    txouts INTEGER,
+    created TIMESTAMP DEFAULT NOW(),
+    processed BOOL DEFAULT false,
+    PRIMARY KEY(txid, tick)
+);
+CREATE INDEX idx_bsv20v1_txns_pending ON bsv20v1_txns(tick, height, idx)
+INCLUDE (txid)
+WHERE processed = false;
+
+CREATE TABLE bsv20v2_txns(
+    txid BYTEA,
+    id BYTEA,
+    height INTEGER,
+    idx BIGINT,
+    txouts INTEGER,
+    created TIMESTAMP DEFAULT NOW(),
+    processed BOOL DEFAULT false,
+    PRIMARY KEY(txid, id)
+);
+CREATE INDEX idx_bsv20v2_txns_pending ON bsv20v2_txns(id, height, idx)
+INCLUDE (txid)
+WHERE processed = false;
+

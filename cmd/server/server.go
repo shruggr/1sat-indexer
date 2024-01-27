@@ -191,7 +191,7 @@ func main() {
 				height = EXCLUDED.height, 
 				updated = CURRENT_TIMESTAMP`,
 			address,
-			height,
+			height-6,
 		)
 		if err != nil {
 			log.Panicf("Error updating address: %s", err)
