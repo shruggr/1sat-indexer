@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 
@@ -16,7 +18,7 @@ var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "3258136ce310066536524c67bd88d91ed4662e0a1644dd1a17f93c3c3e038541"
+var hexId = "c6a1833320083b01bde979662b4fa49e7c6119be6e2bbedc5b30eb821e34f696"
 
 func main() {
 	// var err error
@@ -47,11 +49,19 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	// out, err := json.MarshalIndent(txnCtx, "", "  ")
 
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	tx, err := lib.JB.GetTransaction(context.Background(), hexId)
+	if err != nil {
+		log.Panic(err)
+	}
 
-	// fmt.Println(string(out))
+	txnCtx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+
+	out, err := json.MarshalIndent(txnCtx, "", "  ")
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Println(string(out))
 }

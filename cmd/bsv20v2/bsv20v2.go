@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -36,8 +35,8 @@ func init() {
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
-	flag.IntVar(&CONCURRENCY, "c", 32, "Concurrency Limit")
-	flag.Parse()
+	// flag.IntVar(&CONCURRENCY, "c", 32, "Concurrency Limit")
+	// flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
@@ -78,7 +77,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(time.Hour)
+			time.Sleep(10 * time.Minute)
 			idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
 		}
 	}()
@@ -148,8 +147,7 @@ func processV2() (didWork bool) {
 				SELECT txid, height, idx, txouts
 				FROM bsv20v2_txns
 				WHERE processed=false AND id=$1
-				ORDER BY height ASC, idx ASC
-				LIMIT 1000`,
+				ORDER BY height ASC, idx ASC`,
 				funds.Id,
 			)
 			if err != nil {
@@ -168,20 +166,19 @@ func processV2() (didWork bool) {
 					log.Panic(err)
 				}
 				if balance < txouts*ordinals.BSV20V2_OP_COST {
+					log.Printf("Insufficient Balance %s %x\n", funds.Id.String(), txid)
 					break
 				}
-				log.Printf("Processing %s %x\n", funds.Id.String(), txid)
+				log.Printf("Loading %s %x\n", funds.Id.String(), txid)
 				rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
 				if err != nil {
 					log.Panic(err)
 				}
 
-				txn, err := lib.ParseTxn(rawtx, "", height, idx)
-				if err != nil {
-					log.Panic(err)
-				}
-				ordinals.IndexInscriptions(txn)
+				log.Printf("Parsing %s %x\n", funds.Id.String(), txid)
+				txn := ordinals.IndexTxn(rawtx, "", height, idx)
 				ordinals.ParseBsv20(txn)
+				log.Printf("Parsed %s %x\n", funds.Id.String(), txid)
 				for _, txo := range txn.Txos {
 					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
 						if !bytes.Equal(*funds.Id, *bsv20.Id) {
@@ -190,6 +187,7 @@ func processV2() (didWork bool) {
 						if bsv20.Op == "transfer" {
 							balance -= ordinals.BSV20V2_OP_COST
 						}
+						log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())
 						bsv20.Save(txo)
 					}
 				}

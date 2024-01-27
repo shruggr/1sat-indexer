@@ -81,10 +81,14 @@ func ParseBsv20(ctx *lib.IndexContext) {
 				var decimals uint8
 				if bsv20.Ticker != "" {
 					token := LoadTicker(bsv20.Ticker)
-					decimals = token.Decimals
+					if token != nil {
+						decimals = token.Decimals
+					}
 				} else {
 					token := LoadTokenById(bsv20.Id)
-					decimals = token.Decimals
+					if token != nil {
+						decimals = token.Decimals
+					}
 				}
 				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt) * float64(10^uint64(decimals))
 			}
@@ -875,7 +879,7 @@ func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 				log.Panicln(err)
 			}
 			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
-			// log.Println("URL:", url)
+			log.Println("URL:", url)
 			resp, err := http.Get(url)
 			if err != nil {
 				log.Panicln(err)

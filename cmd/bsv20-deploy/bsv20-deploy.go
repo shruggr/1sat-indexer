@@ -85,6 +85,7 @@ func main() {
 
 func handleTx(tx *lib.IndexContext) error {
 	ordinals.ParseInscriptions(tx)
+	ordinals.CalculateOrigins(tx)
 	for _, txo := range tx.Txos {
 		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok && strings.HasPrefix(bsv20.Op, "deploy") {
 			bsv20.Save(txo)

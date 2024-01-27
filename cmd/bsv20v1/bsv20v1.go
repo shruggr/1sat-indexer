@@ -142,8 +142,7 @@ func processV1() (didWork bool) {
 				SELECT txid, height, idx, txouts
 				FROM bsv20v1_txns
 				WHERE processed=false AND tick=$1
-				ORDER BY height ASC, idx ASC
-				LIMIT 1000`,
+				ORDER BY height ASC, idx ASC`,
 				funds.Tick,
 			)
 			if err != nil {
@@ -171,11 +170,7 @@ func processV1() (didWork bool) {
 					log.Panic(err)
 				}
 
-				txn, err := lib.ParseTxn(rawtx, "", height, idx)
-				if err != nil {
-					log.Panic(err)
-				}
-				ordinals.IndexInscriptions(txn)
+				txn := ordinals.IndexTxn(rawtx, "", height, idx)
 				ordinals.ParseBsv20(txn)
 				for _, txo := range txn.Txos {
 					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
@@ -228,6 +223,7 @@ func processV1() (didWork bool) {
 					log.Panicln(err)
 				}
 
+				// log.Println("Validating", funds.Tick, bsv20.Vout, bsv20.Op)
 				var reason string
 				switch bsv20.Op {
 				case "mint":
@@ -241,9 +237,9 @@ func processV1() (didWork bool) {
 
 					if reason != "" {
 						_, err = db.Exec(ctx, `
-								UPDATE bsv20_txos
-								SET status=-1, reason=$3
-								WHERE txid=$1 AND vout=$2`,
+							UPDATE bsv20_txos
+							SET status=-1, reason=$3
+							WHERE txid=$1 AND vout=$2`,
 							bsv20.Txid,
 							bsv20.Vout,
 							reason,
@@ -251,7 +247,7 @@ func processV1() (didWork bool) {
 						if err != nil {
 							log.Panic(err)
 						}
-						return
+						continue
 					}
 
 					t, err := db.Begin(ctx)
@@ -260,7 +256,6 @@ func processV1() (didWork bool) {
 					}
 					defer t.Rollback(ctx)
 
-					var reason string
 					if ticker.Max-ticker.Supply < *bsv20.Amt {
 						reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
 						*bsv20.Amt = ticker.Max - ticker.Supply
@@ -268,7 +263,7 @@ func processV1() (didWork bool) {
 						_, err := t.Exec(ctx, `
 							UPDATE bsv20_txos
 							SET status=1, amt=$3, reason=$4
-							WHERE txid = $1 AND vout=$2`,
+							WHERE txid=$1 AND vout=$2`,
 							bsv20.Txid,
 							bsv20.Vout,
 							*bsv20.Amt,
@@ -281,7 +276,7 @@ func processV1() (didWork bool) {
 						_, err := t.Exec(ctx, `
 							UPDATE bsv20_txos
 							SET status=1
-							WHERE txid = $1 AND vout=$2`,
+							WHERE txid=$1 AND vout=$2`,
 							bsv20.Txid,
 							bsv20.Vout,
 						)
@@ -290,8 +285,6 @@ func processV1() (didWork bool) {
 						}
 					}
 
-					funds.Used += ordinals.BSV20V1_OP_COST
-					rdb.IncrBy(ctx, "funds:"+funds.Tick, int64(ordinals.BSV20V1_OP_COST*-1))
 					ticker.Supply += *bsv20.Amt
 					_, err = t.Exec(ctx, `
 							UPDATE bsv20
@@ -309,6 +302,8 @@ func processV1() (didWork bool) {
 					if err != nil {
 						log.Panic(err)
 					}
+					funds.Used += ordinals.BSV20V1_OP_COST
+					rdb.IncrBy(ctx, "funds:"+funds.Tick, int64(ordinals.BSV20V1_OP_COST*-1))
 					fmt.Println("Validated Mint:", funds.Tick, ticker.Supply, ticker.Max)
 					didWork = true
 				case "transfer":
