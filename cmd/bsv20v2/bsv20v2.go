@@ -168,19 +168,19 @@ func processV2() (didWork bool) {
 					log.Panic(err)
 				}
 				if balance < txouts*ordinals.BSV20V2_OP_COST {
-					log.Printf("Insufficient Balance %s %x\n", funds.Id.String(), txid)
+					// log.Printf("Insufficient Balance %s %x\n", funds.Id.String(), txid)
 					break
 				}
-				log.Printf("Loading %s %x\n", funds.Id.String(), txid)
+				// log.Printf("Loading %s %x\n", funds.Id.String(), txid)
 				rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
 				if err != nil {
 					log.Panic(err)
 				}
 
-				log.Printf("Parsing %s %x\n", funds.Id.String(), txid)
+				// log.Printf("Parsing %s %x\n", funds.Id.String(), txid)
 				txn := ordinals.IndexTxn(rawtx, "", height, idx)
 				ordinals.ParseBsv20(txn)
-				log.Printf("Parsed %s %x\n", funds.Id.String(), txid)
+				// log.Printf("Parsed %s %x\n", funds.Id.String(), txid)
 				for _, txo := range txn.Txos {
 					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
 						if !bytes.Equal(*funds.Id, *bsv20.Id) {
@@ -189,11 +189,11 @@ func processV2() (didWork bool) {
 						if bsv20.Op == "transfer" {
 							balance -= ordinals.BSV20V2_OP_COST
 						}
-						log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())
+						// log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())
 						bsv20.Save(txo)
 					}
 				}
-				log.Printf("Updating %s %x\n", funds.Id.String(), txid)
+				// log.Printf("Updating %s %x\n", funds.Id.String(), txid)
 				_, err = db.Exec(ctx, `
 					UPDATE bsv20v2_txns
 					SET processed=true

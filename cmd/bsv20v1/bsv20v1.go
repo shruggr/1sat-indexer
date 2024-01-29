@@ -138,69 +138,86 @@ func processV1() (didWork bool) {
 				<-limiter
 				wg.Done()
 			}()
-			rows, err := db.Query(ctx, `
-				SELECT txid, height, idx, txouts
-				FROM bsv20v1_txns
-				WHERE processed=false AND tick=$1
-				ORDER BY height ASC, idx ASC`,
+			row := db.QueryRow(ctx, `
+				SELECT COUNT(1)
+				FROM bsv20_txos
+				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL`,
 				funds.Tick,
 			)
+			var pending int
+			err := row.Scan(&pending)
 			if err != nil {
 				log.Panic(err)
 			}
-			defer rows.Close()
-			ticker := ordinals.LoadTicker(funds.Tick)
-			balance := funds.Balance()
 
-			for rows.Next() {
-				var txid []byte
-				var height uint32
-				var idx uint64
-				var txouts int64
-				err = rows.Scan(&txid, &height, &idx, &txouts)
-				if err != nil {
-					log.Panic(err)
-				}
-				if balance < txouts*ordinals.BSV20V1_OP_COST {
-					break
-				}
-				log.Printf("Processing %s %x\n", funds.Tick, txid)
-				rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
-				if err != nil {
-					log.Panic(err)
-				}
+			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V1_OP_COST) / ordinals.BSV20V1_OP_COST
 
-				txn := ordinals.IndexTxn(rawtx, "", height, idx)
-				ordinals.ParseBsv20(txn)
-				for _, txo := range txn.Txos {
-					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-						if bsv20.Ticker != funds.Tick {
-							continue
-						}
-						if bsv20.Op == "transfer" || bsv20.Op == "mint" {
-							balance -= ordinals.BSV20V1_OP_COST
-						}
-						bsv20.Save(txo)
-					}
-				}
-				_, err = db.Exec(ctx, `
-					UPDATE bsv20v1_txns
-					SET processed=true
-					WHERE txid=$1 AND tick=$2`,
-					txn.Txid,
+			if limit > 0 {
+				rows, err := db.Query(ctx, `
+					SELECT txid, height, idx, txouts
+					FROM bsv20v1_txns
+					WHERE processed=false AND tick=$1
+					ORDER BY height ASC, idx ASC
+					LIMIT $2`,
 					funds.Tick,
+					limit,
 				)
 				if err != nil {
 					log.Panic(err)
 				}
-				didWork = true
-				if balance < ordinals.BSV20V1_OP_COST {
-					break
-				}
-			}
-			rows.Close()
+				defer rows.Close()
+				balance := funds.Balance()
 
-			rows, err = db.Query(ctx, `
+				for rows.Next() {
+					var txid []byte
+					var height uint32
+					var idx uint64
+					var txouts int64
+					err = rows.Scan(&txid, &height, &idx, &txouts)
+					if err != nil {
+						log.Panic(err)
+					}
+					if balance < txouts*ordinals.BSV20V1_OP_COST {
+						break
+					}
+					log.Printf("Processing %s %x\n", funds.Tick, txid)
+					rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
+					if err != nil {
+						log.Panic(err)
+					}
+
+					txn := ordinals.IndexTxn(rawtx, "", height, idx)
+					ordinals.ParseBsv20(txn)
+					for _, txo := range txn.Txos {
+						if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+							if bsv20.Ticker != funds.Tick {
+								continue
+							}
+							if bsv20.Op == "transfer" || bsv20.Op == "mint" {
+								balance -= ordinals.BSV20V1_OP_COST
+							}
+							bsv20.Save(txo)
+						}
+					}
+					_, err = db.Exec(ctx, `
+					UPDATE bsv20v1_txns
+					SET processed=true
+					WHERE txid=$1 AND tick=$2`,
+						txn.Txid,
+						funds.Tick,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+					didWork = true
+					if balance < ordinals.BSV20V1_OP_COST {
+						break
+					}
+				}
+				rows.Close()
+			}
+			ticker := ordinals.LoadTicker(funds.Tick)
+			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
 				FROM bsv20_txos
 				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL

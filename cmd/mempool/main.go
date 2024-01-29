@@ -194,9 +194,7 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 			} else if bsv20.Id != nil {
 				tokens[bsv20.Id.String()] = struct{}{}
 			}
-			if bsv20.Op == "transfer" {
-				bsv20.Save(txo)
-			}
+			bsv20.Save(txo)
 		}
 	}
 	for tick, _ := range tokens {

@@ -1,16 +1,3 @@
-CREATE TABLE IF NOT EXISTS bsv20_subs(
-    seq BIGSERIAL PRIMARY KEY,
-    name TEXT,
-    id BYTEA DEFAULT '\x',
-    tick TEXT DEFAULT '',
-    topic TEXT,
-    progress INTEGER DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_bsv20_subs_id ON bsv20_subs(id)
-    WHERE id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_bsv20_subs_tick ON bsv20_subs(tick)
-    WHERE tick IS NOT NULL;
-
 CREATE TABLE bsv20_v2(
     id BYTEA PRIMARY KEY,
     txid BYTEA GENERATED ALWAYS AS (substring(id from 1 for 32)) STORED,

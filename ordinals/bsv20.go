@@ -882,7 +882,7 @@ func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 				log.Panicln(err)
 			}
 			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
-			log.Println("URL:", url)
+			// log.Println("URL:", url)
 			resp, err := http.Get(url)
 			if err != nil {
 				log.Panicln(err)
