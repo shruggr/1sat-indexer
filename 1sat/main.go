@@ -48,8 +48,8 @@ func init() {
 	godotenv.Load("../.env")
 
 	var err error
-	log.Println("POSTGRES:", os.Getenv("POSTGRES"))
-	db, err = pgxpool.New(context.Background(), os.Getenv("POSTGRES"))
+	log.Println("POSTGRES:", os.Getenv("POSTGRES_FULL"))
+	db, err = pgxpool.New(context.Background(), os.Getenv("POSTGRES_FULL"))
 	if err != nil {
 		log.Panic(err)
 	}
@@ -213,6 +213,11 @@ func processQueue() {
 				}
 			}
 			indexer.M.Unlock()
+
+			// indexer.M.Lock()
+			// indexer.Txns[msg.Id] = txn
+			// indexer.M.Unlock()
+
 			if len(txn.Parents) == 0 {
 				indexer.Wg.Add(1)
 				indexer.InQueue++
@@ -232,7 +237,7 @@ func processQueue() {
 				log.Panic(err)
 			}
 			fromBlock = msg.Height + 1
-			fmt.Printf("Completed: %d\n", msg.Height)
+			// fmt.Printf("Completed: %d\n", msg.Height)
 			settle <- msg.Height
 
 		default:

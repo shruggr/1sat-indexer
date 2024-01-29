@@ -19,7 +19,7 @@ func init() {
 	var err error
 	db, err = pgxpool.New(
 		context.Background(),
-		os.Getenv("POSTGRES"),
+		os.Getenv("POSTGRES_FULL"),
 	)
 	if err != nil {
 		log.Panic(err)

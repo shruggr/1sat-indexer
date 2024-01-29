@@ -1,12 +1,12 @@
 package lib
 
 import (
-	"bytes"
 	"context"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"log"
+	"sync"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -14,214 +14,204 @@ import (
 const THREADS = 64
 
 type IndexContext struct {
-	Txid     []byte     `json:"txid"`
-	BlockId  *string    `json:"blockId"`
-	Height   *uint32    `json:"height"`
-	Idx      uint64     `json:"idx"`
-	Txos     []*Txo     `json:"txos"`
-	Origins  []*Origin  `json:"origin"`
-	Spends   []*Spend   `json:"spends"`
-	Bsv20s   []*Txo     `json:"bsv20s"`
-	Listings []*Listing `json:"listings"`
+	Tx      *bt.Tx  `json:"-"`
+	Txid    []byte  `json:"txid"`
+	BlockId *string `json:"blockId"`
+	Height  *uint32 `json:"height"`
+	Idx     uint64  `json:"idx"`
+	Txos    []*Txo  `json:"txos"`
+	Spends  []*Txo  `json:"spends"`
 }
 
-func IndexSpends(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
-	var accSatsIn uint64
-	var err error
-	for vin, txin := range tx.Inputs {
-		spend := &Spend{
-			Txid:   txin.PreviousTxID(),
-			Vout:   txin.PreviousTxOutIndex,
-			Spend:  ctx.Txid,
-			Vin:    uint32(vin),
-			Height: ctx.Height,
-			Idx:    ctx.Idx,
-		}
-		spend.Outpoint = NewOutpoint(spend.Txid, spend.Vout)
-		ctx.Spends = append(ctx.Spends, spend)
-
-		exists := spend.SetSpent()
-		if !exists {
-			var tx *bt.Tx
-			hexId := hex.EncodeToString(spend.Txid)
-			tx, err = LoadTx(hexId)
-			if err != nil {
-				if ctx.Height != nil {
-					log.Panicf("%x: %d %v\n", spend.Txid, ctx.Height, err)
-				}
-				spend.Missing = true
-				log.Printf("Missing Inputs %x\n", spend.Txid)
-				continue
-			}
-
-			accSatsOut := uint64(0)
-			for vout, txout := range tx.Outputs {
-				if vout < int(spend.Vout) {
-					spend.OutAcc += txout.Satoshis
-					continue
-				}
-				spend.Satoshis = txout.Satoshis
-				spend.Save()
-				accSatsOut += txout.Satoshis
-				break
-			}
-			spend.Satoshis = tx.Outputs[spend.Vout].Satoshis
-		}
-
-		spend.InAcc = accSatsIn
-		accSatsIn += spend.Satoshis
-		if Rdb != nil {
-			outpoint := Outpoint(binary.BigEndian.AppendUint32(spend.Txid, spend.Vout))
-			if len(spend.PKHash) > 0 {
-				Rdb.Publish(context.Background(), fmt.Sprintf("s:%x", spend.PKHash), outpoint.String())
-			}
-			if spend.Data != nil && spend.Data.Listing != nil {
-				Rdb.Publish(context.Background(), "unlist", outpoint.String())
-			}
-		}
+func (ctx *IndexContext) Save() {
+	_, err := Db.Exec(context.Background(), `
+		INSERT INTO txns(txid, block_id, height, idx)
+		VALUES($1, decode($2, 'hex'), $3, $4)
+		ON CONFLICT(txid) DO UPDATE SET
+			block_id=EXCLUDED.block_id,
+			height=EXCLUDED.height,
+			idx=EXCLUDED.idx`,
+		ctx.Txid,
+		ctx.BlockId,
+		ctx.Height,
+		ctx.Idx,
+	)
+	if err != nil {
+		log.Panicf("%x %v\n", ctx.Txid, err)
 	}
+
+	limiter := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+	for _, txo := range ctx.Txos {
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(txo *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			txo.Save()
+			if Rdb != nil {
+				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+			}
+		}(txo)
+	}
+	wg.Wait()
 }
 
-func IndexTxos(tx *bt.Tx, ctx *IndexContext, dryRun bool) {
+func (ctx *IndexContext) SaveSpends() {
+	limiter := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+
+	for _, spend := range ctx.Spends {
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(spend *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			spend.SaveSpend()
+		}(spend)
+	}
+	wg.Wait()
+}
+
+func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *IndexContext, err error) {
+	ctx, err = ParseTxn(rawtx, blockId, height, idx)
+	ctx.SaveSpends()
+	ctx.Save()
+	return
+}
+
+func ParseTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *IndexContext, err error) {
+	tx, err := bt.NewTxFromBytes(rawtx)
+	if err != nil {
+		return
+	}
+	txid := tx.TxIDBytes()
+	ctx = &IndexContext{
+		Tx:   tx,
+		Txid: txid,
+	}
+	if height > 0 {
+		ctx.BlockId = &blockId
+		ctx.Height = &height
+		ctx.Idx = idx
+	}
+
+	if !tx.IsCoinbase() {
+		ParseSpends(ctx)
+	}
+
+	ParseTxos(tx, ctx)
+	return
+}
+
+func ParseTxos(tx *bt.Tx, ctx *IndexContext) {
 	accSats := uint64(0)
 	for vout, txout := range tx.Outputs {
 		outpoint := Outpoint(binary.BigEndian.AppendUint32(ctx.Txid, uint32(vout)))
 		txo := &Txo{
 			Tx:       tx,
-			Txid:     ctx.Txid,
-			Vout:     uint32(vout),
 			Height:   ctx.Height,
 			Idx:      ctx.Idx,
 			Satoshis: txout.Satoshis,
 			OutAcc:   accSats,
 			Outpoint: &outpoint,
+			Script:   *txout.LockingScript,
 		}
 
-		if txo.Satoshis == 1 {
-			for vin, spend := range ctx.Spends {
-				if spend.Missing {
-					log.Printf("Missing Inputs %x\n", txo.Txid)
-					break
-				}
-				if spend.InAcc < txo.OutAcc && len(ctx.Spends) > vin+1 {
-					continue
-				} else if spend.InAcc == txo.OutAcc && spend.Satoshis == 1 {
-					txo.Origin = spend.Origin
-					txo.Spend = spend
-					if ctx.Height != nil && *ctx.Height < 806500 {
-						if spend.Data != nil && spend.Data.Bsv20 != nil &&
-							(spend.Data.Bsv20.Op == "mint" || spend.Data.Bsv20.Op == "transfer") {
-							txo.ImpliedBsv20 = true
-						}
-					}
-					break
-				}
-				txo.IsOrigin = true
-			}
-			ParseScript(txo)
-			if txo.IsOrigin && txo.Data != nil && txo.Data.Inscription != nil {
-				origin := &Origin{
-					Origin: txo.Outpoint,
-					Txid:   ctx.Txid,
-					Vout:   txo.Vout,
-					Height: ctx.Height,
-					Idx:    ctx.Idx,
-					Data:   txo.Data,
-					Map:    txo.Data.Map,
-				}
-				ctx.Origins = append(ctx.Origins, origin)
-				txo.Origin = txo.Outpoint
-			}
-
-			if txo.Data.Bsv20 != nil {
-				ctx.Bsv20s = append(ctx.Bsv20s, txo)
-			}
-
-			if txo.Data.Listing != nil {
-				ctx.Listings = append(ctx.Listings, txo.Data.Listing)
-			}
-
-			ctx.Txos = append(ctx.Txos, txo)
-			accSats += txout.Satoshis
+		if txout.LockingScript.IsP2PKH() {
+			txo.PKHash = []byte((*txout.LockingScript)[3:23])
 		}
-	}
-	if !dryRun {
-		_, err := Db.Exec(context.Background(), `
-			INSERT INTO txns(txid, block_id, height, idx)
-			VALUES($1, decode($2, 'hex'), $3, $4)
-			ON CONFLICT(txid) DO UPDATE SET
-				block_id=EXCLUDED.block_id,
-				height=EXCLUDED.height,
-				idx=EXCLUDED.idx`,
-			ctx.Txid,
-			ctx.BlockId,
-			ctx.Height,
-			ctx.Idx,
-		)
-		if err != nil {
-			log.Panicf("%x %v\n", ctx.Txid, err)
-		}
-
-		for _, origin := range ctx.Origins {
-			origin.Save()
-		}
-
-		for _, txo := range ctx.Txos {
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), fmt.Sprintf("t:%x", txo.PKHash), txo.Outpoint.String())
-			}
-			// Implied BSV20 transfer
-			if len(ctx.Bsv20s) == 0 && txo.ImpliedBsv20 {
-				txo.Data.Bsv20 = &Bsv20{
-					Ticker:  txo.Spend.Data.Bsv20.Ticker,
-					Op:      "transfer",
-					Amt:     txo.Spend.Data.Bsv20.Amt,
-					Implied: true,
-				}
-			}
-			txo.Save()
-
-			if txo.Data.Map != nil && txo.Origin != nil && txo.Outpoint != nil && !bytes.Equal(*txo.Origin, *txo.Outpoint) {
-				SaveMap(txo.Origin)
-			}
-
-			if txo.Data.Listing != nil {
-				err = SaveListing(txo)
-				if err != nil {
-					log.Panicf("%x %v\n", ctx.Txid, err)
-				}
-			}
-		}
-
-		hasTransfer := false
-		for _, txo := range ctx.Bsv20s {
-			if txo.Data.Bsv20.Op == "transfer" {
-				hasTransfer = true
-			}
-			SaveBsv20(txo)
-		}
-
-		if hasTransfer {
-			ValidateTransfer(ctx.Txid, ctx.Height != nil)
-		}
+		ctx.Txos = append(ctx.Txos, txo)
+		accSats += txout.Satoshis
 	}
 }
 
-func IndexTxn(tx *bt.Tx, blockId *string, height *uint32, idx uint64, dryRun bool) (ctx *IndexContext, err error) {
-	txid := tx.TxIDBytes()
-	ctx = &IndexContext{
-		Txid:    txid,
-		BlockId: blockId,
-		Height:  height,
-		Idx:     idx,
-		Spends:  make([]*Spend, 0, len(tx.Inputs)),
+func ParseSpends(ctx *IndexContext) {
+	for vin, txin := range ctx.Tx.Inputs {
+		spend := &Txo{
+			Outpoint:    NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
+			Spend:       ctx.Txid,
+			Vin:         uint32(vin),
+			SpendHeight: ctx.Height,
+			SpendIdx:    ctx.Idx,
+		}
+
+		ctx.Spends = append(ctx.Spends, spend)
+	}
+}
+
+func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
+	// fmt.Println("Loading Spends", hex.EncodeToString(txid))
+	var err error
+	if tx == nil {
+		tx, err = LoadTx(hex.EncodeToString(txid))
+		if err != nil {
+			log.Panic(err)
+		}
 	}
 
-	if !tx.IsCoinbase() {
-		IndexSpends(tx, ctx, dryRun)
+	spends := make([]*Txo, len(tx.Inputs))
+
+	rows, err := Db.Query(context.Background(), `
+		SELECT outpoint, vin, satoshis, outacc
+		FROM txos
+		WHERE spend=$1`,
+		txid,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		spend := &Txo{
+			Spend: txid,
+		}
+		var satoshis sql.NullInt64
+		var outAcc sql.NullInt64
+		err = rows.Scan(&spend.Outpoint, &spend.Vin, &satoshis, &outAcc)
+		if err != nil {
+			log.Panic(err)
+		}
+		if satoshis.Valid && outAcc.Valid {
+			spend.Satoshis = uint64(satoshis.Int64)
+			spend.OutAcc = uint64(outAcc.Int64)
+			spends[spend.Vin] = spend
+		}
 	}
 
-	IndexTxos(tx, ctx, dryRun)
+	var inSats uint64
+	for vin, txin := range tx.Inputs {
+		if spends[vin] == nil {
+			spend := &Txo{
+				Outpoint: NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
+				Spend:    txid,
+				Vin:      uint32(vin),
+			}
 
-	return
+			tx, err := LoadTx(txin.PreviousTxIDStr())
+			if err != nil {
+				log.Panic(err)
+			}
+			var outSats uint64
+			for vout, txout := range tx.Outputs {
+				if vout < int(spend.Outpoint.Vout()) {
+					outSats += txout.Satoshis
+					continue
+				}
+				spend.Satoshis = txout.Satoshis
+				spend.OutAcc = outSats
+				spend.Save()
+				spends[vin] = spend
+				break
+			}
+		}
+		inSats += spends[vin].Satoshis
+		// fmt.Println("Inputs:", spends[vin].Outpoint)
+	}
+	return spends
 }

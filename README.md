@@ -17,7 +17,7 @@ If a satoshi is subsequently packaged up in an output of more than one satoshi, 
 ## Setup instructions depricated.
 Please reach out 
 ### Environment Variables
-- POSTGRES=`<postgres connection string>`
+- POSTGRES_FULL=`<postgres connection string>`
 - BITCOIN_HOST
 - BITCOIN_PORT
 - BITCOIN_USER

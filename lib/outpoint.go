@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
+	"github.com/libsv/go-bt/v2"
 )
 
 type Outpoint []byte
@@ -18,6 +20,9 @@ func NewOutpoint(txid []byte, vout uint32) *Outpoint {
 }
 
 func NewOutpointFromString(s string) (o *Outpoint, err error) {
+	if len(s) < 66 {
+		return nil, fmt.Errorf("invalid-string")
+	}
 	txid, err := hex.DecodeString(s[:64])
 	if err != nil {
 		return
@@ -27,6 +32,18 @@ func NewOutpointFromString(s string) (o *Outpoint, err error) {
 		return
 	}
 	origin := Outpoint(binary.BigEndian.AppendUint32(txid, uint32(vout)))
+	o = &origin
+	return
+}
+
+func NewOutpointFromTxOutpoint(p []byte) (o *Outpoint, err error) {
+	if len(p) != 36 {
+		return nil, errors.New("invalid pointer")
+	}
+	b := make([]byte, 36)
+	b = append(b, bt.ReverseBytes(p[:32])...)
+	b = append(b, bt.ReverseBytes(p[32:])...)
+	origin := Outpoint(b)
 	o = &origin
 	return
 }
@@ -44,10 +61,10 @@ func (o *Outpoint) Vout() uint32 {
 }
 
 func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
-	if len(o) == 36 {
-		bytes, err = json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
+	if len(o) != 36 {
+		return []byte("null"), nil
 	}
-	return bytes, err
+	return json.Marshal(fmt.Sprintf("%x_%d", o[:32], binary.BigEndian.Uint32(o[32:])))
 }
 
 // UnmarshalJSON deserializes Origin to string

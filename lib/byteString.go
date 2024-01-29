@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 )
 
 // ByteString is a byte array that serializes to hex
@@ -13,7 +12,7 @@ type ByteString []byte
 
 // MarshalJSON serializes ByteArray to hex
 func (s ByteString) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(fmt.Sprintf("%x", string(s)))
+	bytes, err := json.Marshal(s.String())
 	return bytes, err
 }
 
@@ -28,6 +27,10 @@ func (s *ByteString) UnmarshalJSON(data []byte) error {
 	}
 
 	return err
+}
+
+func (s *ByteString) String() string {
+	return hex.EncodeToString(*s)
 }
 
 func (s *ByteString) Value() (driver.Value, error) {

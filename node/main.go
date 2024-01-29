@@ -92,22 +92,22 @@ func main() {
 	}
 	blk, err := bit.GetBlockByHeight(int(height))
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	block, err = bit.GetBlockHeader(blk.Hash)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 
 	for {
 		if block == nil {
 			blockHash, err := bit.GetBestBlockHash()
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 			block, err = bit.GetBlockHeader(blockHash)
 			if err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 		}
 		if !isBlockIndexed(block.Hash) {
@@ -118,7 +118,7 @@ func main() {
 				fmt.Println("Crawling Back", block.Height-1, block.PreviousBlockHash)
 				block, err = bit.GetBlockHeader(block.PreviousBlockHash)
 				if err != nil {
-					panic(err)
+					log.Panicln(err)
 				}
 			}
 			fmt.Println("Processing Block", block.Height, block.Hash)
@@ -140,14 +140,14 @@ func main() {
 			}
 			f.Seek(0, 0)
 			if err := processBlock(block, f); err != nil {
-				panic(err)
+				log.Panicln(err)
 			}
 
 			if block.NextBlockHash != "" {
 				fmt.Println("Crawling Forward", block.Height+1, block.NextBlockHash)
 				block, err = bit.GetBlockHeader(block.NextBlockHash)
 				if err != nil {
-					panic(err)
+					log.Panicln(err)
 				}
 			} else {
 				block = nil
@@ -220,11 +220,8 @@ func processBlock(block *bitcoin.BlockHeader, f *os.File) (err error) {
 			log.Panicln(block.Height, idx, err)
 		}
 
-		// fmt.Printf("Eval Txn %d\n", idx)
 		txid := txn.Tx.TxIDBytes()
 		txn.ID = hex.EncodeToString(txid)
-		// indexer.M.Lock()
-		// blockCtx.TxFees[idx] = &indexer.TxFee{Txid: txid}
 
 		rdb.Set(context.Background(), txn.ID, txn.Tx.Bytes(), 0).Err()
 		has1Sat := false
@@ -316,7 +313,7 @@ func isBlockIndexed(hash string) bool {
 		hash,
 	)
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	defer rows.Close()
 	return rows.Next()
