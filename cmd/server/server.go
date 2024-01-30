@@ -60,7 +60,7 @@ func init() {
 	}
 
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     os.Getenv("REDIS"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -142,27 +142,33 @@ func main() {
 			if len(batch) == 0 {
 				break
 			}
-			rows, err := db.Query(c.Context(), `
-				SELECT encode(txid, 'hex')
-				FROM txn_indexer 
-				WHERE indexer='ord' AND txid = ANY($1)`,
-				batch,
-			)
-			if err != nil {
-				log.Println(err)
-				return c.SendStatus(http.StatusInternalServerError)
-			}
-			defer rows.Close()
 
-			for rows.Next() {
-				var txid string
-				err := rows.Scan(&txid)
+			err = func(batch [][]byte) error {
+				rows, err := db.Query(c.Context(), `
+					SELECT encode(txid, 'hex')
+					FROM txn_indexer 
+					WHERE indexer='ord' AND txid = ANY($1)`,
+					batch,
+				)
 				if err != nil {
-					return err
+					log.Println(err)
+					return c.SendStatus(http.StatusInternalServerError)
 				}
-				delete(toIndex, txid)
+				defer rows.Close()
+
+				for rows.Next() {
+					var txid string
+					err := rows.Scan(&txid)
+					if err != nil {
+						return err
+					}
+					delete(toIndex, txid)
+				}
+				return nil
+			}(batch)
+			if err != nil {
+				return err
 			}
-			rows.Close()
 		}
 		var wg sync.WaitGroup
 		limiter := make(chan struct{}, 32)
