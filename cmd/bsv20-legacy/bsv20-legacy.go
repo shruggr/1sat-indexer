@@ -72,6 +72,7 @@ func main() {
 			}()
 			tx, err := lib.JB.GetTransaction(context.Background(), hex.EncodeToString(txid))
 			if err != nil {
+				log.Printf("Err %x\n", txid)
 				log.Panicln(err)
 			}
 

@@ -73,15 +73,6 @@ var limiter = make(chan struct{}, CONCURRENCY)
 var sub *redis.PubSub
 
 func main() {
-	tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
-
-	go func() {
-		for {
-			time.Sleep(time.Hour)
-			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
-		}
-	}()
-
 	subRdb := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDIS"),
 		Password: "", // no password set
@@ -89,11 +80,28 @@ func main() {
 	})
 	sub = subRdb.Subscribe(context.Background(), "v1xfer")
 	ch1 := sub.Channel()
+
+	tickFunds = ordinals.RefreshV1Funding(CONCURRENCY)
 	for _, funds := range tickFunds {
 		pkhash := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhash] = funds
 		sub.Subscribe(ctx, pkhash)
 	}
+
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
+			for _, funds := range tickFunds {
+				pkhash := hex.EncodeToString(funds.PKHash)
+				if _, ok := pkhashFunds[pkhash]; !ok {
+					pkhashFunds[pkhash] = funds
+					sub.Subscribe(ctx, pkhash)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		for msg := range ch1 {
 			if msg.Channel == "v1xfer" {
@@ -108,8 +116,8 @@ func main() {
 					funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
 				}
 				continue
-			}
-			if funds, ok := pkhashFunds[msg.Channel]; ok {
+			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
+				log.Println("Updating funding", funds.Tick)
 				funds.UpdateFunding()
 			}
 		}
@@ -138,69 +146,86 @@ func processV1() (didWork bool) {
 				<-limiter
 				wg.Done()
 			}()
-			rows, err := db.Query(ctx, `
-				SELECT txid, height, idx, txouts
-				FROM bsv20v1_txns
-				WHERE processed=false AND tick=$1
-				ORDER BY height ASC, idx ASC`,
+			row := db.QueryRow(ctx, `
+				SELECT COUNT(1)
+				FROM bsv20_txos
+				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL`,
 				funds.Tick,
 			)
+			var pending int
+			err := row.Scan(&pending)
 			if err != nil {
 				log.Panic(err)
 			}
-			defer rows.Close()
-			ticker := ordinals.LoadTicker(funds.Tick)
-			balance := funds.Balance()
 
-			for rows.Next() {
-				var txid []byte
-				var height uint32
-				var idx uint64
-				var txouts int64
-				err = rows.Scan(&txid, &height, &idx, &txouts)
-				if err != nil {
-					log.Panic(err)
-				}
-				if balance < txouts*ordinals.BSV20V1_OP_COST {
-					break
-				}
-				log.Printf("Processing %s %x\n", funds.Tick, txid)
-				rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
-				if err != nil {
-					log.Panic(err)
-				}
+			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V1_OP_COST) / ordinals.BSV20V1_OP_COST
 
-				txn := ordinals.IndexTxn(rawtx, "", height, idx)
-				ordinals.ParseBsv20(txn)
-				for _, txo := range txn.Txos {
-					if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-						if bsv20.Ticker != funds.Tick {
-							continue
-						}
-						if bsv20.Op == "transfer" || bsv20.Op == "mint" {
-							balance -= ordinals.BSV20V1_OP_COST
-						}
-						bsv20.Save(txo)
-					}
-				}
-				_, err = db.Exec(ctx, `
-					UPDATE bsv20v1_txns
-					SET processed=true
-					WHERE txid=$1 AND tick=$2`,
-					txn.Txid,
+			if limit > 0 {
+				rows, err := db.Query(ctx, `
+					SELECT txid, height, idx, txouts
+					FROM bsv20v1_txns
+					WHERE processed=false AND tick=$1
+					ORDER BY height ASC, idx ASC
+					LIMIT $2`,
 					funds.Tick,
+					limit,
 				)
 				if err != nil {
 					log.Panic(err)
 				}
-				didWork = true
-				if balance < ordinals.BSV20V1_OP_COST {
-					break
-				}
-			}
-			rows.Close()
+				defer rows.Close()
+				balance := funds.Balance()
 
-			rows, err = db.Query(ctx, `
+				for rows.Next() {
+					var txid []byte
+					var height uint32
+					var idx uint64
+					var txouts int64
+					err = rows.Scan(&txid, &height, &idx, &txouts)
+					if err != nil {
+						log.Panic(err)
+					}
+					if balance < txouts*ordinals.BSV20V1_OP_COST {
+						break
+					}
+					log.Printf("Processing %s %x\n", funds.Tick, txid)
+					rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
+					if err != nil {
+						log.Panic(err)
+					}
+
+					txn := ordinals.IndexTxn(rawtx, "", height, idx)
+					ordinals.ParseBsv20(txn)
+					for _, txo := range txn.Txos {
+						if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
+							if bsv20.Ticker != funds.Tick {
+								continue
+							}
+							if bsv20.Op == "transfer" || bsv20.Op == "mint" {
+								balance -= ordinals.BSV20V1_OP_COST
+							}
+							bsv20.Save(txo)
+						}
+					}
+					_, err = db.Exec(ctx, `
+					UPDATE bsv20v1_txns
+					SET processed=true
+					WHERE txid=$1 AND tick=$2`,
+						txn.Txid,
+						funds.Tick,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+					didWork = true
+					if balance < ordinals.BSV20V1_OP_COST {
+						break
+					}
+				}
+				rows.Close()
+			}
+			ticker := ordinals.LoadTicker(funds.Tick)
+			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
 				FROM bsv20_txos
 				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL
@@ -215,7 +240,9 @@ func processV1() (didWork bool) {
 			defer rows.Close()
 
 			var prevTxid []byte
+			hasRows := false
 			for rows.Next() {
+				hasRows = true
 				bsv20 := &ordinals.Bsv20{}
 				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt, &bsv20.Op)
 				// err = rows.Scan(&txid, &vout, &op)
@@ -316,6 +343,10 @@ func processV1() (didWork bool) {
 					fmt.Printf("Validated Transfer: %s %x\n", funds.Tick, bsv20.Txid)
 					didWork = true
 				}
+			}
+
+			if hasRows {
+				funds.UpdateFunding()
 			}
 		}(funds)
 	}

@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -713,6 +711,7 @@ func (t *V1TokenFunds) Balance() int64 {
 }
 
 func (t *V1TokenFunds) UpdateFunding() {
+	log.Println("Updating funding for", t.Tick)
 	var total sql.NullInt64
 	row := Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
@@ -770,6 +769,7 @@ func (t *V2TokenFunds) Balance() int64 {
 }
 
 func (t *V2TokenFunds) UpdateFunding() {
+	log.Println("Updating funding for", t.Id.String())
 	var total sql.NullInt64
 	row := Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
@@ -832,13 +832,51 @@ func InitializeV1Funding(concurrency int) map[string]*V1TokenFunds {
 			if err != nil {
 				log.Panicln(err)
 			}
-			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
-			// log.Println("URL:", url)
-			resp, err := http.Get(url)
+			RefreshAddress(ctx, add.AddressString)
+
+			funds.UpdateFunding()
+			m.Lock()
+			tickFunds[funds.Tick] = funds
+			m.Unlock()
+		}(funds)
+	}
+	wg.Wait()
+	return tickFunds
+}
+
+func RefreshV1Funding(concurrency int) map[string]*V1TokenFunds {
+	tickFunds := map[string]*V1TokenFunds{}
+	limiter := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var m sync.Mutex
+	rows, err := Db.Query(context.Background(), `
+		SELECT DISTINCT tick, fund_pkhash
+		FROM bsv20
+		WHERE status=1 AND fund_total>0`,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	fmt.Println("Processing v1 funding")
+	for rows.Next() {
+		funds := &V1TokenFunds{}
+		err = rows.Scan(&funds.Tick, &funds.PKHash)
+		if err != nil {
+			panic(err)
+		}
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(funds *V1TokenFunds) {
+			defer func() {
+				wg.Done()
+				<-limiter
+			}()
+			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
 			if err != nil {
 				log.Panicln(err)
 			}
-			defer resp.Body.Close()
+			RefreshAddress(ctx, add.AddressString)
 
 			funds.UpdateFunding()
 			m.Lock()
@@ -881,13 +919,51 @@ func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 			if err != nil {
 				log.Panicln(err)
 			}
-			url := fmt.Sprintf("%s/ord/%s", os.Getenv("INDEXER"), add.AddressString)
-			log.Println("URL:", url)
-			resp, err := http.Get(url)
+			RefreshAddress(ctx, add.AddressString)
+
+			funds.UpdateFunding()
+			m.Lock()
+			idFunds[funds.Id.String()] = funds
+			m.Unlock()
+		}(funds)
+	}
+	wg.Wait()
+	return idFunds
+}
+
+func RefreshV2Funding(concurrency int) map[string]*V2TokenFunds {
+	idFunds := map[string]*V2TokenFunds{}
+	limiter := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var m sync.Mutex
+	rows, err := Db.Query(context.Background(), `
+		SELECT id, fund_pkhash
+		FROM bsv20_v2
+		WHERE fund_total>0`,
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	fmt.Println("Processing v2 funding")
+	for rows.Next() {
+		funds := &V2TokenFunds{}
+		err = rows.Scan(&funds.Id, &funds.PKHash)
+		if err != nil {
+			panic(err)
+		}
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(funds *V2TokenFunds) {
+			defer func() {
+				wg.Done()
+				<-limiter
+			}()
+			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
 			if err != nil {
 				log.Panicln(err)
 			}
-			defer resp.Body.Close()
+			RefreshAddress(ctx, add.AddressString)
 
 			funds.UpdateFunding()
 			m.Lock()

@@ -1,10 +1,3 @@
--- DROP TABLE IF EXISTS blocks;
--- DROP TABLE IF EXISTS origins;
--- DROP TABLE IF EXISTS schema_migrations;
--- DROP TABLE IF EXISTS txns;
--- DROP TABLE IF EXISTS txos;
--- DROP TABLE IF EXISTS progress;
-
 CREATE TABLE progress(
     indexer VARCHAR(32) PRIMARY KEY,
     height INTEGER
