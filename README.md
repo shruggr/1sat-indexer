@@ -18,19 +18,16 @@ If a satoshi is subsequently packaged up in an output of more than one satoshi, 
 Please reach out 
 ### Environment Variables
 - POSTGRES_FULL=`<postgres connection string>`
-- BITCOIN_HOST
-- BITCOIN_PORT
-- BITCOIN_USER
-- BITCOIN_PASS
+- JUNGLEBUS=https://junglebus.gorillapool.io
+- ARC=https://arc.gorillapool.io
+- REDIS=`<redis host>:<redis port>`
+- TAAL_TOKEN=`<If using TAAL for ARC, provide API Token>`
 
 ## Run DB migrations
 ```
 cd migrations
 go run .
 ```
-## Run Inscriptions Indexer against a Bitcoin SV node
-```
-cd node
-go build
-./node
-```
+
+
+
