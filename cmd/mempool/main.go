@@ -103,10 +103,6 @@ func main() {
 		for msg := range ch {
 			switch msg.Channel {
 			case "submit":
-				txid := msg.Payload
-				if len(txid) != 64 {
-					continue
-				}
 				go func(txid string) {
 					defer func() {
 						if r := recover(); r != nil {
@@ -130,7 +126,7 @@ func main() {
 							time.Sleep(30 * time.Second)
 						}
 					}
-				}(txid)
+				}(msg.Payload)
 			case "broadcast":
 				rawtx, err := base64.StdEncoding.DecodeString(msg.Payload)
 				if err != nil {

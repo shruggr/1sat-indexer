@@ -73,15 +73,6 @@ var limiter = make(chan struct{}, CONCURRENCY)
 var sub *redis.PubSub
 
 func main() {
-	tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
-
-	go func() {
-		for {
-			time.Sleep(time.Hour)
-			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
-		}
-	}()
-
 	subRdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
@@ -89,11 +80,28 @@ func main() {
 	})
 	sub = subRdb.Subscribe(context.Background(), "v1xfer")
 	ch1 := sub.Channel()
+
+	tickFunds = ordinals.RefreshV1Funding(CONCURRENCY)
 	for _, funds := range tickFunds {
 		pkhash := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhash] = funds
 		sub.Subscribe(ctx, pkhash)
 	}
+
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
+			for _, funds := range tickFunds {
+				pkhash := hex.EncodeToString(funds.PKHash)
+				if _, ok := pkhashFunds[pkhash]; !ok {
+					pkhashFunds[pkhash] = funds
+					sub.Subscribe(ctx, pkhash)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		for msg := range ch1 {
 			if msg.Channel == "v1xfer" {
@@ -108,8 +116,8 @@ func main() {
 					funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
 				}
 				continue
-			}
-			if funds, ok := pkhashFunds[msg.Channel]; ok {
+			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
+				log.Println("Updating funding", funds.Tick)
 				funds.UpdateFunding()
 			}
 		}
@@ -232,7 +240,9 @@ func processV1() (didWork bool) {
 			defer rows.Close()
 
 			var prevTxid []byte
+			hasRows := false
 			for rows.Next() {
+				hasRows = true
 				bsv20 := &ordinals.Bsv20{}
 				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt, &bsv20.Op)
 				// err = rows.Scan(&txid, &vout, &op)
@@ -333,6 +343,10 @@ func processV1() (didWork bool) {
 					fmt.Printf("Validated Transfer: %s %x\n", funds.Tick, bsv20.Txid)
 					didWork = true
 				}
+			}
+
+			if hasRows {
+				funds.UpdateFunding()
 			}
 		}(funds)
 	}

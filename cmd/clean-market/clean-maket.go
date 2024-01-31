@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"encoding/hex"
+	"database/sql"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -50,52 +50,73 @@ func init() {
 }
 
 func main() {
-	rows, err := db.Query(ctx, `SELECT txid, vout 
-		FROM listings
-		WHERE spend = '\x'`)
-	if err != nil {
-		log.Panicln(err)
-	}
-	defer rows.Close()
-
-	limiter := make(chan struct{}, 8)
-	var wg sync.WaitGroup
-	for rows.Next() {
-		var txid []byte
-		var vout uint
-		err := rows.Scan(&txid, &vout)
+	prevOrigin, _ := os.ReadFile("./progress.bin")
+	// prevOrigin, _ := hex.DecodeString("02062d0fbd6c4eaad76c2b548e5d4fdf6e6081b3b42dea9281364295cdf3e718_36")
+	var height sql.NullInt64
+	for {
+		rows, err := db.Query(ctx, `SELECT origin, outpoint, height
+			FROM txos
+			WHERE origin IS NOT NULL AND ((origin = $1 AND height >= $2) OR origin > $1) AND spend='\x' AND height IS NOT NULL AND height > 0
+			ORDER BY origin, height, idx
+			LIMIT 1000`,
+			prevOrigin,
+			height,
+		)
 		if err != nil {
 			log.Panicln(err)
 		}
 
-		wg.Add(1)
-		limiter <- struct{}{}
-		go func(txid []byte, vout uint) {
-			defer func() {
-				<-limiter
-				wg.Done()
-			}()
-			url := fmt.Sprintf("%s/v1/txo/spend/%x_%d", os.Getenv("JUNGLEBUS"), txid, vout)
-			// log.Println("URL:", url)
-			resp, err := http.Get(url)
+		limiter := make(chan struct{}, 16)
+		var wg sync.WaitGroup
+		rowCount := 0
+		for rows.Next() {
+			rowCount++
+			var origin *lib.Outpoint
+			var outpoint *lib.Outpoint
+			err := rows.Scan(&origin, &outpoint, &height)
 			if err != nil {
 				log.Panicln(err)
 			}
-			spend, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Panicln(err)
+			if !bytes.Equal(*origin, prevOrigin) {
+				log.Println("Origin:", origin.String())
+				os.WriteFile("./progress.bin", prevOrigin, 0644)
+				prevOrigin = *origin
 			}
-			if len(spend) == 0 {
-				log.Printf("Unpent: %x_%d\n", txid, vout)
-				return
-			}
-			log.Printf("Spent: %x_%d\n", txid, vout)
-			rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
-			if err != nil {
-				log.Panicln(err)
-			}
-			lib.IndexTxn(rawtx, "", 0, 0)
-		}(txid, vout)
+
+			wg.Add(1)
+			limiter <- struct{}{}
+			go func(outpoint *lib.Outpoint) {
+				defer func() {
+					<-limiter
+					wg.Done()
+				}()
+
+				spend, err := lib.GetSpend(outpoint)
+				if err != nil {
+					log.Panicln(err)
+				}
+				if len(spend) == 0 {
+					log.Printf("Unpent: %s\n", outpoint.String())
+					return
+				}
+				log.Printf("Spent: %s\n", outpoint.String())
+				_, err = db.Exec(ctx, `UPDATE txos
+					SET spend=$2
+					WHERE outpoint=$1`,
+					outpoint,
+					spend,
+				)
+				if err != nil {
+					log.Panicln(err)
+				}
+			}(outpoint)
+		}
+		rows.Close()
+		wg.Wait()
+
+		if rowCount == 0 {
+			time.Sleep(1 * time.Minute)
+			panic("no rows")
+		}
 	}
-	wg.Wait()
 }

@@ -73,15 +73,6 @@ var sub *redis.PubSub
 
 func main() {
 	limiter = make(chan struct{}, CONCURRENCY)
-	idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
-
-	go func() {
-		for {
-			time.Sleep(10 * time.Minute)
-			idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
-		}
-	}()
-
 	subRdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
@@ -89,11 +80,29 @@ func main() {
 	})
 	sub = subRdb.Subscribe(ctx, "v2xfer")
 	ch1 := sub.Channel()
+
+	idFunds = ordinals.RefreshV2Funding(CONCURRENCY)
+
 	for _, funds := range idFunds {
 		pkhash := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhash] = funds
 		sub.Subscribe(ctx, pkhash)
 	}
+
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
+			for _, funds := range idFunds {
+				pkhash := hex.EncodeToString(funds.PKHash)
+				if _, ok := pkhashFunds[pkhash]; !ok {
+					pkhashFunds[pkhash] = funds
+					sub.Subscribe(ctx, pkhash)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		for msg := range ch1 {
 			if msg.Channel == "v2xfer" {
@@ -114,9 +123,7 @@ func main() {
 				}
 				continue
 			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
-				ordinals.UpdateBsv20V2TokenFunding(funds)
-			}
-			if funds, ok := pkhashFunds[msg.Channel]; ok {
+				log.Println("Updating funding", funds.Id.String())
 				funds.UpdateFunding()
 			}
 		}
@@ -226,8 +233,9 @@ func processV2() (didWork bool) {
 			defer rows.Close()
 
 			var prevTxid []byte
-			// fmt.Printf("Validating Transfers: %s\n", funds.Id.String())
+			hasRows := false
 			for rows.Next() {
+				hasRows = true
 				bsv20 := &ordinals.Bsv20{}
 				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Id, &bsv20.Amt)
 				if err != nil {
@@ -244,6 +252,10 @@ func processV2() (didWork bool) {
 				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, true)
 				funds.Used += int64(outputs) * ordinals.BSV20V2_OP_COST
 				fmt.Printf("Validated Transfer: %s %x\n", funds.Id.String(), bsv20.Txid)
+			}
+
+			if hasRows {
+				funds.UpdateFunding()
 			}
 		}(funds)
 	}

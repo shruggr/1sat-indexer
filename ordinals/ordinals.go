@@ -2,12 +2,19 @@ package ordinals
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/fxamacker/cbor"
@@ -250,5 +257,205 @@ func addBitcom(txo *lib.Txo, bitcom interface{}) {
 		txo.AddData("map", bc)
 	case *lib.File:
 		txo.AddData("b", bc)
+	}
+}
+
+func RefreshAddress(ctx context.Context, address string) error {
+	row := Db.QueryRow(ctx,
+		"SELECT height, updated FROM addresses WHERE address=$1",
+		address,
+	)
+	var height uint32
+	var updated time.Time
+	row.Scan(&height, &updated)
+
+	// if time.Since(updated) < 30*time.Minute {
+	// 	log.Println("Frequent Update", address)
+	// }
+	url := fmt.Sprintf("%s/v1/address/get/%s/%d", os.Getenv("JUNGLEBUS"), address, height)
+	// log.Println("URL:", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	txns := []*lib.AddressTxn{}
+	err = json.NewDecoder(resp.Body).Decode(&txns)
+	if err != nil {
+		return err
+	}
+
+	// txids := make([][]byte, len(txns))
+	toIndex := map[string]*lib.AddressTxn{}
+	batches := [][][]byte{}
+	batch := make([][]byte, 0, 100)
+	// log.Println("Txns:", len(txns))
+	for i, txn := range txns {
+		batch = append(batch, txn.Txid)
+		toIndex[txn.Txid.String()] = txn
+		if txn.Height > height {
+			height = txn.Height
+		}
+
+		if i%100 == 99 {
+			batches = append(batches, batch)
+			batch = make([][]byte, 0, 100)
+		}
+	}
+	if len(txns)%100 != 99 {
+		batches = append(batches, batch)
+	}
+
+	for _, batch := range batches {
+		// log.Println("Batch", len(batch))
+		if len(batch) == 0 {
+			break
+		}
+		rows, err := Db.Query(ctx, `
+			SELECT encode(txid, 'hex')
+			FROM txn_indexer 
+			WHERE indexer='ord' AND txid = ANY($1)`,
+			batch,
+		)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var txid string
+			err := rows.Scan(&txid)
+			if err != nil {
+				return err
+			}
+			delete(toIndex, txid)
+		}
+		rows.Close()
+	}
+	var wg sync.WaitGroup
+	limiter := make(chan struct{}, 32)
+	for txid, txn := range toIndex {
+		wg.Add(1)
+		limiter <- struct{}{}
+		go func(txid string, txn *lib.AddressTxn) {
+			defer func() {
+				wg.Done()
+				<-limiter
+			}()
+			if rawtx, err := lib.LoadRawtx(txid); err == nil {
+				// lib.IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx, false)
+				IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx)
+			}
+		}(txid, txn)
+	}
+	wg.Wait()
+	if height == 0 {
+		height = 817000
+	}
+	_, err = Db.Exec(ctx, `
+		INSERT INTO addresses(address, height, updated)
+		VALUES ($1, $2, CURRENT_TIMESTAMP) 
+		ON CONFLICT (address) DO UPDATE SET 
+			height = EXCLUDED.height, 
+			updated = CURRENT_TIMESTAMP`,
+		address,
+		height-6,
+	)
+	return err
+}
+
+func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint, error) {
+	var latest *lib.Outpoint
+
+	// Update spends on all known unspent txos
+	rows, err := Db.Query(ctx, `
+		SELECT outpoint
+		FROM txos
+		WHERE origin = $1 AND spend == '\x'
+		ORDER BY height, idx`,
+		origin,
+	)
+	if err != nil {
+		log.Println("FastForwardOrigin", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var outpoint *lib.Outpoint
+		err := rows.Scan(&outpoint)
+		if err != nil {
+			log.Println("FastForwardOrigin", err)
+			return nil, err
+		}
+
+		spend, err := lib.GetSpend(outpoint)
+		if err != nil {
+			log.Println("GetSpend", err)
+			return nil, err
+		}
+
+		if len(spend) == 0 {
+			latest = outpoint
+			continue
+		}
+
+		txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(spend))
+		if err != nil {
+			log.Println("GetTransaction", err)
+			return nil, err
+		}
+		IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+	}
+
+	if latest != nil {
+		return latest, nil
+	}
+
+	// Fast-forward origin
+	row := Db.QueryRow(ctx, `
+		SELECT outpoint
+		FROM txos
+		WHERE origin = $1
+		ORDER BY CASE WHEN spend='\x' THEN 1 ELSE 0 END DESC, height DESC, idx DESC
+		LIMIT 1`,
+		origin,
+	)
+	err = row.Scan(&latest)
+	if err != nil {
+		log.Println("Lookup latest", err)
+		return nil, err
+	}
+
+	for {
+		spend, err := lib.GetSpend(latest)
+		if err != nil {
+			log.Println("GetSpend", err)
+			return nil, err
+		}
+
+		if len(spend) == 0 {
+			return latest, nil
+		}
+
+		txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(spend))
+		// rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
+		if err != nil {
+			log.Println("GetTransaction", err)
+			return nil, err
+		}
+
+		// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))
+		txCtx := IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+		for _, txo := range txCtx.Txos {
+			if txo.Origin != nil && bytes.Equal(*txo.Origin, *origin) {
+				latest = txo.Outpoint
+				break
+			}
+		}
+
+		if !bytes.Equal(latest.Txid(), txCtx.Txid) {
+			return latest, nil
+		}
 	}
 }
