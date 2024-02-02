@@ -392,14 +392,6 @@ func ValidateBsv20Deploy(height uint32) {
 
 func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 	// log.Printf("Validating %x %s\n", txid, tick)
-	balance, err := Rdb.Get(ctx, "funds:"+tick).Int64()
-	if err != nil {
-		panic(err)
-	}
-	if balance < BSV20V1_OP_COST {
-		log.Printf("Inadequate funding %x %s\n", txid, tick)
-		return 0
-	}
 
 	inRows, err := Db.Query(ctx, `
 		SELECT txid, vout, status, amt
@@ -499,20 +491,11 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 			log.Panicf("%x %v\n", txid, err)
 		}
 	}
-	Rdb.IncrBy(ctx, "funds:"+tick, int64(len(tokenOuts)*BSV20V1_OP_COST*-1))
 	return len(tokenOuts)
 }
 
 func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int) {
 	// log.Printf("Validating V2 Transfer %x %s\n", txid, id.String())
-	balance, err := Rdb.Get(ctx, "funds:"+id.String()).Int64()
-	if err != nil {
-		panic(err)
-	}
-	if balance < BSV20V2_OP_COST {
-		log.Printf("Inadequate funding %x %s\n", txid, id.String())
-		return
-	}
 
 	inRows, err := Db.Query(ctx, `
 		SELECT txid, vout, status, amt
@@ -684,10 +667,12 @@ func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
 }
 
 type V1TokenFunds struct {
-	Tick   string
-	Total  int64
-	PKHash []byte
-	Used   int64
+	Tick       string `json:"tick"`
+	Total      int64  `json:"fundTotal"`
+	PKHash     []byte `json:"fundPKHash"`
+	Used       int64  `json:"fundUsed"`
+	PendingOps uint32 `json:"pendingOps"`
+	Pending    uint64 `json:"pending"`
 }
 
 func (t *V1TokenFunds) Save() {
@@ -703,7 +688,13 @@ func (t *V1TokenFunds) Save() {
 		log.Panicln("SAVE", t.Tick, t.Total, t.Used, err)
 		panic(err)
 	}
-	Rdb.Set(ctx, "funds:"+t.Tick, t.Balance(), 0)
+	fundsJson, err := json.Marshal(t)
+	if err != nil {
+		panic(err)
+	}
+	log.Println("Updated", string(fundsJson))
+	Rdb.Publish(ctx, "v1funds", fundsJson)
+	Rdb.HSet(ctx, "v1funds", t.Tick, fundsJson)
 }
 
 func (t *V1TokenFunds) Balance() int64 {
@@ -711,7 +702,7 @@ func (t *V1TokenFunds) Balance() int64 {
 }
 
 func (t *V1TokenFunds) UpdateFunding() {
-	log.Println("Updating funding for", t.Tick)
+	// log.Println("Updating funding for", t.Tick)
 	var total sql.NullInt64
 	row := Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
@@ -739,14 +730,37 @@ func (t *V1TokenFunds) UpdateFunding() {
 		log.Panicln(err)
 	}
 
+	row = Db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(txouts), 0) as value
+		FROM bsv20v1_txns
+		WHERE tick=$1 AND processed=false`,
+		t.Tick,
+	)
+	err = row.Scan(&t.PendingOps)
+	if err != nil && err != pgx.ErrNoRows {
+		log.Panicln(err)
+	}
+
+	row = Db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amt), 0) as value
+		FROM bsv20_txos
+		WHERE op='mint' AND tick=$1 AND status=0`,
+		t.Tick,
+	)
+	err = row.Scan(&t.Pending)
+	if err != nil {
+		log.Panic(err)
+	}
+
 	t.Save()
 }
 
 type V2TokenFunds struct {
-	Id     *lib.Outpoint
-	Total  int64
-	PKHash []byte
-	Used   int64
+	Id         *lib.Outpoint `json:"id"`
+	Total      int64         `json:"fundTotal"`
+	PKHash     []byte        `json:"fundPKHash"`
+	Used       int64         `json:"fundUsed"`
+	PendingOps uint32        `json:"pendingOps"`
 }
 
 func (t *V2TokenFunds) Save() {
@@ -761,7 +775,13 @@ func (t *V2TokenFunds) Save() {
 	if err != nil {
 		panic(err)
 	}
-	Rdb.Set(ctx, "funds:"+t.Id.String(), t.Balance(), 0)
+	fundsJson, err := json.Marshal(t)
+	if err != nil {
+		panic(err)
+	}
+	Rdb.HSet(ctx, "v2funds", t.Id.String(), fundsJson)
+	Rdb.Publish(ctx, "v2funds", fundsJson)
+	log.Println("Updated", string(fundsJson))
 }
 
 func (t *V2TokenFunds) Balance() int64 {
@@ -769,7 +789,7 @@ func (t *V2TokenFunds) Balance() int64 {
 }
 
 func (t *V2TokenFunds) UpdateFunding() {
-	log.Println("Updating funding for", t.Id.String())
+	// log.Println("Updating funding for", t.Id.String())
 	var total sql.NullInt64
 	row := Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
@@ -793,6 +813,17 @@ func (t *V2TokenFunds) UpdateFunding() {
 		BSV20V2_OP_COST,
 	)
 	err = row.Scan(&t.Used)
+	if err != nil && err != pgx.ErrNoRows {
+		log.Panicln(err)
+	}
+
+	row = Db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(txouts), 0) as value
+		FROM bsv20v2_txns
+		WHERE id=$1 AND processed=false`,
+		t.Id,
+	)
+	err = row.Scan(&t.PendingOps)
 	if err != nil && err != pgx.ErrNoRows {
 		log.Panicln(err)
 	}

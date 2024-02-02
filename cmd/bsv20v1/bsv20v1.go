@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -67,7 +68,7 @@ func init() {
 }
 
 var pkhashFunds = map[string]*ordinals.V1TokenFunds{}
-var tickFunds map[string]*ordinals.V1TokenFunds
+var tickFunds = map[string]*ordinals.V1TokenFunds{}
 
 var limiter = make(chan struct{}, CONCURRENCY)
 var sub *redis.PubSub
@@ -78,19 +79,24 @@ func main() {
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	sub = subRdb.Subscribe(context.Background(), "v1xfer")
+	sub = subRdb.Subscribe(context.Background(), "v1xfer", "v1funds")
 	ch1 := sub.Channel()
 
-	tickFunds = ordinals.RefreshV1Funding(CONCURRENCY)
-	for _, funds := range tickFunds {
+	fundsJson := rdb.HGetAll(ctx, "v1funds").Val()
+	for tick, j := range fundsJson {
+		funds := ordinals.V1TokenFunds{}
+		err := json.Unmarshal([]byte(j), &funds)
+		if err != nil {
+			log.Panic(err)
+		}
 		pkhash := hex.EncodeToString(funds.PKHash)
-		pkhashFunds[pkhash] = funds
+		pkhashFunds[pkhash] = &funds
+		tickFunds[tick] = &funds
 		sub.Subscribe(ctx, pkhash)
 	}
 
 	go func() {
 		for {
-			time.Sleep(time.Hour)
 			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
 			for _, funds := range tickFunds {
 				pkhash := hex.EncodeToString(funds.PKHash)
@@ -99,12 +105,23 @@ func main() {
 					sub.Subscribe(ctx, pkhash)
 				}
 			}
+			time.Sleep(time.Hour)
 		}
 	}()
 
 	go func() {
 		for msg := range ch1 {
-			if msg.Channel == "v1xfer" {
+			switch msg.Channel {
+			case "v1funds":
+				funds := &ordinals.V1TokenFunds{}
+				err := json.Unmarshal([]byte(msg.Payload), &funds)
+				if err != nil {
+					continue
+				}
+				tickFunds[funds.Tick] = funds
+				pkhash := hex.EncodeToString(funds.PKHash)
+				pkhashFunds[pkhash] = funds
+			case "v1xfer":
 				parts := strings.Split(msg.Payload, ":")
 				txid, err := hex.DecodeString(parts[0])
 				if err != nil {
@@ -116,9 +133,11 @@ func main() {
 					funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
 				}
 				continue
-			} else if funds, ok := pkhashFunds[msg.Channel]; ok {
-				log.Println("Updating funding", funds.Tick)
-				funds.UpdateFunding()
+			default:
+				if funds, ok := pkhashFunds[msg.Channel]; ok {
+					log.Println("Updating funding", funds.Tick)
+					funds.UpdateFunding()
+				}
 			}
 		}
 	}()
@@ -160,6 +179,7 @@ func processV1() (didWork bool) {
 
 			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V1_OP_COST) / ordinals.BSV20V1_OP_COST
 
+			// log.Println("Balance V1", funds.Tick, limit, funds.Balance())
 			if limit > 0 {
 				rows, err := db.Query(ctx, `
 					SELECT txid, height, idx, txouts
@@ -185,10 +205,11 @@ func processV1() (didWork bool) {
 					if err != nil {
 						log.Panic(err)
 					}
+					log.Printf("Processing %s %x %d %d\n", funds.Tick, txid, balance, txouts)
 					if balance < txouts*ordinals.BSV20V1_OP_COST {
+						log.Println("Insufficient balance", funds.Tick, balance, txouts*ordinals.BSV20V1_OP_COST)
 						break
 					}
-					log.Printf("Processing %s %x\n", funds.Tick, txid)
 					rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
 					if err != nil {
 						log.Panic(err)
@@ -208,9 +229,9 @@ func processV1() (didWork bool) {
 						}
 					}
 					_, err = db.Exec(ctx, `
-					UPDATE bsv20v1_txns
-					SET processed=true
-					WHERE txid=$1 AND tick=$2`,
+						UPDATE bsv20v1_txns
+						SET processed=true
+						WHERE txid=$1 AND tick=$2`,
 						txn.Txid,
 						funds.Tick,
 					)
@@ -224,6 +245,7 @@ func processV1() (didWork bool) {
 				}
 				rows.Close()
 			}
+
 			ticker := ordinals.LoadTicker(funds.Tick)
 			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
@@ -330,7 +352,6 @@ func processV1() (didWork bool) {
 						log.Panic(err)
 					}
 					funds.Used += ordinals.BSV20V1_OP_COST
-					rdb.IncrBy(ctx, "funds:"+funds.Tick, int64(ordinals.BSV20V1_OP_COST*-1))
 					fmt.Println("Validated Mint:", funds.Tick, ticker.Supply, ticker.Max)
 					didWork = true
 				case "transfer":

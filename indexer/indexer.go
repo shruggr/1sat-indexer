@@ -88,6 +88,7 @@ func Exec(
 				indexer,
 			)
 		}
+		progress -= 6
 		if progress > fromBlock {
 			fromBlock = progress
 		}
@@ -117,12 +118,12 @@ func Exec(
 				wg.Wait()
 				err = blockHander(status.Block)
 				height = status.Block
-				var settledHeight uint32
-				if status.Block > 6 {
-					settledHeight = status.Block - 6
-				} else {
-					settledHeight = 0
-				}
+				// var settledHeight uint32
+				// if status.Block > 6 {
+				// 	settledHeight = status.Block - 6
+				// } else {
+				// 	settledHeight = 0
+				// }
 
 				if indexer != "" {
 					if _, err := Db.Exec(context.Background(),
@@ -130,7 +131,7 @@ func Exec(
 						SET height=$2
 						WHERE indexer=$1 and height<$2`,
 						indexer,
-						settledHeight,
+						height,
 					); err != nil {
 						log.Panic(err)
 					}

@@ -96,6 +96,6 @@ func handleTx(tx *lib.IndexContext) error {
 
 func handleBlock(height uint32) error {
 	// log.Println("Processing height", height-6)
-	ordinals.ValidateBsv20Deploy(height - 5)
+	ordinals.ValidateBsv20Deploy(height - 6)
 	return nil
 }
