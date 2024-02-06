@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -72,7 +73,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		false,
+		true,
 		handleTx,
 		func(height uint32) error {
 			return nil
@@ -91,6 +92,14 @@ func main() {
 
 }
 
+type Bsv20Sale struct {
+	Spend    lib.ByteString `json:"spend"`
+	Outpoint *lib.Outpoint  `json:"outpoint"`
+	Sale     bool           `json:"sale"`
+	Tick     string         `json:"tick,omitempty"`
+	Id       *lib.Outpoint  `json:"id,omitempty"`
+}
+
 func handleTx(ctx *lib.IndexContext) error {
 	ordinals.ParseInscriptions(ctx)
 
@@ -99,15 +108,16 @@ func handleTx(ctx *lib.IndexContext) error {
 		sale = true
 	}
 
-	if ctx.Height == nil || *ctx.Height == 0 {
-		return nil
-	}
+	// if ctx.Height == nil || *ctx.Height == 0 {
+	// 	return nil
+	// }
 
-	if _, ok := ctx.Txos[0].Data["bsv20"]; ok {
-		_, err := db.Exec(context.Background(), `
+	if _, ok := ctx.Txos[0].Data["bsv20"].(*ordinals.Bsv20); ok {
+		rows, err := db.Query(context.Background(), `
 			UPDATE bsv20_txos
 			SET sale=$2, spend_height=$3, spend_idx=$4
-			WHERE spend=$1`,
+			WHERE spend=$1
+			RETURNING txid, vout, tick, id, sale`,
 			ctx.Txid,
 			sale,
 			ctx.Height,
@@ -115,6 +125,25 @@ func handleTx(ctx *lib.IndexContext) error {
 		)
 		if err != nil {
 			log.Panicln(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var txid []byte
+			var vout uint32
+			bsv20Sale := &Bsv20Sale{
+				Spend: ctx.Txid,
+			}
+			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Sale)
+			if err != nil {
+				log.Panicln(err)
+			}
+			bsv20Sale.Outpoint = lib.NewOutpoint(txid, vout)
+			out, err := json.Marshal(bsv20Sale)
+			if err != nil {
+				log.Panicln(err)
+			}
+			log.Println("PUBLISHING BSV20 SALE", string(out))
+			rdb.Publish(context.Background(), "bsv20sales", out)
 		}
 	} else {
 		_, err := db.Exec(context.Background(), `

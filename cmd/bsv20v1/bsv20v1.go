@@ -118,6 +118,7 @@ func main() {
 				if err != nil {
 					continue
 				}
+				log.Println("Updating funding", funds.Tick, funds.Balance())
 				tickFunds[funds.Tick] = funds
 				pkhash := hex.EncodeToString(funds.PKHash)
 				pkhashFunds[pkhash] = funds
@@ -330,7 +331,7 @@ func processV1() (didWork bool) {
 							bsv20.Vout,
 						)
 						if err != nil {
-							log.Panic(err)
+							log.Panicf("%x %d %v\n", bsv20.Txid, bsv20.Vout, err)
 						}
 					}
 

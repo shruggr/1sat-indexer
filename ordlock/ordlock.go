@@ -87,5 +87,6 @@ func (l *Listing) Save(t *lib.Txo) {
 		if err != nil {
 			log.Panicln(err)
 		}
+		Rdb.Publish(context.Background(), "list", t.Outpoint.String())
 	}
 }

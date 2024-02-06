@@ -34,34 +34,39 @@ const (
 const BSV20V1_OP_COST = 1000
 const BSV20V2_OP_COST = 1000
 
+const BSV20_INCLUDE_FEE = 10000000
+
 var ctx = context.Background()
 
 type Bsv20 struct {
-	Txid          []byte        `json:"-"`
-	Vout          uint32        `json:"-"`
-	Height        *uint32       `json:"-"`
-	Idx           uint64        `json:"-"`
-	Ticker        string        `json:"tick,omitempty"`
-	Id            *lib.Outpoint `json:"id,omitempty"`
-	Op            string        `json:"op"`
-	Symbol        *string       `json:"sym,omitempty"`
-	Max           uint64        `json:"-"`
-	Limit         uint64        `json:"-"`
-	Decimals      uint8         `json:"dec,omitempty"`
-	Icon          *lib.Outpoint `json:"icon,omitempty"`
-	Supply        uint64        `json:"-"`
-	Amt           *uint64       `json:"amt"`
-	Implied       bool          `json:"-,omitempty"`
-	Status        Bsv20Status   `json:"-"`
-	Reason        *string       `json:"reason,omitempty"`
-	PKHash        []byte        `json:"-"`
-	Price         uint64        `json:"-"`
-	PayOut        []byte        `json:"-"`
-	Listing       bool          `json:"-"`
-	PricePerToken float64       `json:"-"`
-	FundPath      string        `json:"-"`
-	FundPKHash    []byte        `json:"-"`
-	FundBalance   int           `json:"-"`
+	Txid          lib.ByteString `json:"txid"`
+	Vout          uint32         `json:"vout"`
+	Outpoint      *lib.Outpoint  `json:"outpoint"`
+	Owner         string         `json:"owner,omitempty"`
+	Script        []byte         `json:"script"`
+	Height        *uint32        `json:"height,omitempty"`
+	Idx           uint64         `json:"idx,omitempty"`
+	Ticker        string         `json:"tick,omitempty"`
+	Id            *lib.Outpoint  `json:"id,omitempty"`
+	Op            string         `json:"op"`
+	Symbol        *string        `json:"-"`
+	Max           uint64         `json:"-"`
+	Limit         uint64         `json:"-"`
+	Decimals      uint8          `json:"-"`
+	Icon          *lib.Outpoint  `json:"-"`
+	Supply        uint64         `json:"-"`
+	Amt           *uint64        `json:"amt"`
+	Implied       bool           `json:"-"`
+	Status        Bsv20Status    `json:"-"`
+	Reason        *string        `json:"reason,omitempty"`
+	PKHash        []byte         `json:"-"`
+	Price         uint64         `json:"price,omitempty"`
+	PayOut        []byte         `json:"payout,omitempty"`
+	Listing       bool           `json:"listing"`
+	PricePerToken float64        `json:"pricePer,omitempty"`
+	FundPath      string         `json:"-"`
+	FundPKHash    []byte         `json:"-"`
+	FundBalance   int            `json:"-"`
 }
 
 func ParseBsv20(ctx *lib.IndexContext) {
@@ -284,6 +289,20 @@ func (b *Bsv20) Save(t *lib.Txo) {
 	if b.Op == "deploy+mint" || b.Op == "mint" || b.Op == "transfer" {
 		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
 
+		b.Outpoint = t.Outpoint
+		b.Txid = t.Outpoint.Txid()
+		b.Vout = t.Outpoint.Vout()
+		b.Height = t.Height
+		b.Idx = t.Idx
+		b.Script = t.Script
+		if len(b.PKHash) > 0 {
+			add, err := bscript.NewAddressFromPublicKeyHash(t.PKHash, true)
+			if err != nil {
+				log.Panic(err)
+			}
+			b.Owner = add.AddressString
+		}
+
 		// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
 		_, err := Db.Exec(ctx, `
 			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, script, status, spend)
@@ -316,10 +335,10 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			t.Script,
 			b.Status,
 		)
-
 		if err != nil {
 			log.Panicf("%x %v", t.Outpoint.Txid(), err)
 		}
+
 	}
 }
 
@@ -464,6 +483,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 			tokensIn -= amt
 		}
 	}
+	outRows.Close()
 
 	if reason != "" {
 		log.Printf("Transfer Invalid: %x %s %s\n", txid, tick, reason)
@@ -480,15 +500,42 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 		}
 	} else {
 		log.Printf("Transfer Valid: %x %s\n", txid, tick)
-		_, err := Db.Exec(ctx, `
-				UPDATE bsv20_txos
-				SET status=1
-				WHERE txid=$1 AND vout=ANY ($2)`,
+		rows, err := Db.Query(ctx, `
+			UPDATE bsv20_txos
+			SET status=1
+			WHERE txid=$1 AND vout=ANY ($2)
+			RETURNING vout, height, idx, amt, pkhash, listing, price, price_per_token, script`,
 			txid,
 			tokenOuts,
 		)
 		if err != nil {
 			log.Panicf("%x %v\n", txid, err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			bsv20 := Bsv20{
+				Txid:   txid,
+				Ticker: tick,
+			}
+			err = rows.Scan(&bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Amt, &bsv20.PKHash, &bsv20.Listing, &bsv20.Price, &bsv20.PricePerToken, &bsv20.Script)
+			if err != nil {
+				log.Panicf("%x %v\n", txid, err)
+			}
+
+			log.Printf("Validating %s %x %d\n", tick, txid, bsv20.Vout)
+			if bsv20.Listing {
+				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
+				add, err := bscript.NewAddressFromPublicKeyHash(bsv20.PKHash, true)
+				if err == nil {
+					bsv20.Owner = add.AddressString
+				}
+				out, err := json.Marshal(bsv20)
+				if err != nil {
+					log.Panic(err)
+				}
+				log.Println("Publishing", string(out))
+				Rdb.Publish(context.Background(), "bsv20listings", out)
+			}
 		}
 	}
 	return len(tokenOuts)
@@ -593,28 +640,56 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 		}
 	} else {
 		log.Printf("Transfer Valid: %x %s\n", txid, id.String())
-		_, err := t.Exec(ctx, `
+		rows, err := t.Query(ctx, `
 				UPDATE bsv20_txos
 				SET status=1
-				WHERE txid=$1 AND vout=ANY ($2)`,
+				WHERE txid=$1 AND vout=ANY ($2)
+				RETURNING vout, height, idx, amt, pkhash, listing, price, price_per_token, script`,
 			txid,
 			tokenOuts,
 		)
 		if err != nil {
 			log.Panicf("%x %v\n", txid, err)
 		}
-		if id != nil {
-			_, err := t.Exec(ctx, `
-					UPDATE bsv20_v2
-					SET fund_used=fund_used+$2
-					WHERE id=$1`,
-				id,
-				BSV20V2_OP_COST*len(tokenOuts),
-			)
+		defer rows.Close()
+		for rows.Next() {
+			bsv20 := Bsv20{
+				Txid: txid,
+				Id:   id,
+			}
+			err = rows.Scan(&bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Amt, &bsv20.PKHash, &bsv20.Listing, &bsv20.Price, &bsv20.PricePerToken, &bsv20.Script)
 			if err != nil {
 				log.Panicf("%x %v\n", txid, err)
 			}
+
+			log.Printf("Validating %s %x %d\n", id.String(), txid, bsv20.Vout)
+			if bsv20.Listing {
+				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
+				add, err := bscript.NewAddressFromPublicKeyHash(bsv20.PKHash, true)
+				if err == nil {
+					bsv20.Owner = add.AddressString
+				}
+				out, err := json.Marshal(bsv20)
+				if err != nil {
+					log.Panic(err)
+				}
+				log.Println("Publishing", string(out))
+				Rdb.Publish(context.Background(), "bsv20listings", out)
+			}
+
 		}
+		// if id != nil {
+		// 	_, err := t.Exec(ctx, `
+		// 			UPDATE bsv20_v2
+		// 			SET fund_used=fund_used+$2
+		// 			WHERE id=$1`,
+		// 		id,
+		// 		BSV20V2_OP_COST*len(tokenOuts),
+		// 	)
+		// 	if err != nil {
+		// 		log.Panicf("%x %v\n", txid, err)
+		// 	}
+		// }
 	}
 
 	err = t.Commit(ctx)
@@ -673,9 +748,13 @@ type V1TokenFunds struct {
 	Used       int64  `json:"fundUsed"`
 	PendingOps uint32 `json:"pendingOps"`
 	Pending    uint64 `json:"pending"`
+	Included   bool   `json:"included"`
 }
 
 func (t *V1TokenFunds) Save() {
+	if t.Total == 0 {
+		return
+	}
 	_, err := Db.Exec(ctx, `
 		UPDATE bsv20
 		SET fund_total=$2, fund_used=$3
@@ -688,6 +767,7 @@ func (t *V1TokenFunds) Save() {
 		log.Panicln("SAVE", t.Tick, t.Total, t.Used, err)
 		panic(err)
 	}
+	t.Included = t.Total >= BSV20_INCLUDE_FEE
 	fundsJson, err := json.Marshal(t)
 	if err != nil {
 		panic(err)
@@ -761,9 +841,13 @@ type V2TokenFunds struct {
 	PKHash     []byte        `json:"fundPKHash"`
 	Used       int64         `json:"fundUsed"`
 	PendingOps uint32        `json:"pendingOps"`
+	Included   bool          `json:"included"`
 }
 
 func (t *V2TokenFunds) Save() {
+	if t.Total == 0 {
+		return
+	}
 	_, err := Db.Exec(ctx, `
 		UPDATE bsv20_v2
 		SET fund_total=$2, fund_used=$3
@@ -775,6 +859,7 @@ func (t *V2TokenFunds) Save() {
 	if err != nil {
 		panic(err)
 	}
+	t.Included = t.Total >= BSV20_INCLUDE_FEE
 	fundsJson, err := json.Marshal(t)
 	if err != nil {
 		panic(err)

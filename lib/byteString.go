@@ -33,8 +33,8 @@ func (s *ByteString) String() string {
 	return hex.EncodeToString(*s)
 }
 
-func (s *ByteString) Value() (driver.Value, error) {
-	return []byte(*s), nil
+func (s ByteString) Value() (driver.Value, error) {
+	return []byte(s), nil
 }
 
 func (s *ByteString) Scan(value interface{}) error {

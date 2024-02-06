@@ -12,13 +12,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
+	"github.com/shruggr/1sat-indexer/sigil"
 )
 
 var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "c6a1833320083b01bde979662b4fa49e7c6119be6e2bbedc5b30eb821e34f696"
+var hexId = "ae10ddcb8d976be53b9107701d90b67a189ff6bd8bea8b9e4ed34c5d4ee258f3"
 
 func main() {
 	// var err error
@@ -55,7 +56,13 @@ func main() {
 		log.Panic(err)
 	}
 
-	txnCtx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+	txnCtx, err := lib.ParseTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+	if err != nil {
+		log.Panic(err)
+	}
+	ordinals.ParseInscriptions(txnCtx)
+
+	sigil.ParseSigil(txnCtx)
 
 	out, err := json.MarshalIndent(txnCtx, "", "  ")
 

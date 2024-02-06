@@ -154,10 +154,11 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 		}
 	}
 
-	spends := make([]*Txo, len(tx.Inputs))
+	spendByOutpoint := make(map[string]*Txo, len(tx.Inputs))
+	spends := make([]*Txo, 0, len(tx.Inputs))
 
 	rows, err := Db.Query(context.Background(), `
-		SELECT outpoint, vin, satoshis, outacc
+		SELECT outpoint, satoshis, outacc
 		FROM txos
 		WHERE spend=$1`,
 		txid,
@@ -173,22 +174,24 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 		}
 		var satoshis sql.NullInt64
 		var outAcc sql.NullInt64
-		err = rows.Scan(&spend.Outpoint, &spend.Vin, &satoshis, &outAcc)
+		err = rows.Scan(&spend.Outpoint, &satoshis, &outAcc)
 		if err != nil {
 			log.Panic(err)
 		}
 		if satoshis.Valid && outAcc.Valid {
 			spend.Satoshis = uint64(satoshis.Int64)
 			spend.OutAcc = uint64(outAcc.Int64)
-			spends[spend.Vin] = spend
+			spendByOutpoint[spend.Outpoint.String()] = spend
 		}
 	}
 
 	var inSats uint64
 	for vin, txin := range tx.Inputs {
-		if spends[vin] == nil {
-			spend := &Txo{
-				Outpoint: NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex),
+		outpoint := NewOutpoint(txin.PreviousTxID(), txin.PreviousTxOutIndex)
+		spend, ok := spendByOutpoint[outpoint.String()]
+		if !ok {
+			spend = &Txo{
+				Outpoint: outpoint,
 				Spend:    txid,
 				Vin:      uint32(vin),
 			}
@@ -206,11 +209,14 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 				spend.Satoshis = txout.Satoshis
 				spend.OutAcc = outSats
 				spend.Save()
-				spends[vin] = spend
+				spendByOutpoint[outpoint.String()] = spend
 				break
 			}
+		} else {
+			spend.Vin = uint32(vin)
 		}
-		inSats += spends[vin].Satoshis
+		spends = append(spends, spend)
+		inSats += spend.Satoshis
 		// fmt.Println("Inputs:", spends[vin].Outpoint)
 	}
 	return spends
