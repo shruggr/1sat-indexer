@@ -533,7 +533,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 				if err != nil {
 					log.Panic(err)
 				}
-				log.Println("Publishing", string(out))
+				// log.Println("Publishing", string(out))
 				Rdb.Publish(context.Background(), "bsv20listings", out)
 			}
 		}
@@ -673,23 +673,11 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 				if err != nil {
 					log.Panic(err)
 				}
-				log.Println("Publishing", string(out))
+				// log.Println("Publishing", string(out))
 				Rdb.Publish(context.Background(), "bsv20listings", out)
 			}
 
 		}
-		// if id != nil {
-		// 	_, err := t.Exec(ctx, `
-		// 			UPDATE bsv20_v2
-		// 			SET fund_used=fund_used+$2
-		// 			WHERE id=$1`,
-		// 		id,
-		// 		BSV20V2_OP_COST*len(tokenOuts),
-		// 	)
-		// 	if err != nil {
-		// 		log.Panicf("%x %v\n", txid, err)
-		// 	}
-		// }
 	}
 
 	err = t.Commit(ctx)
@@ -773,8 +761,8 @@ func (t *V1TokenFunds) Save() {
 		panic(err)
 	}
 	log.Println("Updated", string(fundsJson))
-	Rdb.Publish(ctx, "v1funds", fundsJson)
 	Rdb.HSet(ctx, "v1funds", t.Tick, fundsJson)
+	Rdb.Publish(ctx, "v1funds", fundsJson)
 }
 
 func (t *V1TokenFunds) Balance() int64 {
@@ -960,50 +948,6 @@ func InitializeV1Funding(concurrency int) map[string]*V1TokenFunds {
 	return tickFunds
 }
 
-func RefreshV1Funding(concurrency int) map[string]*V1TokenFunds {
-	tickFunds := map[string]*V1TokenFunds{}
-	limiter := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-	var m sync.Mutex
-	rows, err := Db.Query(context.Background(), `
-		SELECT DISTINCT tick, fund_pkhash
-		FROM bsv20
-		WHERE status=1 AND fund_total>0`,
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-	fmt.Println("Processing v1 funding")
-	for rows.Next() {
-		funds := &V1TokenFunds{}
-		err = rows.Scan(&funds.Tick, &funds.PKHash)
-		if err != nil {
-			panic(err)
-		}
-		limiter <- struct{}{}
-		wg.Add(1)
-		go func(funds *V1TokenFunds) {
-			defer func() {
-				wg.Done()
-				<-limiter
-			}()
-			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
-			if err != nil {
-				log.Panicln(err)
-			}
-			RefreshAddress(ctx, add.AddressString)
-
-			funds.UpdateFunding()
-			m.Lock()
-			tickFunds[funds.Tick] = funds
-			m.Unlock()
-		}(funds)
-	}
-	wg.Wait()
-	return tickFunds
-}
-
 func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 	idFunds := map[string]*V2TokenFunds{}
 	limiter := make(chan struct{}, concurrency)
@@ -1045,79 +989,4 @@ func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 	}
 	wg.Wait()
 	return idFunds
-}
-
-func RefreshV2Funding(concurrency int) map[string]*V2TokenFunds {
-	idFunds := map[string]*V2TokenFunds{}
-	limiter := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-	var m sync.Mutex
-	rows, err := Db.Query(context.Background(), `
-		SELECT id, fund_pkhash
-		FROM bsv20_v2
-		WHERE fund_total>0`,
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-	fmt.Println("Processing v2 funding")
-	for rows.Next() {
-		funds := &V2TokenFunds{}
-		err = rows.Scan(&funds.Id, &funds.PKHash)
-		if err != nil {
-			panic(err)
-		}
-		limiter <- struct{}{}
-		wg.Add(1)
-		go func(funds *V2TokenFunds) {
-			defer func() {
-				wg.Done()
-				<-limiter
-			}()
-			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
-			if err != nil {
-				log.Panicln(err)
-			}
-			RefreshAddress(ctx, add.AddressString)
-
-			funds.UpdateFunding()
-			m.Lock()
-			idFunds[funds.Id.String()] = funds
-			m.Unlock()
-		}(funds)
-	}
-	wg.Wait()
-	return idFunds
-}
-
-func UpdateBsv20V2TokenFunding(funds *V2TokenFunds) {
-	row := Db.QueryRow(ctx, `
-		SELECT SUM(satoshis)
-		FROM txos
-		WHERE pkhash=$1`,
-		funds.PKHash,
-	)
-
-	var total sql.NullInt64
-	err := row.Scan(&total)
-	if err != nil {
-		log.Panicln(err)
-	}
-	funds.Total = total.Int64
-
-	row = Db.QueryRow(ctx, `
-		SELECT COUNT(1)
-		FROM bsv20_txos
-		WHERE id = $1 AND status IN (-1, 1)`,
-		funds.Id,
-	)
-	var ops int
-	err = row.Scan(&ops)
-	if err != nil {
-		log.Panicln(err)
-	}
-	funds.Used = int64(ops * BSV20V2_OP_COST)
-
-	funds.Save()
 }

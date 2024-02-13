@@ -109,6 +109,8 @@ func main() {
 		}
 	}()
 
+	throttle := map[string]time.Time{}
+
 	go func() {
 		for msg := range ch1 {
 			switch msg.Channel {
@@ -118,7 +120,7 @@ func main() {
 				if err != nil {
 					continue
 				}
-				log.Println("Updating funding", funds.Tick, funds.Balance())
+				// log.Println("Updating funding", funds.Tick, funds.Balance())
 				tickFunds[funds.Tick] = funds
 				pkhash := hex.EncodeToString(funds.PKHash)
 				pkhashFunds[pkhash] = funds
@@ -136,8 +138,11 @@ func main() {
 				continue
 			default:
 				if funds, ok := pkhashFunds[msg.Channel]; ok {
-					log.Println("Updating funding", funds.Tick)
-					funds.UpdateFunding()
+					if t, ok := throttle[msg.Channel]; !ok || time.Since(t) > 10*time.Second {
+						throttle[msg.Channel] = time.Now()
+						log.Println("Updating funding", funds.Tick)
+						funds.UpdateFunding()
+					}
 				}
 			}
 		}

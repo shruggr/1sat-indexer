@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -192,14 +191,14 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 				tokens[bsv20.Id.String()] = struct{}{}
 			}
 			bsv20.Save(txo)
-			if bsv20.Listing {
-				out, err := json.Marshal(bsv20)
-				if err != nil {
-					log.Panic(err)
-				}
-				log.Println("Publishing", string(out))
-				rdb.Publish(context.Background(), "bsv20listings", out)
-			}
+			// if bsv20.Listing {
+			// 	out, err := json.Marshal(bsv20)
+			// 	if err != nil {
+			// 		log.Panic(err)
+			// 	}
+			// 	log.Println("Publishing", string(out))
+			// 	rdb.Publish(context.Background(), "bsv20listings", out)
+			// }
 		}
 	}
 	for tick, _ := range tokens {
