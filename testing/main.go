@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/sigil"
 )
 
 var rdb *redis.Client
@@ -51,24 +49,29 @@ func main() {
 		log.Panic(err)
 	}
 
-	tx, err := lib.JB.GetTransaction(context.Background(), hexId)
+	// tx, err := lib.JB.GetTransaction(context.Background(), hexId)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+
+	// txnCtx, err := lib.ParseTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// ordinals.ParseInscriptions(txnCtx)
+
+	// sigil.ParseSigil(txnCtx)
+
+	// out, err := json.MarshalIndent(txnCtx, "", "  ")
+
+	op, err := lib.NewOutpointFromString("1bff350b55a113f7da23eaba1dc40a7c5b486d3e1017cda79dbe6bd42e001c81_0")
+	if err != nil {
+		log.Panic(err)
+	}
+	current, err := ordinals.GetLatestOutpoint(context.Background(), op)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	txnCtx, err := lib.ParseTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
-	if err != nil {
-		log.Panic(err)
-	}
-	ordinals.ParseInscriptions(txnCtx)
-
-	sigil.ParseSigil(txnCtx)
-
-	out, err := json.MarshalIndent(txnCtx, "", "  ")
-
-	if err != nil {
-		log.Panic(err)
-	}
-
-	fmt.Println(string(out))
+	fmt.Println(string(current.String()))
 }

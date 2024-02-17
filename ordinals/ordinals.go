@@ -371,12 +371,13 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 	rows, err := Db.Query(ctx, `
 		SELECT outpoint
 		FROM txos
-		WHERE origin = $1 AND spend == '\x'
-		ORDER BY height, idx`,
+		WHERE origin=$1 AND spend='\x'
+		ORDER BY CASE WHEN spend='\x' THEN 1 ELSE 0 END DESC, height DESC, idx DESC
+		LIMIT 1`,
 		origin,
 	)
 	if err != nil {
-		log.Println("FastForwardOrigin", err)
+		// log.Println("FastForwardOrigin", err)
 		return nil, err
 	}
 	defer rows.Close()
