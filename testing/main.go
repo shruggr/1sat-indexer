@@ -64,7 +64,7 @@ func main() {
 
 	// out, err := json.MarshalIndent(txnCtx, "", "  ")
 
-	op, err := lib.NewOutpointFromString("1bff350b55a113f7da23eaba1dc40a7c5b486d3e1017cda79dbe6bd42e001c81_0")
+	op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
 	if err != nil {
 		log.Panic(err)
 	}

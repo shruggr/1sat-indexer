@@ -372,7 +372,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 		SELECT outpoint
 		FROM txos
 		WHERE origin=$1 AND spend='\x'
-		ORDER BY CASE WHEN spend='\x' THEN 1 ELSE 0 END DESC, height DESC, idx DESC
+		ORDER BY height DESC, idx DESC
 		LIMIT 1`,
 		origin,
 	)
@@ -398,7 +398,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 
 		if len(spend) == 0 {
 			latest = outpoint
-			continue
+			break
 		}
 
 		txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(spend))
