@@ -67,7 +67,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		false,
+		true,
 		func(ctx *lib.IndexContext) error {
 			lock.ParseLocks(ctx)
 			ordinals.CalculateOrigins(ctx)
@@ -83,7 +83,7 @@ func main() {
 		CONCURRENCY,
 		true,
 		true,
-		VERBOSE)
+		1)
 	if err != nil {
 		log.Panicln(err)
 	}

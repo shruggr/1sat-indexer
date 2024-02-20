@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,7 +94,7 @@ func ParseBsv20(ctx *lib.IndexContext) {
 						decimals = token.Decimals
 					}
 				}
-				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt) * float64(10^uint64(decimals))
+				bsv20.PricePerToken = float64(bsv20.Price) / (float64(*bsv20.Amt) / math.Pow(10, float64(decimals)))
 			}
 		}
 	}

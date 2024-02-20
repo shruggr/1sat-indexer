@@ -92,11 +92,11 @@ func main() {
 
 }
 
-type Bsv20Sale struct {
+type Sale struct {
 	Spend    lib.ByteString `json:"spend"`
 	Outpoint *lib.Outpoint  `json:"outpoint"`
 	Sale     bool           `json:"sale"`
-	Tick     string         `json:"tick,omitempty"`
+	Tick     *string        `json:"tick,omitempty"`
 	Id       *lib.Outpoint  `json:"id,omitempty"`
 }
 
@@ -130,7 +130,7 @@ func handleTx(ctx *lib.IndexContext) error {
 		for rows.Next() {
 			var txid []byte
 			var vout uint32
-			bsv20Sale := &Bsv20Sale{
+			bsv20Sale := &Sale{
 				Spend: ctx.Txid,
 			}
 			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Sale)
