@@ -302,7 +302,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 		if txn.Height > height {
 			height = txn.Height
 		}
-		log.Println("Txn", i, hex.EncodeToString(txn.Txid), txn.Height, txn.Idx)
+		// log.Println("Txn", i, hex.EncodeToString(txn.Txid), txn.Height, txn.Idx)
 
 		if i%100 == 99 {
 			batches = append(batches, batch)
