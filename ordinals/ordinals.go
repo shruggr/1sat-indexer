@@ -51,6 +51,13 @@ func IndexInscriptions(ctx *lib.IndexContext) {
 	ParseInscriptions(ctx)
 	ctx.SaveSpends()
 	ctx.Save()
+
+	Db.Exec(context.Background(),
+		`INSERT INTO txn_indexer(txid, indexer) 
+		VALUES ($1, 'ord')
+		ON CONFLICT DO NOTHING`,
+		ctx.Txid,
+	)
 }
 
 func CalculateOrigins(ctx *lib.IndexContext) {
@@ -295,6 +302,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 		if txn.Height > height {
 			height = txn.Height
 		}
+		log.Println("Txn", i, hex.EncodeToString(txn.Txid), txn.Height, txn.Idx)
 
 		if i%100 == 99 {
 			batches = append(batches, batch)
