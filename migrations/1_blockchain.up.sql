@@ -107,7 +107,7 @@ CREATE TABLE inscriptions(
     height INTEGER,
     idx BIGINT,
     vout INTEGER,
-    num BIGINT DEFAULT -1,
+    num BIG SERIAL,
     PRIMARY KEY(height, idx, vout)
 );
 CREATE INDEX idx_inscriptions_num ON inscriptions(num, height, idx, vout);

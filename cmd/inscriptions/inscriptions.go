@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/GorillaPool/go-junglebus"
+	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -19,9 +23,9 @@ import (
 var POSTGRES string
 var db *pgxpool.Pool
 var rdb *redis.Client
-var INDEXER string
+var INDEXER string = "inscriptions"
 var TOPIC string
-var FROM_BLOCK uint
+var fromBlock uint
 var VERBOSE int
 var CONCURRENCY int = 64
 
@@ -30,9 +34,9 @@ func init() {
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
-	// flag.StringVar(&INDEXER, "id", "", "Indexer name")
+	// flag.StringVar(&INDEXER, "id", "inscriptions", "Indexer name")
 	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
-	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
+	flag.UintVar(&fromBlock, "s", uint(lib.TRIGGER), "Start from block")
 	// flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
@@ -59,96 +63,113 @@ func init() {
 	}
 }
 
+var ctx = context.Background()
+
 func main() {
-	blockDone := make(chan uint32, 10000)
+	errors := make(chan error)
 
+	JUNGLEBUS := os.Getenv("JUNGLEBUS")
+	if JUNGLEBUS == "" {
+		JUNGLEBUS = "https://junglebus.gorillapool.io"
+	}
+	fmt.Println("JUNGLEBUS", JUNGLEBUS, TOPIC)
+
+	junglebusClient, err := junglebus.New(
+		junglebus.WithHTTP(JUNGLEBUS),
+	)
+	if err != nil {
+		log.Panicln(err.Error())
+	}
+
+	progress, err := rdb.HGet(ctx, "progress", INDEXER).Uint64()
+	if err != nil && err != redis.Nil {
+		panic(err)
+	}
+
+	if uint(progress) > fromBlock {
+		fromBlock = uint(progress)
+	}
+
+	var txCount int
+	var height uint32
+	var idx uint64
+	ticker := time.NewTicker(10 * time.Second)
 	go func() {
-		for blockHeight := range blockDone {
-			row := db.QueryRow(context.Background(),
-				"SELECT MAX(num) FROM inscriptions",
-			)
-			var num int
-			err := row.Scan(&num)
-			if err != nil {
-				if err == pgx.ErrNoRows {
-					return
-				}
-				panic(err)
+		for range ticker.C {
+			if txCount > 0 {
+				log.Printf("Blk %d I %d - %d txs %d/s\n", height, idx, txCount, txCount/10)
 			}
-			log.Println("Start height", blockHeight-6)
-			rows, err := db.Query(context.Background(), `
-				SELECT height, idx, vout
-				FROM inscriptions
-				WHERE num=-1 AND height<$1
-				ORDER BY height, idx, vout`,
-				blockHeight-6,
-			)
-			if err != nil {
-				panic(err)
-			}
-			for rows.Next() {
-				var height uint32
-				var idx uint64
-				var vout uint32
-				err = rows.Scan(&height, &idx, &vout)
-				if err != nil {
-					panic(err)
-				}
-
-				num++
-				_, err = db.Exec(context.Background(), `
-					UPDATE inscriptions
-					SET num=$1
-					WHERE height=$2 AND idx=$3 AND vout=$4`,
-					num,
-					height,
-					idx,
-					vout,
-				)
-				if err != nil {
-					panic(err)
-				}
-			}
-			fmt.Println("Inscription num:", num)
+			txCount = 0
 		}
 	}()
 
-	err := indexer.Exec(
-		true,
-		false,
-		func(ctx *lib.IndexContext) error {
-			ordinals.ParseInscriptions(ctx)
-			for vout, txo := range ctx.Txos {
-				if _, ok := txo.Data["insc"]; !ok {
-					continue
-				}
-				_, err := db.Exec(context.Background(), `
-					INSERT INTO inscriptions(height, idx, vout)
-					VALUES($1, $2, $3)
-					ON CONFLICT DO NOTHING`,
-					ctx.Height,
-					ctx.Idx,
-					vout,
-				)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		},
-		func(height uint32) error {
-			blockDone <- height
-			return nil
-		},
-		"inscriptions",
+	var sub *junglebus.Subscription
+
+	log.Println("Subscribing to Junglebus from block", fromBlock)
+	sub, err = junglebusClient.SubscribeWithQueue(
+		context.Background(),
 		TOPIC,
-		FROM_BLOCK,
-		CONCURRENCY,
-		false,
-		false,
-		VERBOSE,
+		uint64(fromBlock),
+		0,
+		junglebus.EventHandler{
+			OnTransaction: func(txn *models.TransactionResponse) {
+				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+				if err != nil {
+					panic(err)
+				}
+				ordinals.ParseInscriptions(txCtx)
+				for vout, txo := range txCtx.Txos {
+					if _, ok := txo.Data["insc"]; !ok {
+						continue
+					}
+					var num int
+					row := db.QueryRow(context.Background(), `
+						INSERT INTO inscriptions(height, idx, vout)
+						VALUES($1, $2, $3)
+						ON CONFLICT DO NOTHING
+						RETURNING num`,
+						txCtx.Height,
+						txCtx.Idx,
+						vout,
+					)
+					err = row.Scan(&num)
+					if err == nil {
+						log.Println("Inscription", num, "at", *txCtx.Height, txCtx.Idx, vout)
+					}
+				}
+
+			},
+			OnStatus: func(status *models.ControlResponse) {
+				log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
+				if status.StatusCode == 200 {
+					fromBlock = uint(status.Block) - 1
+					rdb.HSet(ctx, "progress", INDEXER, fromBlock)
+				}
+			},
+			OnError: func(err error) {
+				log.Printf("[ERROR]: %v\n", err)
+				panic(err)
+			},
+		},
+		1000000,
 	)
 	if err != nil {
-		log.Panicln(err)
+		panic(err)
 	}
+	defer func() {
+		sub.Unsubscribe()
+	}()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		fmt.Printf("Caught signal")
+		fmt.Println("Unsubscribing and exiting...")
+		sub.Unsubscribe()
+		os.Exit(0)
+	}()
+
+	<-errors
+	sub.Unsubscribe()
 }
