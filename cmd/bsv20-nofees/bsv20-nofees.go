@@ -67,7 +67,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		false,
+		true,
 		handleTx,
 		handleBlock,
 		INDEXER,
