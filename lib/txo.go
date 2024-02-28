@@ -97,6 +97,10 @@ func (t *Txo) Save() {
 					// log.Printf("Conflict. Retrying Save %s\n", t.Outpoint)
 					continue
 				}
+				// if pgErr.Code == "22P05" {
+				// 	delete(t.Data, "insc")
+				// 	continue
+				// }
 			}
 			log.Panicf("insTxo Err: %s - %v", t.Outpoint, err)
 		}

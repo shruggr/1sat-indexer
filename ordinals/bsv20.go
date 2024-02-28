@@ -1,6 +1,7 @@
 package ordinals
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -407,6 +408,124 @@ func ValidateBsv20Deploy(height uint32) {
 				log.Panic(err)
 			}
 		}(ticker)
+	}
+}
+
+func ValidateBsv20Txos(height uint32) {
+	rows, err := Db.Query(ctx, `
+		SELECT txid, vout, height, idx, tick, id, amt
+		FROM bsv20_txos
+		WHERE status=0 AND height <= $1 AND height IS NOT NULL
+		ORDER BY height ASC, idx ASC, vout ASC`,
+		height,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer rows.Close()
+
+	ticks := map[string]*Bsv20{}
+	var prevTxid []byte
+	for rows.Next() {
+		bsv20 := &Bsv20{}
+		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Id, &bsv20.Amt)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		switch bsv20.Op {
+		case "mint":
+			var reason string
+			ticker, ok := ticks[bsv20.Ticker]
+			if !ok {
+				ticker = LoadTicker(bsv20.Ticker)
+				ticks[bsv20.Ticker] = ticker
+			}
+			if ticker == nil {
+				reason = fmt.Sprintf("invalid ticker %s as of %d %d", bsv20.Ticker, &bsv20.Height, &bsv20.Idx)
+			} else if ticker.Supply >= ticker.Max {
+				reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
+			} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
+				reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
+			}
+
+			if reason != "" {
+				_, err = Db.Exec(ctx, `
+				UPDATE bsv20_txos
+				SET status=-1, reason=$3
+				WHERE txid=$1 AND vout=$2`,
+					bsv20.Txid,
+					bsv20.Vout,
+					reason,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+				continue
+			}
+
+			t, err := Db.Begin(ctx)
+			if err != nil {
+				log.Panic(err)
+			}
+			defer t.Rollback(ctx)
+
+			if ticker.Max-ticker.Supply < *bsv20.Amt {
+				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
+				*bsv20.Amt = ticker.Max - ticker.Supply
+
+				_, err := t.Exec(ctx, `
+				UPDATE bsv20_txos
+				SET status=1, amt=$3, reason=$4
+				WHERE txid=$1 AND vout=$2`,
+					bsv20.Txid,
+					bsv20.Vout,
+					*bsv20.Amt,
+					reason,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+			} else {
+				_, err := t.Exec(ctx, `
+				UPDATE bsv20_txos
+				SET status=1
+				WHERE txid=$1 AND vout=$2`,
+					bsv20.Txid,
+					bsv20.Vout,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+			}
+
+			ticker.Supply += *bsv20.Amt
+			_, err = t.Exec(ctx, `
+				UPDATE bsv20
+				SET supply=$3
+				WHERE txid=$1 AND vout=$2`,
+				ticker.Txid,
+				ticker.Vout,
+				ticker.Supply,
+			)
+			if err != nil {
+				log.Panic(err)
+			}
+
+			err = t.Commit(ctx)
+			if err != nil {
+				log.Panic(err)
+			}
+			fmt.Println("Validated Mint:", bsv20.Ticker, ticker.Supply, ticker.Max)
+		case "transfer":
+			if bytes.Equal(prevTxid, bsv20.Txid) {
+				continue
+			}
+			prevTxid = bsv20.Txid
+			ValidateV1Transfer(bsv20.Txid, bsv20.Ticker, true)
+			fmt.Printf("Validated Transfer: %s %x\n", bsv20.Ticker, bsv20.Txid)
+		}
+
 	}
 }
 
