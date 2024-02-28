@@ -189,7 +189,7 @@ ordLoop:
 	ins.File.Hash = hash[:]
 	insType := "file"
 	var bsv20 *Bsv20
-	if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) {
+	if ins.File.Size <= 1024 && utf8.Valid(ins.File.Content) && !bytes.Contains(ins.File.Content, []byte{0}) && !bytes.Contains(ins.File.Content, []byte("\\u0000")) {
 		mime := strings.ToLower(ins.File.Type)
 		if strings.HasPrefix(mime, "application") ||
 			strings.HasPrefix(mime, "text") {
