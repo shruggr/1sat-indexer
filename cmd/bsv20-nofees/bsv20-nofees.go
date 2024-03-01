@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -88,7 +87,7 @@ func handleTx(tx *lib.IndexContext) error {
 	ordinals.CalculateOrigins(tx)
 	xfers := map[string]*ordinals.Bsv20{}
 	for _, txo := range tx.Txos {
-		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok && strings.HasPrefix(bsv20.Op, "deploy") {
+		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
 			bsv20.Save(txo)
 			// if mempool tx, que for immediate validation
 			// if mined tx, skip and it will be validated by block handler
