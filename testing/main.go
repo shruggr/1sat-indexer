@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -17,7 +18,7 @@ var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "ae10ddcb8d976be53b9107701d90b67a189ff6bd8bea8b9e4ed34c5d4ee258f3"
+var hexId = "33f71e34bc3998561afe2780b56f680783964d3f4e52857ac3dd00c8185f874e"
 
 func main() {
 	// var err error
@@ -49,29 +50,33 @@ func main() {
 		log.Panic(err)
 	}
 
-	// tx, err := lib.JB.GetTransaction(context.Background(), hexId)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	tx, err := lib.JB.GetTransaction(context.Background(), hexId)
+	if err != nil {
+		log.Panic(err)
+	}
 
-	// txnCtx, err := lib.ParseTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// ordinals.ParseInscriptions(txnCtx)
+	txnCtx, err := lib.ParseTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+	if err != nil {
+		log.Panic(err)
+	}
+	ordinals.ParseInscriptions(txnCtx)
 
+	ordinals.ParseBsv20(txnCtx)
 	// sigil.ParseSigil(txnCtx)
 
-	// out, err := json.MarshalIndent(txnCtx, "", "  ")
-
-	op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
-	if err != nil {
-		log.Panic(err)
-	}
-	current, err := ordinals.GetLatestOutpoint(context.Background(), op)
+	out, err := json.MarshalIndent(txnCtx, "", "  ")
 	if err != nil {
 		log.Panic(err)
 	}
 
-	fmt.Println(string(current.String()))
+	// op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// current, err := ordinals.GetLatestOutpoint(context.Background(), op)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+
+	fmt.Println(string(out))
 }

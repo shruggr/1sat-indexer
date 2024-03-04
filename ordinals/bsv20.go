@@ -45,7 +45,7 @@ type Bsv20 struct {
 	Vout          uint32         `json:"vout"`
 	Outpoint      *lib.Outpoint  `json:"outpoint"`
 	Owner         string         `json:"owner,omitempty"`
-	Script        []byte         `json:"script"`
+	Script        []byte         `json:"script,omitempty"`
 	Height        *uint32        `json:"height,omitempty"`
 	Idx           uint64         `json:"idx,omitempty"`
 	Ticker        string         `json:"tick,omitempty"`
@@ -71,7 +71,8 @@ type Bsv20 struct {
 	FundBalance   int            `json:"-"`
 }
 
-func ParseBsv20(ctx *lib.IndexContext) {
+func ParseBsv20(ctx *lib.IndexContext) (tickers []string) {
+	tokens := map[string]struct{}{}
 	for _, txo := range ctx.Txos {
 		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
 			list := ordlock.ParseScript(txo)
@@ -89,25 +90,34 @@ func ParseBsv20(ctx *lib.IndexContext) {
 					if token != nil {
 						decimals = token.Decimals
 					}
+					tokens[bsv20.Ticker] = struct{}{}
+
 				} else {
 					token := LoadTokenById(bsv20.Id)
 					if token != nil {
 						decimals = token.Decimals
 					}
+					tokens[bsv20.Id.String()] = struct{}{}
 				}
 				bsv20.PricePerToken = float64(bsv20.Price) / (float64(*bsv20.Amt) / math.Pow(10, float64(decimals)))
 			}
 		}
 	}
+
+	for tick, _ := range tokens {
+		tickers = append(tickers, tick)
+	}
+	return
 }
 
-func IndexBsv20(ctx *lib.IndexContext) {
-	ParseBsv20(ctx)
+func IndexBsv20(ctx *lib.IndexContext) (tickers []string) {
+	tickers = ParseBsv20(ctx)
 	for _, txo := range ctx.Txos {
 		if bsv20, ok := txo.Data["bsv20"].(*Bsv20); ok {
 			bsv20.Save(txo)
 		}
 	}
+	return tickers
 }
 
 func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error) {

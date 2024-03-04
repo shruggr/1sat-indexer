@@ -72,6 +72,7 @@ var tickFunds = map[string]*ordinals.V1TokenFunds{}
 
 var limiter = make(chan struct{}, CONCURRENCY)
 var sub *redis.PubSub
+var m sync.Mutex
 
 func main() {
 	subRdb := redis.NewClient(&redis.Options{
@@ -121,7 +122,9 @@ func main() {
 					continue
 				}
 				// log.Println("Updating funding", funds.Tick, funds.Balance())
+				m.Lock()
 				tickFunds[funds.Tick] = funds
+				m.Unlock()
 				pkhash := hex.EncodeToString(funds.PKHash)
 				pkhashFunds[pkhash] = funds
 			case "v1xfer":
@@ -158,6 +161,7 @@ func main() {
 
 func processV1() (didWork bool) {
 	var wg sync.WaitGroup
+	m.Lock()
 	for _, funds := range tickFunds {
 		if funds.Balance() < ordinals.BSV20V1_OP_COST {
 			continue
@@ -182,6 +186,7 @@ func processV1() (didWork bool) {
 			if err != nil {
 				log.Panic(err)
 			}
+			// log.Print("Pending", funds.Tick, pending)
 
 			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V1_OP_COST) / ordinals.BSV20V1_OP_COST
 
@@ -222,7 +227,7 @@ func processV1() (didWork bool) {
 					}
 
 					txn := ordinals.IndexTxn(rawtx, "", height, idx)
-					ordinals.ParseBsv20(txn)
+					ordinals.IndexBsv20(txn)
 					for _, txo := range txn.Txos {
 						if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
 							if bsv20.Ticker != funds.Tick {
@@ -231,7 +236,6 @@ func processV1() (didWork bool) {
 							if bsv20.Op == "transfer" || bsv20.Op == "mint" {
 								balance -= ordinals.BSV20V1_OP_COST
 							}
-							bsv20.Save(txo)
 						}
 					}
 					_, err = db.Exec(ctx, `
@@ -365,7 +369,7 @@ func processV1() (didWork bool) {
 						continue
 					}
 					prevTxid = bsv20.Txid
-					outputs := ordinals.ValidateV1Transfer(bsv20.Txid, funds.Tick, true)
+					outputs := ordinals.ValidateV1Transfer(bsv20.Txid, funds.Tick, bsv20.Height != nil)
 					funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
 					fmt.Printf("Validated Transfer: %s %x\n", funds.Tick, bsv20.Txid)
 					didWork = true
@@ -377,6 +381,7 @@ func processV1() (didWork bool) {
 			}
 		}(funds)
 	}
+	m.Unlock()
 	wg.Wait()
 
 	return

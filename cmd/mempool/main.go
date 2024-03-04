@@ -161,47 +161,9 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 	ordlock.ParseOrdinalLocks(ctx)
 	ctx.Save()
 
-	tokens := map[string]struct{}{}
-	for _, txo := range ctx.Txos {
-		if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-			list := ordlock.ParseScript(txo)
+	tickers := ordinals.IndexBsv20(ctx)
 
-			if list != nil {
-				txo.PKHash = list.PKHash
-				bsv20.PKHash = list.PKHash
-				bsv20.Price = list.Price
-				bsv20.PayOut = list.PayOut
-				bsv20.Listing = true
-
-				var decimals uint8
-				if bsv20.Ticker != "" {
-					if token := ordinals.LoadTicker(bsv20.Ticker); token != nil {
-						decimals = token.Decimals
-					}
-				} else if bsv20.Id != nil {
-					if token := ordinals.LoadTokenById(bsv20.Id); token != nil {
-						decimals = token.Decimals
-					}
-				}
-				bsv20.PricePerToken = float64(bsv20.Price) / float64(*bsv20.Amt) * float64(10^uint64(decimals))
-			}
-			if bsv20.Ticker != "" {
-				tokens[bsv20.Ticker] = struct{}{}
-			} else if bsv20.Id != nil {
-				tokens[bsv20.Id.String()] = struct{}{}
-			}
-			bsv20.Save(txo)
-			// if bsv20.Listing {
-			// 	out, err := json.Marshal(bsv20)
-			// 	if err != nil {
-			// 		log.Panic(err)
-			// 	}
-			// 	log.Println("Publishing", string(out))
-			// 	rdb.Publish(context.Background(), "bsv20listings", out)
-			// }
-		}
-	}
-	for tick, _ := range tokens {
+	for _, tick := range tickers {
 		if len(tick) <= 16 {
 			rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
 		} else {
