@@ -92,13 +92,16 @@ func main() {
 		}
 		pkhash := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhash] = &funds
+		m.Lock()
 		tickFunds[tick] = &funds
+		m.Unlock()
 		sub.Subscribe(ctx, pkhash)
 	}
 
 	go func() {
 		for {
 			tickFunds = ordinals.InitializeV1Funding(CONCURRENCY)
+			m.Lock()
 			for _, funds := range tickFunds {
 				pkhash := hex.EncodeToString(funds.PKHash)
 				if _, ok := pkhashFunds[pkhash]; !ok {
@@ -106,6 +109,7 @@ func main() {
 					sub.Subscribe(ctx, pkhash)
 				}
 			}
+			m.Unlock()
 			time.Sleep(time.Hour)
 		}
 	}()
@@ -161,12 +165,29 @@ func main() {
 
 func processV1() (didWork bool) {
 	var wg sync.WaitGroup
+
+	row := db.QueryRow(ctx, `
+		SELECT height
+		FROM progress
+		WHERE indexer=$1`,
+		"bsv20",
+	)
+	var crawledHeight uint32
+	if err := row.Scan(&crawledHeight); err != nil {
+		log.Panic(err)
+	}
+
 	m.Lock()
+	var fundsList = make([]*ordinals.V1TokenFunds, 0, len(tickFunds))
 	for _, funds := range tickFunds {
 		if funds.Balance() < ordinals.BSV20V1_OP_COST {
 			continue
 		}
+		fundsList = append(fundsList, funds)
+	}
+	m.Unlock()
 
+	for _, funds := range fundsList {
 		log.Println("Processing V1", funds.Tick, funds.Balance())
 		wg.Add(1)
 		limiter <- struct{}{}
@@ -260,7 +281,112 @@ func processV1() (didWork bool) {
 			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
 				FROM bsv20_txos
-				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL
+				WHERE tick=$1 AND op='mint' AND status=0 AND height > 0 AND height IS NOT NULL
+				ORDER BY height ASC, idx ASC, vout ASC
+				LIMIT $2`,
+				funds.Tick,
+				funds.Balance()/ordinals.BSV20V1_OP_COST,
+			)
+			if err != nil {
+				log.Panic(err)
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				bsv20 := &ordinals.Bsv20{}
+				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt, &bsv20.Op)
+				if err != nil {
+					log.Panicln(err)
+				}
+
+				didWork = true
+				var reason string
+				if ticker == nil {
+					reason = fmt.Sprintf("invalid ticker %s as of %d %d", funds.Tick, &bsv20.Height, &bsv20.Idx)
+				} else if ticker.Supply >= ticker.Max {
+					reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
+				} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
+					reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
+				}
+
+				if reason != "" {
+					_, err = db.Exec(ctx, `
+						UPDATE bsv20_txos
+						SET status=-1, reason=$3
+						WHERE txid=$1 AND vout=$2`,
+						bsv20.Txid,
+						bsv20.Vout,
+						reason,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+					continue
+				}
+
+				t, err := db.Begin(ctx)
+				if err != nil {
+					log.Panic(err)
+				}
+				defer t.Rollback(ctx)
+
+				if ticker.Max-ticker.Supply < *bsv20.Amt {
+					reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
+					*bsv20.Amt = ticker.Max - ticker.Supply
+
+					_, err := t.Exec(ctx, `
+							UPDATE bsv20_txos
+							SET status=1, amt=$3, reason=$4
+							WHERE txid=$1 AND vout=$2`,
+						bsv20.Txid,
+						bsv20.Vout,
+						*bsv20.Amt,
+						reason,
+					)
+					if err != nil {
+						log.Panic(err)
+					}
+				} else {
+					_, err := t.Exec(ctx, `
+							UPDATE bsv20_txos
+							SET status=1
+							WHERE txid=$1 AND vout=$2`,
+						bsv20.Txid,
+						bsv20.Vout,
+					)
+					if err != nil {
+						log.Panicf("%x %d %v\n", bsv20.Txid, bsv20.Vout, err)
+					}
+				}
+
+				ticker.Supply += *bsv20.Amt
+				_, err = t.Exec(ctx, `
+							UPDATE bsv20
+							SET supply=$3
+							WHERE txid=$1 AND vout=$2`,
+					ticker.Txid,
+					ticker.Vout,
+					ticker.Supply,
+				)
+				if err != nil {
+					log.Panic(err)
+				}
+
+				err = t.Commit(ctx)
+				if err != nil {
+					log.Panic(err)
+				}
+				funds.Used += ordinals.BSV20V1_OP_COST
+				fmt.Println("Validated Mint:", funds.Tick, ticker.Supply, ticker.Max)
+				didWork = true
+
+			}
+			rows.Close()
+
+			rows, err = db.Query(ctx, `
+				SELECT txid, vout, height, idx, tick, amt, op
+				FROM bsv20_txos
+				WHERE tick=$1 AND op='transfer' AND status=0
 				ORDER BY height ASC, idx ASC, vout ASC
 				LIMIT $2`,
 				funds.Tick,
@@ -272,116 +398,29 @@ func processV1() (didWork bool) {
 			defer rows.Close()
 
 			var prevTxid []byte
-			hasRows := false
 			for rows.Next() {
-				hasRows = true
 				bsv20 := &ordinals.Bsv20{}
 				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Amt, &bsv20.Op)
-				// err = rows.Scan(&txid, &vout, &op)
 				if err != nil {
 					log.Panicln(err)
 				}
 
-				// log.Println("Validating", funds.Tick, bsv20.Vout, bsv20.Op)
-				var reason string
-				switch bsv20.Op {
-				case "mint":
-					if ticker == nil {
-						reason = fmt.Sprintf("invalid ticker %s as of %d %d", funds.Tick, &bsv20.Height, &bsv20.Idx)
-					} else if ticker.Supply >= ticker.Max {
-						reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
-					} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
-						reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
-					}
-
-					if reason != "" {
-						_, err = db.Exec(ctx, `
-							UPDATE bsv20_txos
-							SET status=-1, reason=$3
-							WHERE txid=$1 AND vout=$2`,
-							bsv20.Txid,
-							bsv20.Vout,
-							reason,
-						)
-						if err != nil {
-							log.Panic(err)
-						}
-						continue
-					}
-
-					t, err := db.Begin(ctx)
-					if err != nil {
-						log.Panic(err)
-					}
-					defer t.Rollback(ctx)
-
-					if ticker.Max-ticker.Supply < *bsv20.Amt {
-						reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
-						*bsv20.Amt = ticker.Max - ticker.Supply
-
-						_, err := t.Exec(ctx, `
-							UPDATE bsv20_txos
-							SET status=1, amt=$3, reason=$4
-							WHERE txid=$1 AND vout=$2`,
-							bsv20.Txid,
-							bsv20.Vout,
-							*bsv20.Amt,
-							reason,
-						)
-						if err != nil {
-							log.Panic(err)
-						}
-					} else {
-						_, err := t.Exec(ctx, `
-							UPDATE bsv20_txos
-							SET status=1
-							WHERE txid=$1 AND vout=$2`,
-							bsv20.Txid,
-							bsv20.Vout,
-						)
-						if err != nil {
-							log.Panicf("%x %d %v\n", bsv20.Txid, bsv20.Vout, err)
-						}
-					}
-
-					ticker.Supply += *bsv20.Amt
-					_, err = t.Exec(ctx, `
-							UPDATE bsv20
-							SET supply=$3
-							WHERE txid=$1 AND vout=$2`,
-						ticker.Txid,
-						ticker.Vout,
-						ticker.Supply,
-					)
-					if err != nil {
-						log.Panic(err)
-					}
-
-					err = t.Commit(ctx)
-					if err != nil {
-						log.Panic(err)
-					}
-					funds.Used += ordinals.BSV20V1_OP_COST
-					fmt.Println("Validated Mint:", funds.Tick, ticker.Supply, ticker.Max)
-					didWork = true
-				case "transfer":
-					if bytes.Equal(prevTxid, bsv20.Txid) {
-						continue
-					}
-					prevTxid = bsv20.Txid
-					outputs := ordinals.ValidateV1Transfer(bsv20.Txid, funds.Tick, bsv20.Height != nil)
-					funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
-					fmt.Printf("Validated Transfer: %s %x\n", funds.Tick, bsv20.Txid)
+				if bytes.Equal(prevTxid, bsv20.Txid) {
+					continue
+				}
+				prevTxid = bsv20.Txid
+				outputs := ordinals.ValidateV1Transfer(bsv20.Txid, funds.Tick, bsv20.Height != nil && *bsv20.Height <= crawledHeight)
+				funds.Used += int64(outputs) * ordinals.BSV20V1_OP_COST
+				fmt.Printf("Validated Transfer: %s %x\n", funds.Tick, bsv20.Txid)
+				if outputs > 0 {
 					didWork = true
 				}
 			}
-
-			if hasRows {
+			if didWork {
 				funds.UpdateFunding()
 			}
 		}(funds)
 	}
-	m.Unlock()
 	wg.Wait()
 
 	return

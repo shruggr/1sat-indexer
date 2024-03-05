@@ -68,7 +68,7 @@ func init() {
 
 var pkhashFunds = map[string]*ordinals.V2TokenFunds{}
 var idFunds = map[string]*ordinals.V2TokenFunds{}
-
+var m sync.Mutex
 var limiter chan struct{}
 var sub *redis.PubSub
 
@@ -93,12 +93,15 @@ func main() {
 		}
 		pkhash := hex.EncodeToString(funds.PKHash)
 		pkhashFunds[pkhash] = &funds
+		m.Lock()
 		idFunds[id] = &funds
+		m.Unlock()
 		sub.Subscribe(ctx, pkhash)
 	}
 
 	go func() {
 		for {
+			m.Lock()
 			idFunds = ordinals.InitializeV2Funding(CONCURRENCY)
 			for _, funds := range idFunds {
 				pkhash := hex.EncodeToString(funds.PKHash)
@@ -107,6 +110,7 @@ func main() {
 					sub.Subscribe(ctx, pkhash)
 				}
 			}
+			m.Unlock()
 			time.Sleep(time.Hour)
 		}
 	}()
@@ -120,7 +124,9 @@ func main() {
 				if err != nil {
 					break
 				}
+				m.Lock()
 				idFunds[funds.Id.String()] = funds
+				m.Unlock()
 				pkhash := hex.EncodeToString(funds.PKHash)
 				pkhashFunds[pkhash] = funds
 			case "v2xfer":
@@ -158,7 +164,17 @@ func main() {
 
 func processV2() (didWork bool) {
 	var wg sync.WaitGroup
+	m.Lock()
+	var fundsList = make([]*ordinals.V2TokenFunds, 0, len(idFunds))
 	for _, funds := range idFunds {
+		if funds.Balance() < ordinals.BSV20V2_OP_COST {
+			continue
+		}
+		fundsList = append(fundsList, funds)
+	}
+	m.Unlock()
+
+	for _, funds := range fundsList {
 		if funds.Balance() < ordinals.BSV20V2_OP_COST {
 			continue
 		}
@@ -237,9 +253,9 @@ func processV2() (didWork bool) {
 					}
 					// log.Printf("Updating %s %x\n", funds.Id.String(), txid)
 					_, err = db.Exec(ctx, `
-					UPDATE bsv20v2_txns
-					SET processed=true
-					WHERE txid=$1 AND id=$2`,
+						UPDATE bsv20v2_txns
+						SET processed=true
+						WHERE txid=$1 AND id=$2`,
 						txn.Txid,
 						funds.Id,
 					)
@@ -257,7 +273,7 @@ func processV2() (didWork bool) {
 			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, id, amt
 				FROM bsv20_txos
-				WHERE op='transfer' AND id=$1 AND status=0 AND height > 0 AND height IS NOT NULL
+				WHERE op='transfer' AND id=$1 AND status=0
 				ORDER BY height ASC, idx ASC, vout ASC
 				LIMIT $2`,
 				funds.Id,
@@ -269,9 +285,7 @@ func processV2() (didWork bool) {
 			defer rows.Close()
 
 			var prevTxid []byte
-			hasRows := false
 			for rows.Next() {
-				hasRows = true
 				bsv20 := &ordinals.Bsv20{}
 				err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Id, &bsv20.Amt)
 				if err != nil {
@@ -283,14 +297,16 @@ func processV2() (didWork bool) {
 					// fmt.Printf("Skipping: %s %x\n", funds.Id.String(), bsv20.Txid)
 					continue
 				}
-				didWork = true
 				prevTxid = bsv20.Txid
-				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, true)
+				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, bsv20.Height != nil)
+				if outputs > 0 {
+					didWork = true
+				}
 				funds.Used += int64(outputs) * ordinals.BSV20V2_OP_COST
 				fmt.Printf("Validated Transfer: %s %x\n", funds.Id.String(), bsv20.Txid)
 			}
 
-			if hasRows {
+			if didWork {
 				funds.UpdateFunding()
 			}
 		}(funds)
