@@ -7,14 +7,17 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/libsv/go-bk/bip32"
 	"github.com/libsv/go-bk/crypto"
 	"github.com/libsv/go-bt/bscript"
@@ -213,6 +216,9 @@ func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error
 		bsv20.Ticker = ""
 		bsv20.Status = Valid
 		if icon, ok := data["icon"]; ok {
+			if strings.HasPrefix(icon, "_") {
+				icon = fmt.Sprintf("%x%s", txo.Outpoint.Txid(), icon)
+			}
 			bsv20.Icon, _ = lib.NewOutpointFromString(icon)
 		}
 		bsv20.Id = txo.Outpoint
@@ -315,8 +321,9 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			b.Owner = add.AddressString
 		}
 
-		// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
-		_, err := Db.Exec(ctx, `
+		for i := 0; i < 3; i++ {
+			// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
+			_, err := Db.Exec(ctx, `
 			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, script, status, spend)
 			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, spend
 			FROM txos
@@ -331,24 +338,34 @@ func (b *Bsv20) Save(t *lib.Txo) {
 				payout=EXCLUDED.payout,
 				listing=EXCLUDED.listing,
 				price_per_token=EXCLUDED.price_per_token`,
-			t.Outpoint.Txid(),
-			t.Outpoint.Vout(),
-			t.Height,
-			t.Idx,
-			b.Id,
-			b.Ticker,
-			b.Op,
-			b.Amt,
-			t.PKHash,
-			b.Price,
-			b.PayOut,
-			b.Listing,
-			b.PricePerToken,
-			t.Script,
-			b.Status,
-		)
-		if err != nil {
-			log.Panicf("%x %v", t.Outpoint.Txid(), err)
+				t.Outpoint.Txid(),
+				t.Outpoint.Vout(),
+				t.Height,
+				t.Idx,
+				b.Id,
+				b.Ticker,
+				b.Op,
+				b.Amt,
+				t.PKHash,
+				b.Price,
+				b.PayOut,
+				b.Listing,
+				b.PricePerToken,
+				t.Script,
+				b.Status,
+			)
+			if err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) {
+					if pgErr.Code == "23505" || pgErr.Code == "23503" {
+						time.Sleep(100 * time.Millisecond)
+						// log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
+						continue
+					}
+				}
+				log.Panicln("ins bsv20_txo Err:", err)
+			}
+			break
 		}
 
 	}
@@ -1008,27 +1025,32 @@ func (t *V2TokenFunds) UpdateFunding() {
 	}
 	t.Total = total.Int64
 
-	row = Db.QueryRow(ctx, `
-		SELECT COUNT(1) * $2
+	rows, err := Db.Query(ctx, `
+		SELECT status, COUNT(1)
 		FROM bsv20_txos
-		WHERE id=$1 AND status IN (-1, 1)`,
+		WHERE id=$1
+		GROUP BY status`,
 		t.Id,
-		BSV20V2_OP_COST,
 	)
-	err = row.Scan(&t.Used)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil {
 		log.Panicln(err)
 	}
-
-	row = Db.QueryRow(ctx, `
-		SELECT COALESCE(SUM(txouts), 0) as value
-		FROM bsv20v2_txns
-		WHERE id=$1 AND processed=false`,
-		t.Id,
-	)
-	err = row.Scan(&t.PendingOps)
-	if err != nil && err != pgx.ErrNoRows {
-		log.Panicln(err)
+	defer rows.Close()
+	t.Used = 0
+	for rows.Next() {
+		var status int
+		var count uint32
+		err = rows.Scan(&status, &count)
+		if err != nil {
+			log.Panicln(err)
+		}
+		switch status {
+		case -1:
+		case 1:
+			t.Used += int64(count) * BSV20V2_OP_COST
+		case 0:
+			t.PendingOps = count
+		}
 	}
 
 	t.Save()

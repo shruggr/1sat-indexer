@@ -114,7 +114,7 @@ func (t *Txo) Save() {
 func (t *Txo) SaveSpend() {
 	var err error
 	for i := 0; i < 3; i++ {
-		_, err := Db.Exec(context.Background(), `
+		_, err = Db.Exec(context.Background(), `
 			INSERT INTO txos(outpoint, spend, vin, spend_height, spend_idx)
 			VALUES($1, $2, $3, $4, $5)
 			ON CONFLICT(outpoint) DO UPDATE SET

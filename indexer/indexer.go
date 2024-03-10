@@ -170,7 +170,7 @@ func Exec(
 				}()
 				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 				if err != nil {
-					log.Panicln(err)
+					log.Panicln(txn.Id, err)
 				}
 				if saveSpends {
 					txCtx.SaveSpends()

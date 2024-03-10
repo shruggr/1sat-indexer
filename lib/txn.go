@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"sync"
 
@@ -87,7 +88,7 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *Ind
 func ParseTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *IndexContext, err error) {
 	tx, err := bt.NewTxFromBytes(rawtx)
 	if err != nil {
-		return
+		panic(err)
 	}
 	txid := tx.TxIDBytes()
 	ctx = &IndexContext{
@@ -145,7 +146,7 @@ func ParseSpends(ctx *IndexContext) {
 }
 
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
-	// fmt.Println("Loading Spends", hex.EncodeToString(txid))
+	fmt.Println("Loading Spends", hex.EncodeToString(txid))
 	var err error
 	if tx == nil {
 		tx, err = LoadTx(hex.EncodeToString(txid))
@@ -198,7 +199,7 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 
 			tx, err := LoadTx(txin.PreviousTxIDStr())
 			if err != nil {
-				log.Panic(err)
+				log.Panic(txin.PreviousTxIDStr(), err)
 			}
 			var outSats uint64
 			for vout, txout := range tx.Outputs {

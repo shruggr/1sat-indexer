@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -28,7 +29,7 @@ var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
-var CONCURRENCY int = 8
+var CONCURRENCY int
 var ctx = context.Background()
 
 func init() {
@@ -36,8 +37,12 @@ func init() {
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
-	// flag.IntVar(&CONCURRENCY, "c", 32, "Concurrency Limit")
-	// flag.Parse()
+	flag.StringVar(&INDEXER, "id", "inscriptions", "Indexer name")
+	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
+	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
+	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
+	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
+	flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
@@ -71,6 +76,8 @@ var idFunds = map[string]*ordinals.V2TokenFunds{}
 var m sync.Mutex
 var limiter chan struct{}
 var sub *redis.PubSub
+
+var currentHeight uint32
 
 func main() {
 	limiter = make(chan struct{}, CONCURRENCY)
@@ -154,11 +161,36 @@ func main() {
 		}
 	}()
 
-	for {
-		if !processV2() {
-			log.Println("No work to do")
-			time.Sleep(time.Minute)
+	go func() {
+		for {
+			if !processV2() {
+				log.Println("No work to do")
+				time.Sleep(time.Minute)
+			}
 		}
+	}()
+
+	err := indexer.Exec(
+		true,
+		true,
+		func(ctx *lib.IndexContext) error {
+			ordinals.IndexInscriptions(ctx)
+			ordinals.IndexBsv20(ctx)
+			return nil
+		},
+		func(height uint32) error {
+			currentHeight = height
+			return nil
+		},
+		INDEXER,
+		TOPIC,
+		FROM_BLOCK,
+		CONCURRENCY,
+		false,
+		false,
+		1)
+	if err != nil {
+		log.Panicln(err)
 	}
 }
 
@@ -187,88 +219,6 @@ func processV2() (didWork bool) {
 				<-limiter
 				wg.Done()
 			}()
-			row := db.QueryRow(ctx, `
-				SELECT COUNT(1)
-				FROM bsv20_txos
-				WHERE id=$1 AND status=0 AND height>0 AND height IS NOT NULL`,
-				funds.Id,
-			)
-			var pending int
-			err := row.Scan(&pending)
-			if err != nil {
-				log.Panic(err)
-			}
-
-			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V2_OP_COST) / ordinals.BSV20V2_OP_COST
-			if limit > 0 {
-				rows, err := db.Query(ctx, `
-					SELECT txid, height, idx, txouts
-					FROM bsv20v2_txns
-					WHERE processed=false AND id=$1
-					ORDER BY height ASC, idx ASC
-					LIMIT $2`,
-					funds.Id,
-					limit,
-				)
-				if err != nil {
-					log.Panic(err)
-				}
-				defer rows.Close()
-				balance := funds.Balance()
-
-				for rows.Next() {
-					var txid []byte
-					var height uint32
-					var idx uint64
-					var txouts int64
-					err = rows.Scan(&txid, &height, &idx, &txouts)
-					if err != nil {
-						log.Panic(err)
-					}
-					if balance < txouts*ordinals.BSV20V2_OP_COST {
-						// log.Printf("Insufficient Balance %s %x\n", funds.Id.String(), txid)
-						break
-					}
-					// log.Printf("Loading %s %x\n", funds.Id.String(), txid)
-					rawtx, err := lib.LoadRawtx(hex.EncodeToString(txid))
-					if err != nil {
-						log.Panic(err)
-					}
-
-					// log.Printf("Parsing %s %x\n", funds.Id.String(), txid)
-					txn := ordinals.IndexTxn(rawtx, "", height, idx)
-					ordinals.ParseBsv20(txn)
-					// log.Printf("Parsed %s %x\n", funds.Id.String(), txid)
-					for _, txo := range txn.Txos {
-						if bsv20, ok := txo.Data["bsv20"].(*ordinals.Bsv20); ok {
-							if !bytes.Equal(*funds.Id, *bsv20.Id) {
-								continue
-							}
-							if bsv20.Op == "transfer" {
-								balance -= ordinals.BSV20V2_OP_COST
-							}
-							// log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())
-							bsv20.Save(txo)
-						}
-					}
-					// log.Printf("Updating %s %x\n", funds.Id.String(), txid)
-					_, err = db.Exec(ctx, `
-						UPDATE bsv20v2_txns
-						SET processed=true
-						WHERE txid=$1 AND id=$2`,
-						txn.Txid,
-						funds.Id,
-					)
-					if err != nil {
-						log.Panic(err)
-					}
-					didWork = true
-					if balance < ordinals.BSV20V2_OP_COST {
-						break
-					}
-				}
-				rows.Close()
-			}
 
 			rows, err := db.Query(ctx, `
 				SELECT txid, vout, height, idx, id, amt
@@ -298,7 +248,7 @@ func processV2() (didWork bool) {
 					continue
 				}
 				prevTxid = bsv20.Txid
-				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, bsv20.Height != nil)
+				outputs := ordinals.ValidateV2Transfer(bsv20.Txid, funds.Id, bsv20.Height != nil && *bsv20.Height <= currentHeight)
 				if outputs > 0 {
 					didWork = true
 				}

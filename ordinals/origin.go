@@ -52,6 +52,7 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 				origin = calcOrigin(spend.Outpoint, spend.OutAcc, depth+1)
 				if origin != nil {
 					spend.SetOrigin(origin)
+					Rdb.Publish(context.Background(), origin.String(), outpoint.String())
 				}
 				return origin
 			}

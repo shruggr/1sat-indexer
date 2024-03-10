@@ -55,6 +55,10 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 	if err != nil {
 		return
 	}
+	if len(rawtx) == 0 {
+		err = fmt.Errorf("missing-txn %s", txid)
+		return
+	}
 	return bt.NewTxFromBytes(rawtx)
 }
 
