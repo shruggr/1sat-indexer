@@ -63,10 +63,13 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 }
 
 func LoadRawtx(txid string) (rawtx []byte, err error) {
-	rawtx, _ = Rdb.Get(context.Background(), txid).Bytes()
+	rawtx, _ = Rdb.HGet(context.Background(), "tx", txid).Bytes()
 
-	if len(rawtx) > 0 {
+	if len(rawtx) > 100 {
 		return rawtx, nil
+	} else {
+		rawtx = []byte{}
+
 	}
 
 	if len(rawtx) == 0 && JB != nil {
@@ -89,7 +92,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Rdb.Set(context.Background(), txid, rawtx, 0).Err()
+	Rdb.HSet(context.Background(), "tx", txid, rawtx, 0).Err()
 	return
 }
 

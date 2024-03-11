@@ -110,5 +110,13 @@ func main() {
 		return c.Send(*outpoint)
 	})
 
+	// Temporary fix for unfound memory leak
+	go func() {
+		log.Println("Registering Reset Timer")
+		resetTimer := time.NewTimer(30 * time.Minute)
+		<-resetTimer.C
+		log.Println("Resetting")
+		os.Exit(0)
+	}()
 	app.Listen(fmt.Sprintf(":%d", PORT))
 }
