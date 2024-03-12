@@ -120,6 +120,20 @@ func IndexBsv20(ctx *lib.IndexContext) (tickers []string) {
 			bsv20.Save(txo)
 		}
 	}
+
+	if ctx.Height != nil {
+		_, err := Db.Exec(context.Background(), `
+			UPDATE bsv20_txos t
+			SET spend_height=$2, spend_idx=$3
+			WHERE spend=$1`,
+			ctx.Txid,
+			ctx.Height,
+			ctx.Idx,
+		)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
 	return tickers
 }
 
