@@ -409,12 +409,16 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 			break
 		}
 
-		txn, err := lib.JB.GetTransaction(ctx, hex.EncodeToString(spend))
+		rawtx, err := lib.LoadRawtx(hex.EncodeToString(spend))
 		if err != nil {
 			log.Println("GetTransaction", err)
 			return nil, err
 		}
-		IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+		if len(rawtx) < 100 {
+			log.Println("Transaction too short", string(rawtx))
+			return nil, fmt.Errorf("Transaction too short")
+		}
+		IndexTxn(rawtx, "", 0, 0)
 	}
 
 	if latest != nil {

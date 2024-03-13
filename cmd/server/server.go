@@ -96,6 +96,12 @@ func main() {
 	})
 
 	app.Get("/origin/:origin/latest", func(c *fiber.Ctx) error {
+		cacheKey := "origin:" + c.Params("origin")
+		cached, err := rdb.Get(ctx, cacheKey).Bytes()
+		if err == nil && len(cached) > 0 {
+			return c.Send(cached)
+		}
+
 		origin, err := lib.NewOutpointFromString(c.Params("origin"))
 		if err != nil {
 			log.Println("Parse origin", err)
@@ -107,8 +113,31 @@ func main() {
 			log.Println("GetLatestOutpoint", err)
 			return err
 		}
+		rdb.SetEx(ctx, cacheKey, *outpoint, 3*time.Second)
 		return c.Send(*outpoint)
 	})
+
+	// app.Get("/inscription/:outpoint/index", func(c *fiber.Ctx) error {
+	// 	// cacheKey := "origin:" + c.Params("origin")
+	// 	// cached, err := rdb.Get(ctx, cacheKey).Bytes()
+	// 	// if err == nil && len(cached) > 0 {
+	// 	// 	return c.Send(cached)
+	// 	// }
+
+	// 	outpoint, err := lib.NewOutpointFromString(c.Params("outpoint"))
+	// 	if err != nil {
+	// 		log.Println("Parse origin", err)
+	// 		return err
+	// 	}
+
+	// 	// outpoint, err := ordinals.GetLatestOutpoint(ctx, origin)
+	// 	// if err != nil {
+	// 	// 	log.Println("GetLatestOutpoint", err)
+	// 	// 	return err
+	// 	// }
+	// 	// rdb.SetEx(ctx, cacheKey, *outpoint, 3*time.Second)
+	// 	return c.Send(*outpoint)
+	// })
 
 	// Temporary fix for unfound memory leak
 	go func() {
