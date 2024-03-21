@@ -91,7 +91,7 @@ func loadSrcMine(ctx *lib.IndexContext) (srcMine *OpNS) {
 			break
 		}
 	}
-	log.Println("source", source.String())
+	// log.Println("source", source.String())
 	srcData, _ := lib.LoadTxoData(source)
 	for i := 0; i < 2; i++ {
 		if srcData != nil {
