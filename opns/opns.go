@@ -25,6 +25,11 @@ type OpNS struct {
 	PoW     []byte        `json:"pow,omitempty"`
 }
 
+type OpNSMineFound struct {
+	Outpoint lib.Outpoint `json:"outpoint"`
+	Mine     *OpNS        `json:"opnsMine"`
+}
+
 var GENESIS, _ = lib.NewOutpointFromString("58b7558ea379f24266c7e2f5fe321992ad9a724fd7a87423ba412677179ccb25_0")
 
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
@@ -56,7 +61,6 @@ func ParseOpNS(ctx *lib.IndexContext) {
 				opNsMine.Status = -1
 			}
 			txo.AddData("opnsMine", opNsMine)
-			txo.Save()
 			continue
 		}
 		ordinals.ParseScript(txo)

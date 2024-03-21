@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -64,6 +65,20 @@ func main() {
 		true,
 		func(ctx *lib.IndexContext) error {
 			opns.ParseOpNS(ctx)
+			for _, txo := range ctx.Txos {
+				if mine, ok := txo.Data["opnsMine"].(*opns.OpNS); ok {
+					if mine.Status == 1 {
+						found, err := json.Marshal(&opns.OpNSMineFound{
+							Outpoint: *txo.Outpoint,
+							Mine:     mine,
+						})
+						if err != nil {
+							log.Panicln(err)
+						}
+						rdb.Publish(context.Background(), "opns", found)
+					}
+				}
+			}
 			return nil
 		},
 		func(height uint32) error {
