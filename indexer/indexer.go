@@ -208,6 +208,10 @@ func Exec(
 				defer func() {
 					<-threadLimiter
 				}()
+				// if len(txn.Transaction) == 0 {
+				// 	log.Println("Empty txn", txn.Id)
+				// 	return
+				// }
 				txCtx, err := lib.ParseTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
 				if err != nil {
 					log.Panic(err)

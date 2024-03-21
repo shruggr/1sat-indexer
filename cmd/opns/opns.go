@@ -61,7 +61,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		false,
+		true,
 		func(ctx *lib.IndexContext) error {
 			opns.ParseOpNS(ctx)
 			return nil

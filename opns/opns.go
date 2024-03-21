@@ -80,7 +80,14 @@ func ParseOpNS(ctx *lib.IndexContext) {
 }
 
 func loadSrcMine(ctx *lib.IndexContext) (srcMine *OpNS) {
-	source := ctx.Spends[0].Outpoint
+	var source *lib.Outpoint
+	for _, input := range ctx.Tx.Inputs {
+		if bytes.Contains(*input.UnlockingScript, OpNSPrefix) {
+			source = lib.NewOutpoint(input.PreviousTxID(), input.PreviousTxOutIndex)
+			break
+		}
+	}
+	log.Println("source", source.String())
 	srcData, _ := lib.LoadTxoData(source)
 	for i := 0; i < 2; i++ {
 		if srcData != nil {

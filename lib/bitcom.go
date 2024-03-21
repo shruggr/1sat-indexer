@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -67,10 +68,14 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 			mp[string(opKey)] = string(op.Data)
 
 		}
-		if val, ok := mp["subTypeData"]; ok {
-			var subTypeData json.RawMessage
-			if err := json.Unmarshal([]byte(val.(string)), &subTypeData); err == nil {
-				mp["subTypeData"] = subTypeData
+		if val, ok := mp["subTypeData"].(string); ok {
+			if bytes.Contains([]byte(val), []byte{0}) || bytes.Contains([]byte(val), []byte("\\u0000")) {
+				delete(mp, "subTypeData")
+			} else {
+				var subTypeData json.RawMessage
+				if err := json.Unmarshal([]byte(val), &subTypeData); err == nil {
+					mp["subTypeData"] = subTypeData
+				}
 			}
 		}
 		value = mp
