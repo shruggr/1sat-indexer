@@ -27,84 +27,10 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 	}
 	switch string(op.Data) {
 	case MAP:
-		op, err = ReadOp(script, idx)
-		if err != nil {
-			return
-		}
-		if string(op.Data) != "SET" {
-			return nil, nil
-		}
-		mp := Map{}
-		for {
-			prevIdx := *idx
-			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
-				*idx = prevIdx
-				break
-			}
-			opKey := op.Data
-			prevIdx = *idx
-			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
-				*idx = prevIdx
-				break
-			}
-
-			if len(opKey) > 256 || len(op.Data) > 1024 {
-				continue
-			}
-
-			if !utf8.Valid(opKey) || !utf8.Valid(op.Data) {
-				continue
-			}
-
-			if len(opKey) == 1 && opKey[0] == 0 {
-				opKey = []byte{}
-			}
-			if len(op.Data) == 1 && op.Data[0] == 0 {
-				op.Data = []byte{}
-			}
-
-			mp[string(opKey)] = string(op.Data)
-
-		}
-		if val, ok := mp["subTypeData"].(string); ok {
-			if bytes.Contains([]byte(val), []byte{0}) || bytes.Contains([]byte(val), []byte("\\u0000")) {
-				delete(mp, "subTypeData")
-			} else {
-				var subTypeData json.RawMessage
-				if err := json.Unmarshal([]byte(val), &subTypeData); err == nil {
-					mp["subTypeData"] = subTypeData
-				}
-			}
-		}
-		value = mp
+		value = ParseMAP(&script, idx)
 
 	case B:
-		b := &File{}
-		for i := 0; i < 4; i++ {
-			prevIdx := *idx
-			op, err = ReadOp(script, idx)
-			if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
-				*idx = prevIdx
-				break
-			}
-
-			switch i {
-			case 0:
-				b.Content = op.Data
-			case 1:
-				b.Type = string(op.Data)
-			case 2:
-				b.Encoding = string(op.Data)
-			case 3:
-				b.Name = string(op.Data)
-			}
-		}
-		hash := sha256.Sum256(b.Content)
-		b.Size = uint32(len(b.Content))
-		b.Hash = hash[:]
-		value = b
+		value = ParseB(&script, idx)
 	case "SIGMA":
 		sigma := &Sigma{}
 		for i := 0; i < 4; i++ {
@@ -157,4 +83,87 @@ func ParseBitcom(tx *bt.Tx, vout uint32, idx *int) (value interface{}, err error
 		*idx--
 	}
 	return value, nil
+}
+
+func ParseMAP(script *bscript.Script, idx *int) (mp Map) {
+	op, err := ReadOp(*script, idx)
+	if err != nil {
+		return
+	}
+	if string(op.Data) != "SET" {
+		return nil
+	}
+	mp = Map{}
+	for {
+		prevIdx := *idx
+		op, err = ReadOp(*script, idx)
+		if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+			*idx = prevIdx
+			break
+		}
+		opKey := op.Data
+		prevIdx = *idx
+		op, err = ReadOp(*script, idx)
+		if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+			*idx = prevIdx
+			break
+		}
+
+		if len(opKey) > 256 || len(op.Data) > 1024 {
+			continue
+		}
+
+		if !utf8.Valid(opKey) || !utf8.Valid(op.Data) {
+			continue
+		}
+
+		if len(opKey) == 1 && opKey[0] == 0 {
+			opKey = []byte{}
+		}
+		if len(op.Data) == 1 && op.Data[0] == 0 {
+			op.Data = []byte{}
+		}
+
+		mp[string(opKey)] = string(op.Data)
+
+	}
+	if val, ok := mp["subTypeData"].(string); ok {
+		if bytes.Contains([]byte(val), []byte{0}) || bytes.Contains([]byte(val), []byte("\\u0000")) {
+			delete(mp, "subTypeData")
+		} else {
+			var subTypeData json.RawMessage
+			if err := json.Unmarshal([]byte(val), &subTypeData); err == nil {
+				mp["subTypeData"] = subTypeData
+			}
+		}
+	}
+
+	return
+}
+
+func ParseB(script *bscript.Script, idx *int) (b *File) {
+	b = &File{}
+	for i := 0; i < 4; i++ {
+		prevIdx := *idx
+		op, err := ReadOp(*script, idx)
+		if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
+			*idx = prevIdx
+			break
+		}
+
+		switch i {
+		case 0:
+			b.Content = op.Data
+		case 1:
+			b.Type = string(op.Data)
+		case 2:
+			b.Encoding = string(op.Data)
+		case 3:
+			b.Name = string(op.Data)
+		}
+	}
+	hash := sha256.Sum256(b.Content)
+	b.Size = uint32(len(b.Content))
+	b.Hash = hash[:]
+	return
 }

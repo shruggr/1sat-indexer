@@ -19,7 +19,7 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/libsv/go-bt/bscript"
+	"github.com/libsv/go-bt/v2/bscript"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
@@ -143,18 +143,29 @@ ordLoop:
 		var field int
 		if op.OpCode > bscript.OpPUSHDATA4 && op.OpCode <= bscript.Op16 {
 			field = int(op.OpCode) - 80
-		} else if len(op.Data) > 1 {
-			continue
-		} else if op.OpCode != bscript.Op0 {
+		} else if op.Len == 1 {
 			field = int(op.Data[0])
+		} else if op.Len > 1 {
+			if ins.Fields == nil {
+				ins.Fields = lib.Map{}
+			}
+			if op.Len <= 64 && utf8.Valid(op.Data) && !bytes.Contains(op.Data, []byte{0}) && !bytes.Contains(op.Data, []byte("\\u0000")) {
+				ins.Fields[string(op.Data)] = op2.Data
+			}
+			if string(op.Data) == lib.MAP {
+				script := bscript.NewFromBytes(op2.Data)
+				pos := 0
+				md := lib.ParseMAP(script, &pos)
+				if md != nil {
+					txo.AddData("map", md)
+				}
+			}
+			continue
 		}
 
 		switch field {
 		case 0:
 			ins.File.Content = op2.Data
-			if err != nil {
-				return
-			}
 			break ordLoop
 		case 1:
 			if len(op2.Data) < 256 && utf8.Valid(op2.Data) {
@@ -176,6 +187,11 @@ ordLoop:
 			ins.Metaproto = op2.Data
 		case 9:
 			ins.File.Encoding = string(op2.Data)
+		default:
+			if ins.Fields == nil {
+				ins.Fields = lib.Map{}
+			}
+
 		}
 	}
 	op, err := lib.ReadOp(script, &pos)

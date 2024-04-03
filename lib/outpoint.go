@@ -37,12 +37,15 @@ func NewOutpointFromString(s string) (o *Outpoint, err error) {
 }
 
 func NewOutpointFromTxOutpoint(p []byte) (o *Outpoint, err error) {
-	if len(p) != 36 {
+	if len(p) < 32 || len(p) > 36 {
 		return nil, errors.New("invalid pointer")
 	}
 	b := make([]byte, 36)
-	b = append(b, bt.ReverseBytes(p[:32])...)
-	b = append(b, bt.ReverseBytes(p[32:])...)
+	copy(b[:32], bt.ReverseBytes(p[:32]))
+	if len(p) > 32 {
+		copy(b[32:], bt.ReverseBytes(p[32:]))
+	}
+	// b = append(b, bt.ReverseBytes(p[32:])...)
 	origin := Outpoint(b)
 	o = &origin
 	return

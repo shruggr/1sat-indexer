@@ -22,6 +22,7 @@ type Inscription struct {
 	Parent    *lib.Outpoint   `json:"parent,omitempty"`
 	Metadata  lib.Map         `json:"metadata,omitempty"`
 	Metaproto []byte          `json:"metaproto,omitempty"`
+	Fields    lib.Map         `json:"-"`
 }
 
 func (i *Inscription) Save() {

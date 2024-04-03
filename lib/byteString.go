@@ -12,8 +12,7 @@ type ByteString []byte
 
 // MarshalJSON serializes ByteArray to hex
 func (s ByteString) MarshalJSON() ([]byte, error) {
-	bytes, err := json.Marshal(s.String())
-	return bytes, err
+	return json.Marshal(s.String())
 }
 
 // UnmarshalJSON deserializes ByteArray to hex
