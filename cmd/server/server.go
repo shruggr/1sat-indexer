@@ -76,6 +76,7 @@ func init() {
 func main() {
 	// flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
 	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
+	flag.Parse()
 
 	app := fiber.New()
 	app.Use(recover.New())
@@ -96,12 +97,6 @@ func main() {
 	})
 
 	app.Get("/origin/:origin/latest", func(c *fiber.Ctx) error {
-		cacheKey := "origin:" + c.Params("origin")
-		cached, err := rdb.Get(ctx, cacheKey).Bytes()
-		if err == nil && len(cached) > 0 {
-			return c.Send(cached)
-		}
-
 		origin, err := lib.NewOutpointFromString(c.Params("origin"))
 		if err != nil {
 			log.Println("Parse origin", err)
@@ -113,7 +108,6 @@ func main() {
 			log.Println("GetLatestOutpoint", err)
 			return err
 		}
-		rdb.SetEx(ctx, cacheKey, *outpoint, 3*time.Second)
 		return c.Send(*outpoint)
 	})
 
@@ -147,5 +141,6 @@ func main() {
 		log.Println("Resetting")
 		os.Exit(0)
 	}()
+	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))
 }

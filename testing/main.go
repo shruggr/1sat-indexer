@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -71,6 +70,8 @@ func main() {
 		log.Panic(err)
 	}
 
+	log.Println(current.String())
+
 	// op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
 	// if err != nil {
 	// 	log.Panic(err)
@@ -80,5 +81,5 @@ func main() {
 	// 	log.Panic(err)
 	// }
 
-	fmt.Println(string(out))
+	// fmt.Println(string(out))
 }
