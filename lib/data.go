@@ -92,7 +92,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Rdb.HSet(context.Background(), "tx", txid, rawtx, 0).Err()
+	Rdb.HSet(context.Background(), "tx", txid, rawtx).Err()
 	return
 }
 

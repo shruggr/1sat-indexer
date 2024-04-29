@@ -11,7 +11,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/opns"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
@@ -19,7 +18,7 @@ var rdb *redis.Client
 
 var dryRun = false
 
-var hexId = "2b46261ded6ca25fcb7e278942d5a709af6545cf0a6fb7cad132186aea06b97f"
+var hexId = "e8293fa9054ad354374db41b267c04b234eeee3c124ac573b1c2a5ba8066b179"
 
 func main() {
 	// var err error
@@ -63,7 +62,7 @@ func main() {
 	}
 	ordinals.ParseInscriptions(txnCtx)
 
-	opns.ParseOpNS(txnCtx)
+	// opns.ParseOpNS(txnCtx)
 	// ordinals.ParseBsv20(txnCtx)
 	// sigil.ParseSigil(txnCtx)
 

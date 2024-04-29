@@ -146,7 +146,7 @@ func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error
 	data := map[string]string{}
 	err = json.Unmarshal(ord.Content, &data)
 	if err != nil {
-		// fmt.Println("JSON PARSE ERROR:", ord.Content, err)
+		// fmt.Println("JSON PARSE ERROR:", string(ord.Content), err)
 		return
 	}
 	var protocol string
