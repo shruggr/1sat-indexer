@@ -44,9 +44,9 @@ const BSV20_INCLUDE_FEE = 10000000
 var ctx = context.Background()
 
 type Bsv20 struct {
-	Txid          lib.ByteString `json:"txid"`
-	Vout          uint32         `json:"vout"`
-	Outpoint      *lib.Outpoint  `json:"outpoint"`
+	Txid          lib.ByteString `json:"txid,omitempty"`
+	Vout          uint32         `json:"vout,omitempty"`
+	Outpoint      *lib.Outpoint  `json:"outpoint,omitempty"`
 	Owner         string         `json:"owner,omitempty"`
 	Script        []byte         `json:"script,omitempty"`
 	Height        *uint32        `json:"height,omitempty"`
@@ -320,20 +320,6 @@ func (b *Bsv20) Save(t *lib.Txo) {
 	}
 	if b.Op == "deploy+mint" || b.Op == "mint" || b.Op == "transfer" {
 		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
-
-		b.Outpoint = t.Outpoint
-		b.Txid = t.Outpoint.Txid()
-		b.Vout = t.Outpoint.Vout()
-		b.Height = t.Height
-		b.Idx = t.Idx
-		b.Script = t.Script
-		if len(b.PKHash) > 0 {
-			add, err := bscript.NewAddressFromPublicKeyHash(t.PKHash, true)
-			if err != nil {
-				log.Panic(err)
-			}
-			b.Owner = add.AddressString
-		}
 
 		for i := 0; i < 3; i++ {
 			// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
@@ -1051,6 +1037,8 @@ func (t *V2TokenFunds) UpdateFunding() {
 	}
 	defer rows.Close()
 	t.Used = 0
+	t.PendingOps = 0
+
 	for rows.Next() {
 		var status int
 		var count uint32
@@ -1059,8 +1047,7 @@ func (t *V2TokenFunds) UpdateFunding() {
 			log.Panicln(err)
 		}
 		switch status {
-		case -1:
-		case 1:
+		case -1, 1:
 			t.Used += int64(count) * BSV20V2_OP_COST
 		case 0:
 			t.PendingOps = count

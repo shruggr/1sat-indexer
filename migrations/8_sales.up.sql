@@ -18,3 +18,6 @@ CREATE INDEX IF NOT EXISTS idx_bsv20_txos_tick_sales ON bsv20_txos(tick, spend_h
 WHERE spend != '\x' AND tick != '' AND sale = true;
 CREATE INDEX IF NOT EXISTS idx_bsv20_txos_id_sales ON bsv20_txos(id, spend_height, spend_idx)
 WHERE spend != '\x' AND id != '\x' AND sale = true;
+
+CREATE INDEX idx_listings_data_sales ON listings USING GIN(data)
+WHERE spend != '\x' AND bsv20 = false AND sale=true;

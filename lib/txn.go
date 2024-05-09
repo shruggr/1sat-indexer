@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -145,7 +146,16 @@ func ParseSpends(ctx *IndexContext) {
 	}
 }
 
+var spendsCache = make(map[string][]*Txo)
+
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
+	defer func() {
+		<-time.After(5 * time.Second)
+		delete(spendsCache, hex.EncodeToString(txid))
+	}()
+	if spends, ok := spendsCache[hex.EncodeToString(txid)]; ok {
+		return spends
+	}
 	fmt.Println("Loading Spends", hex.EncodeToString(txid))
 	var err error
 	if tx == nil {
@@ -220,5 +230,6 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 		inSats += spend.Satoshis
 		// fmt.Println("Inputs:", spends[vin].Outpoint)
 	}
+	spendsCache[hex.EncodeToString(txid)] = spends
 	return spends
 }

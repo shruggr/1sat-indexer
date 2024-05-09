@@ -37,7 +37,6 @@ WHERE spend = '\x';
 CREATE INDEX idx_listings_num_unspent ON listings(oheight, oidx, vout)
 WHERE spend = '\x';
 
-
 CREATE INDEX idx_listings_bsv20_height_idx_unspent ON listings(bsv20, height, idx)
 WHERE spend = '\x';
 

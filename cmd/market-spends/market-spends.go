@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -82,7 +83,7 @@ func main() {
 		TOPIC,
 		FROM_BLOCK,
 		CONCURRENCY,
-		true,
+		false,
 		false,
 		VERBOSE,
 	)
@@ -101,25 +102,20 @@ type Sale struct {
 }
 
 func handleTx(ctx *lib.IndexContext) error {
-	ordinals.ParseInscriptions(ctx)
+	ordinals.IndexInscriptions(ctx)
+	ordinals.IndexBsv20(ctx)
 
-	sale := false
-	if len(*ctx.Tx.Inputs[0].UnlockingScript) > 250 {
-		sale = true
+	if !bytes.Contains(*ctx.Tx.Inputs[0].UnlockingScript, ordlock.OrdLockSuffix) {
+		return nil
 	}
-
-	// if ctx.Height == nil || *ctx.Height == 0 {
-	// 	return nil
-	// }
 
 	if _, ok := ctx.Txos[0].Data["bsv20"].(*ordinals.Bsv20); ok {
 		rows, err := db.Query(context.Background(), `
 			UPDATE bsv20_txos
-			SET sale=$2, spend_height=$3, spend_idx=$4
+			SET sale=true, spend_height=$2, spend_idx=$3
 			WHERE spend=$1
 			RETURNING txid, vout, tick, id, sale`,
 			ctx.Txid,
-			sale,
 			ctx.Height,
 			ctx.Idx,
 		)
@@ -148,10 +144,9 @@ func handleTx(ctx *lib.IndexContext) error {
 	} else {
 		_, err := db.Exec(context.Background(), `
 			UPDATE listings
-			SET sale=$2, spend_height=$3, spend_idx=$4
+			SET sale=true, spend_height=$2, spend_idx=$3
 			WHERE spend=$1`,
 			ctx.Txid,
-			sale,
 			ctx.Height,
 			ctx.Idx,
 		)

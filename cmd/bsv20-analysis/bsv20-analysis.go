@@ -80,8 +80,7 @@ func main() {
 	row := db.QueryRow(context.Background(), `
 		SELECT height
 		FROM progress
-		WHERE indexer=$1`,
-		"bsv20",
+		WHERE indexer='bsv20'`,
 	)
 	var lastProcessed uint32
 	err = row.Scan(&lastProcessed)
