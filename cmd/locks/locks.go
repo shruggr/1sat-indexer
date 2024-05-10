@@ -83,7 +83,7 @@ func main() {
 		CONCURRENCY,
 		true,
 		true,
-		1)
+		VERBOSE)
 	if err != nil {
 		log.Panicln(err)
 	}

@@ -147,14 +147,20 @@ func ParseSpends(ctx *IndexContext) {
 }
 
 var spendsCache = make(map[string][]*Txo)
+var m sync.Mutex
 
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 	defer func() {
 		<-time.After(5 * time.Second)
+		m.Lock()
 		delete(spendsCache, hex.EncodeToString(txid))
+		m.Unlock()
 	}()
-	if spends, ok := spendsCache[hex.EncodeToString(txid)]; ok {
-		return spends
+	m.Lock()
+	sps, ok := spendsCache[hex.EncodeToString(txid)]; 
+	m.Unlock()
+	if ok {
+		return sps
 	}
 	fmt.Println("Loading Spends", hex.EncodeToString(txid))
 	var err error
@@ -230,6 +236,8 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 		inSats += spend.Satoshis
 		// fmt.Println("Inputs:", spends[vin].Outpoint)
 	}
+	m.Lock()
 	spendsCache[hex.EncodeToString(txid)] = spends
+	m.Unlock()
 	return spends
 }

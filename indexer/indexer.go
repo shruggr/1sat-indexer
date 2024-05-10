@@ -88,7 +88,9 @@ func Exec(
 				indexer,
 			)
 		}
-		progress -= 6
+		if progress > 6 {
+			progress -= 6
+		}
 		if progress > fromBlock {
 			fromBlock = progress
 		}
