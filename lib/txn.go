@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/libsv/go-bt/v2"
 )
@@ -146,23 +144,23 @@ func ParseSpends(ctx *IndexContext) {
 	}
 }
 
-var spendsCache = make(map[string][]*Txo)
-var m sync.Mutex
+// var spendsCache = make(map[string][]*Txo)
+// var m sync.Mutex
 
 func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
-	defer func() {
-		<-time.After(5 * time.Second)
-		m.Lock()
-		delete(spendsCache, hex.EncodeToString(txid))
-		m.Unlock()
-	}()
-	m.Lock()
-	sps, ok := spendsCache[hex.EncodeToString(txid)]; 
-	m.Unlock()
-	if ok {
-		return sps
-	}
-	fmt.Println("Loading Spends", hex.EncodeToString(txid))
+	// defer func() {
+	// 	<-time.After(5 * time.Second)
+	// 	m.Lock()
+	// 	delete(spendsCache, hex.EncodeToString(txid))
+	// 	m.Unlock()
+	// }()
+	// m.Lock()
+	// sps, ok := spendsCache[hex.EncodeToString(txid)]
+	// m.Unlock()
+	// if ok {
+	// 	return sps
+	// }
+	// fmt.Println("Loading Spends", hex.EncodeToString(txid))
 	var err error
 	if tx == nil {
 		tx, err = LoadTx(hex.EncodeToString(txid))
@@ -236,8 +234,8 @@ func LoadSpends(txid []byte, tx *bt.Tx) []*Txo {
 		inSats += spend.Satoshis
 		// fmt.Println("Inputs:", spends[vin].Outpoint)
 	}
-	m.Lock()
-	spendsCache[hex.EncodeToString(txid)] = spends
-	m.Unlock()
+	// m.Lock()
+	// spendsCache[hex.EncodeToString(txid)] = spends
+	// m.Unlock()
 	return spends
 }

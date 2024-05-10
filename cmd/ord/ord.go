@@ -68,7 +68,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		true,
+		false,
 		func(tx *lib.IndexContext) error {
 			ordinals.CalculateOrigins(tx)
 			ordinals.ParseInscriptions(tx)

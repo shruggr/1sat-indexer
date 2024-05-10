@@ -96,7 +96,7 @@ func handleTx(ctx *lib.IndexContext) error {
 	ordinals.CalculateOrigins(ctx)
 	ordinals.ParseInscriptions(ctx)
 	for _, txo := range ctx.Txos {
-		if txo.Satoshis != 1 {
+		if _, ok := txo.Data["bsv20"]; !ok || txo.Satoshis != 1 {
 			continue
 		}
 		if txo.Origin == nil {

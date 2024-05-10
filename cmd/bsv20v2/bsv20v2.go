@@ -74,13 +74,13 @@ func init() {
 var pkhashFunds = map[string]*ordinals.V2TokenFunds{}
 var idFunds = map[string]*ordinals.V2TokenFunds{}
 var m sync.Mutex
-var limiter chan struct{}
+
+// var limiter chan struct{}
 var sub *redis.PubSub
 
 var currentHeight uint32
 
 func main() {
-	limiter = make(chan struct{}, CONCURRENCY)
 	subRdb := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDIS"),
 		Password: "", // no password set
@@ -88,8 +88,6 @@ func main() {
 	})
 	sub = subRdb.Subscribe(ctx, "v2xfer")
 	ch1 := sub.Channel()
-
-	// idFunds = ordinals.RefreshV2Funding(CONCURRENCY)
 
 	fundsJson := rdb.HGetAll(ctx, "v2funds").Val()
 	for id, j := range fundsJson {
@@ -172,7 +170,7 @@ func main() {
 
 	err := indexer.Exec(
 		true,
-		true,
+		false,
 		func(ctx *lib.IndexContext) error {
 			ordinals.IndexInscriptions(ctx)
 			ordinals.IndexBsv20(ctx)
@@ -196,13 +194,13 @@ func main() {
 
 func processV2() (didWork bool) {
 	var wg sync.WaitGroup
+	limiter := make(chan struct{}, 8)
 	m.Lock()
-	var fundsList = make([]*ordinals.V2TokenFunds, 0, len(idFunds))
+	fundsList := make([]*ordinals.V2TokenFunds, 0, len(idFunds))
 	for _, funds := range idFunds {
-		if funds.Balance() < ordinals.BSV20V2_OP_COST {
-			continue
+		if funds.Balance() >= ordinals.BSV20V2_OP_COST {
+			fundsList = append(fundsList, funds)
 		}
-		fundsList = append(fundsList, funds)
 	}
 	m.Unlock()
 
