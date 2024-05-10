@@ -10,6 +10,11 @@ import (
 // ByteString is a byte array that serializes to hex
 type ByteString []byte
 
+func NewByteStringFromHex(s string) ByteString {
+	b, _ := hex.DecodeString(s)
+	return ByteString(b)
+}
+
 // MarshalJSON serializes ByteArray to hex
 func (s ByteString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
@@ -19,13 +24,19 @@ func (s ByteString) MarshalJSON() ([]byte, error) {
 func (s *ByteString) UnmarshalJSON(data []byte) error {
 	var x string
 	err := json.Unmarshal(data, &x)
-	if err == nil {
-		str, e := hex.DecodeString(x)
-		*s = ByteString([]byte(str))
-		err = e
+	if err != nil {
+		return err
 	}
-
-	return err
+	if len(x) > 0 {
+		str, err := hex.DecodeString(x)
+		if err != nil {
+			return err
+		}
+		*s = ByteString(str)
+	} else {
+		*s = nil
+	}
+	return nil
 }
 
 func (s *ByteString) String() string {

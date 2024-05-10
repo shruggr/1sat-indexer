@@ -23,9 +23,6 @@ var threadLimiter chan struct{}
 
 var Db *pgxpool.Pool
 var Rdb *redis.Client
-var junglebusClient *junglebus.Client
-
-// var fromBlock uint
 
 type Msg struct {
 	Id          string
@@ -60,19 +57,6 @@ func Exec(
 
 	threadLimiter = make(chan struct{}, concurrency)
 
-	JUNGLEBUS := os.Getenv("JUNGLEBUS")
-	if JUNGLEBUS == "" {
-		JUNGLEBUS = "https://junglebus.gorillapool.io"
-	}
-	fmt.Println("JUNGLEBUS", JUNGLEBUS, topic)
-
-	junglebusClient, err = junglebus.New(
-		junglebus.WithHTTP(JUNGLEBUS),
-	)
-	if err != nil {
-		log.Panicln(err.Error())
-	}
-
 	if indexer != "" {
 		var progress uint
 		row := Db.QueryRow(context.Background(), `SELECT height
@@ -84,8 +68,9 @@ func Exec(
 		if err != nil {
 			Db.Exec(context.Background(),
 				`INSERT INTO progress(indexer, height)
-					VALUES($1, 0)`,
+					VALUES($1, $2)`,
 				indexer,
+				fromBlock,
 			)
 		}
 		if progress > 6 {
@@ -236,7 +221,7 @@ func Exec(
 	}
 
 	log.Println("Subscribing to Junglebus from block", fromBlock)
-	sub, err = junglebusClient.Subscribe(
+	sub, err = lib.JB.Subscribe(
 		context.Background(),
 		topic,
 		uint64(fromBlock),

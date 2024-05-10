@@ -9,14 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/fxamacker/cbor"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/v2/bscript"
@@ -288,45 +287,34 @@ func RefreshAddress(ctx context.Context, address string) error {
 		"SELECT height, updated FROM addresses WHERE address=$1",
 		address,
 	)
-	var height uint32
+	var lastHeight uint32
 	var updated time.Time
-	row.Scan(&height, &updated)
+	row.Scan(&lastHeight, &updated)
 
 	// if time.Since(updated) < 30*time.Minute {
 	// 	log.Println("Frequent Update", address)
 	// }
-	url := fmt.Sprintf("%s/v1/address/get/%s/%d", os.Getenv("JUNGLEBUS"), address, height)
-	// log.Println("URL:", url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	txns := []*lib.AddressTxn{}
-	err = json.NewDecoder(resp.Body).Decode(&txns)
+	txns, err := lib.JB.GetAddressTransactionDetails(ctx, address, lastHeight)
 	if err != nil {
 		return err
 	}
 
 	// txids := make([][]byte, len(txns))
-	toIndex := map[string]*lib.AddressTxn{}
+	toIndex := map[string]*models.Transaction{}
 	batches := [][][]byte{}
 	batch := make([][]byte, 0, 100)
 	// log.Println("Txns:", len(txns))
 	for i, txn := range txns {
-		batch = append(batch, txn.Txid)
-		toIndex[txn.Txid.String()] = txn
-		if txn.Height > height {
-			height = txn.Height
+		batch = append(batch, txn.ID)
+		toIndex[txn.ID.String()] = txn
+		if txn.BlockHeight > lastHeight {
+			lastHeight = txn.BlockHeight
 		}
-		// log.Println("Txn", i, hex.EncodeToString(txn.Txid), txn.Height, txn.Idx)
 
-		if i%100 == 99 {
+		if i%100 == 99 || i == len(txns)-1 {
 			batches = append(batches, batch)
 			batch = make([][]byte, 0, 100)
 		}
-	}
-	if len(txns)%100 != 99 {
-		batches = append(batches, batch)
 	}
 
 	for _, batch := range batches {
@@ -361,20 +349,18 @@ func RefreshAddress(ctx context.Context, address string) error {
 	for txid, txn := range toIndex {
 		wg.Add(1)
 		limiter <- struct{}{}
-		go func(txid string, txn *lib.AddressTxn) {
+		go func(txid string, txn *models.Transaction) {
 			defer func() {
 				wg.Done()
 				<-limiter
 			}()
-			if rawtx, err := lib.LoadRawtx(txid); err == nil {
-				// lib.IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx, false)
-				IndexTxn(rawtx, txn.BlockId, txn.Height, txn.Idx)
-			}
+
+			IndexTxn(txn.Transaction, txn.BlockHash.String(), txn.BlockHeight, txn.BlockIndex)
 		}(txid, txn)
 	}
 	wg.Wait()
-	if height == 0 {
-		height = 817000
+	if lastHeight == 0 {
+		lastHeight = 817000
 	}
 	_, err = Db.Exec(ctx, `
 		INSERT INTO addresses(address, height, updated)
@@ -383,7 +369,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 			height = EXCLUDED.height, 
 			updated = CURRENT_TIMESTAMP`,
 		address,
-		height-6,
+		lastHeight-6,
 	)
 	return err
 }
@@ -414,7 +400,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 			return nil, err
 		}
 
-		spend, err := lib.GetSpend(outpoint)
+		spend, err := lib.JB.GetSpend(ctx, hex.EncodeToString(outpoint.Txid()), outpoint.Vout())
 		if err != nil {
 			log.Println("GetSpend", err)
 			return nil, err
@@ -431,8 +417,8 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 			return nil, err
 		}
 		if len(rawtx) < 100 {
-			log.Println("Transaction too short", string(rawtx))
-			return nil, fmt.Errorf("Transaction too short")
+			log.Println("transaction too short", string(rawtx))
+			return nil, fmt.Errorf("transaction too short")
 		}
 		IndexTxn(rawtx, "", 0, 0)
 	}
@@ -457,7 +443,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 	}
 
 	for {
-		spend, err := lib.GetSpend(latest)
+		spend, err := lib.JB.GetSpend(ctx, hex.EncodeToString(latest.Txid()), latest.Vout())
 		if err != nil {
 			log.Println("GetSpend", err)
 			return nil, err
@@ -475,7 +461,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 		}
 
 		// log.Printf("Indexing: %s\n", hex.EncodeToString(spend))
-		txCtx := IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+		txCtx := IndexTxn(txn.Transaction, txn.BlockHash.String(), txn.BlockHeight, txn.BlockIndex)
 		for _, txo := range txCtx.Txos {
 			if txo.Origin != nil && bytes.Equal(*txo.Origin, *origin) {
 				latest = txo.Outpoint
