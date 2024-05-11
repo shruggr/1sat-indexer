@@ -159,37 +159,13 @@ func main() {
 		}
 	}()
 
-	go func() {
-		for {
-			if !processV2() {
-				log.Println("No work to do")
-				time.Sleep(time.Minute)
-			}
+	for {
+		if !processV2() {
+			log.Println("No work to do")
+			time.Sleep(time.Minute)
 		}
-	}()
-
-	err := indexer.Exec(
-		true,
-		false,
-		func(ctx *lib.IndexContext) error {
-			ordinals.IndexInscriptions(ctx)
-			ordinals.IndexBsv20(ctx)
-			return nil
-		},
-		func(height uint32) error {
-			currentHeight = height
-			return nil
-		},
-		INDEXER,
-		TOPIC,
-		FROM_BLOCK,
-		CONCURRENCY,
-		false,
-		false,
-		VERBOSE)
-	if err != nil {
-		log.Panicln(err)
 	}
+
 }
 
 func processV2() (didWork bool) {

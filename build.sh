@@ -8,13 +8,11 @@ cd ../locks
 go build .
 cd ../opns
 go build .
-cd ../bsv20-analysis
-go build .
-cd ../bsv20-deploy
-go build .
-cd ../bsv20v1
-go build .
-cd ../bsv20v2
+# cd ../bsv20-analysis
+# go build .
+# cd ../bsv20-deploy
+# go build .
+cd ../bsv20
 go build .
 cd ../mempool
 go build .

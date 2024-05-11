@@ -63,7 +63,7 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 func LoadRawtx(txid string) (rawtx []byte, err error) {
 	rawtx, _ = Rdb.HGet(ctx, "tx", txid).Bytes()
 
-	if len(rawtx) > 100 {
+	if len(rawtx) > 0 {
 		return rawtx, nil
 	} else {
 		rawtx = []byte{}
@@ -84,7 +84,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 	}
 
 	if len(rawtx) == 0 {
-		err = fmt.Errorf("missing-txn %s", txid)
+		err = fmt.Errorf("LoadRawtx: missing-txn %s", txid)
 		return
 	}
 

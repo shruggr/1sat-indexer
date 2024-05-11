@@ -85,7 +85,7 @@ func main() {
 			panic(err)
 		}
 
-		ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+		ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash.String(), txn.BlockHeight, txn.BlockIndex)
 		for _, txo := range ctx.Txos {
 			if _, ok := txo.Data["bsv20"]; ok {
 				ordinals.IndexBsv20(ctx)
@@ -121,7 +121,7 @@ func main() {
 					log.Printf("Implied Parent: %x %d\n", txid, vout)
 					panic(err)
 				}
-				ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash, txn.BlockHeight, txn.BlockIndex)
+				ctx := ordinals.IndexTxn(txn.Transaction, txn.BlockHash.String(), txn.BlockHeight, txn.BlockIndex)
 				for _, txo := range ctx.Txos {
 					if _, ok := txo.Data["bsv20"]; ok {
 						ordinals.IndexBsv20(ctx)

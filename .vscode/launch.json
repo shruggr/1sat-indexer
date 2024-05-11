@@ -4,15 +4,20 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Launch file",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${file}",
-            // "cwd": "${fileDirname}/../../",
+            // "cwd": "${workspaceFolder}",
             "args": [
-                "-p=8084"
+                "-id=locks",
+                "-c=1",
+                "-t=f6367ed903548ab598959f7f15409a6623bffd3f67bb11426c1dd5805eaa3e12",
+                "-s=783968",
+                "-v=1",
             ]
         }
     ]

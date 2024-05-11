@@ -1,0 +1,1 @@
+tiup playground --tag onesat --db.host 0.0.0.0 --pd.host 0.0.0.0

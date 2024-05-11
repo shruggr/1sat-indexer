@@ -77,7 +77,7 @@ func main() {
 			}
 
 			log.Printf("Processing %x\n", txid)
-			ctx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash, tx.BlockHeight, tx.BlockIndex)
+			ctx := ordinals.IndexTxn(tx.Transaction, tx.BlockHash.String(), tx.BlockHeight, tx.BlockIndex)
 
 			ordinals.IndexBsv20(ctx)
 		}(txid)
