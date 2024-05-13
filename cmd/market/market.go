@@ -96,7 +96,7 @@ func handleTx(ctx *lib.IndexContext) error {
 	ordinals.CalculateOrigins(ctx)
 	ordinals.ParseInscriptions(ctx)
 	for _, txo := range ctx.Txos {
-		if _, ok := txo.Data["bsv20"]; !ok || txo.Satoshis != 1 {
+		if _, ok := txo.Data["bsv20"]; ok || txo.Satoshis != 1 {
 			continue
 		}
 		if txo.Origin == nil {
@@ -107,7 +107,6 @@ func handleTx(ctx *lib.IndexContext) error {
 			continue
 		}
 		txo.AddData("list", list)
-		txo.PKHash = list.PKHash
 		originData, err := lib.LoadTxoData(txo.Origin)
 		if err != nil {
 			log.Panic(err)
