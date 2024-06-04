@@ -1,25 +1,25 @@
 cd ./cmd/ord
-go build .
+go build
 cd ../market
-go build .
+go build
 cd ../market-spends
-go build .
+go build
 cd ../locks
-go build .
+go build
 cd ../opns
-go build .
+go build
 cd ../bsv20-analysis
-go build .
+go build
 cd ../bsv20-deploy
-go build .
+go build
 cd ../bsv20v1
-go build .
+go build
 cd ../bsv20v2
-go build .
+go build
 cd ../mempool
-go build .
+go build
 cd ../clean-mempool
 go build 
 cd ../sigil
-go build .
+go build
 cd ../../

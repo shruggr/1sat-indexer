@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -228,7 +229,7 @@ func processV2() (didWork bool) {
 							if !bytes.Equal(*funds.Id, *bsv20.Id) {
 								continue
 							}
-							if bsv20.Op == "transfer" {
+							if slices.Contains([]string{"transfer", "burn"}, bsv20.Op) {
 								balance -= ordinals.BSV20V2_OP_COST
 							}
 							// log.Printf("Saving %s %x %d\n", funds.Id.String(), txid, txo.Outpoint.Vout())

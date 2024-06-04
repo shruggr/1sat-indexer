@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -91,7 +92,7 @@ func handleTx(tx *lib.IndexContext) error {
 			bsv20.Save(txo)
 			// if mempool tx, que for immediate validation
 			// if mined tx, skip and it will be validated by block handler
-			if tx.Height == nil && bsv20.Op == "transfer" {
+			if tx.Height == nil && slices.Contains([]string{"transfer", "burn"}, bsv20.Op) {
 				if bsv20.Ticker != "" {
 					xfers[bsv20.Ticker] = bsv20
 				} else {

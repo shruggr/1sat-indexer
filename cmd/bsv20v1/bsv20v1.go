@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -254,7 +255,7 @@ func processV1() (didWork bool) {
 							if bsv20.Ticker != funds.Tick {
 								continue
 							}
-							if bsv20.Op == "transfer" || bsv20.Op == "mint" {
+							if slices.Contains([]string{"transfer", "mint", "burn"}, bsv20.Op) {
 								balance -= ordinals.BSV20V1_OP_COST
 							}
 						}

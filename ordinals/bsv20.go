@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -252,7 +253,7 @@ func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error
 		if bsv20.Ticker == "" || bsv20.Amt == nil {
 			return nil, nil
 		}
-	case "transfer":
+	case "transfer", "burn":
 		if bsv20.Amt == nil {
 			return nil, nil
 		}
@@ -318,7 +319,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 			log.Panic(err)
 		}
 	}
-	if b.Op == "deploy+mint" || b.Op == "mint" || b.Op == "transfer" {
+	if slices.Contains([]string{"deploy+mint", "mint", "transfer", "burn"}, b.Op) {
 		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
 
 		for i := 0; i < 3; i++ {
@@ -544,7 +545,7 @@ func ValidateBsv20Txos(height uint32) {
 				log.Panic(err)
 			}
 			fmt.Println("Validated Mint:", bsv20.Ticker, ticker.Supply, ticker.Max)
-		case "transfer":
+		case "transfer", "burn":
 			if bytes.Equal(prevTxid, bsv20.Txid) {
 				continue
 			}
@@ -562,7 +563,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 	inRows, err := Db.Query(ctx, `
 		SELECT txid, vout, status, amt
 		FROM bsv20_txos
-		WHERE spend=$1 AND tick=$2`,
+		WHERE spend=$1 AND tick=$2 AND op != 'burn'`,
 		txid,
 		tick,
 	)
@@ -598,7 +599,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 
 	sql := `SELECT vout, status, amt
 		FROM bsv20_txos
-		WHERE txid=$1 AND tick=$2 AND op='transfer'`
+		WHERE txid=$1 AND tick=$2 AND op IN ('transfer', 'burn')`
 	outRows, err := Db.Query(ctx,
 		sql,
 		txid,
@@ -694,7 +695,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 	inRows, err := Db.Query(ctx, `
 		SELECT txid, vout, status, amt
 		FROM bsv20_txos
-		WHERE spend=$1 AND id=$2`,
+		WHERE spend=$1 AND id=$2 AND op != 'burn'`,
 		txid,
 		id,
 	)
