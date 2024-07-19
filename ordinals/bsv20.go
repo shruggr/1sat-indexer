@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -725,6 +726,9 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 			return
 		case 1:
 			tokensIn += amt
+		}
+		if Rdb.SAdd(ctx, fmt.Sprintf("dep:%x", txid), hex.EncodeToString(inTxid)).Err(); err != nil {
+			log.Panic(err)
 		}
 	}
 	inRows.Close()
