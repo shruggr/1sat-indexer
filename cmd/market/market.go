@@ -73,7 +73,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		false,
+		true,
 		handleTx,
 		func(height uint32) error {
 			return nil

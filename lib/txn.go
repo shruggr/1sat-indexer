@@ -51,8 +51,10 @@ func (ctx *IndexContext) Save() {
 				wg.Done()
 			}()
 			txo.Save()
-			if Rdb != nil {
-				Rdb.Publish(context.Background(), hex.EncodeToString(txo.PKHash), txo.Outpoint.String())
+			if Rdb != nil && txo.PKHash != nil {
+				if address, err := txo.PKHash.Address(); err == nil {
+					Rdb.Publish(context.Background(), address, txo.Outpoint.String())
+				}
 			}
 		}(txo)
 	}
@@ -123,7 +125,8 @@ func ParseTxos(tx *bt.Tx, ctx *IndexContext) {
 		}
 
 		if txout.LockingScript.IsP2PKH() {
-			txo.PKHash = []byte((*txout.LockingScript)[3:23])
+			pkhash := PKHash((*txout.LockingScript)[3:23])
+			txo.PKHash = &pkhash
 		}
 		ctx.Txos = append(ctx.Txos, txo)
 		accSats += txout.Satoshis

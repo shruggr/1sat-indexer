@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -96,9 +97,12 @@ func main() {
 type Sale struct {
 	Spend    lib.ByteString `json:"spend"`
 	Outpoint *lib.Outpoint  `json:"outpoint"`
-	Sale     bool           `json:"sale"`
+	Price    uint64         `json:"price,omitempty"`
 	Tick     *string        `json:"tick,omitempty"`
 	Id       *lib.Outpoint  `json:"id,omitempty"`
+	Amt      uint64         `json:"amt,omitempty"`
+	Seller   *lib.PKHash    `json:"seller,omitempty"`
+	PricePer float64        `json:"pricePer,omitempty"`
 }
 
 func handleTx(ctx *lib.IndexContext) error {
@@ -114,7 +118,7 @@ func handleTx(ctx *lib.IndexContext) error {
 			UPDATE bsv20_txos
 			SET sale=true, spend_height=$2, spend_idx=$3
 			WHERE spend=$1
-			RETURNING txid, vout, tick, id, sale`,
+			RETURNING txid, vout, tick, id, price, amt, pkhash, price_per_token`,
 			ctx.Txid,
 			ctx.Height,
 			ctx.Idx,
@@ -129,7 +133,7 @@ func handleTx(ctx *lib.IndexContext) error {
 			bsv20Sale := &Sale{
 				Spend: ctx.Txid,
 			}
-			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Sale)
+			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Price, &bsv20Sale.Amt, &bsv20Sale.Seller, &bsv20Sale.PricePer)
 			if err != nil {
 				log.Panicln(err)
 			}
@@ -139,19 +143,39 @@ func handleTx(ctx *lib.IndexContext) error {
 				log.Panicln(err)
 			}
 			log.Println("PUBLISHING BSV20 SALE", string(out))
-			rdb.Publish(context.Background(), "bsv20sales", out)
+			rdb.Publish(context.Background(), "bsv20sale", out)
 		}
 	} else {
-		_, err := db.Exec(context.Background(), `
+		var txid []byte
+		var vout uint32
+		ordSale := &Sale{
+			Spend: ctx.Txid,
+			Amt:   1,
+			// Seller: &lib.PKHash{},
+		}
+		log.Println("ORDLOCK", hex.EncodeToString(ctx.Txid))
+		if rows, err := db.Query(context.Background(), `
 			UPDATE listings
 			SET sale=true, spend_height=$2, spend_idx=$3
-			WHERE spend=$1`,
+			WHERE spend=$1
+			RETURNING txid, vout, price, pkhash`,
 			ctx.Txid,
 			ctx.Height,
 			ctx.Idx,
-		)
-		if err != nil {
+		); err != nil {
 			log.Panicln(err)
+		} else if rows.Next() {
+			if err := rows.Scan(&txid, &vout, &ordSale.Price, &ordSale.Seller); err != nil {
+				log.Panicln(err)
+			}
+			ordSale.PricePer = float64(ordSale.Price)
+			ordSale.Outpoint = lib.NewOutpoint(txid, vout)
+			if out, err := json.Marshal(ordSale); err != nil {
+				log.Panicln(err)
+			} else {
+				log.Println("PUBLISHING ORD SALE", string(out))
+				rdb.Publish(context.Background(), "ordSale", out)
+			}
 		}
 	}
 	return nil

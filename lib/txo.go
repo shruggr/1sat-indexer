@@ -20,7 +20,7 @@ type Txo struct {
 	Idx         uint64    `json:"idx"`
 	Satoshis    uint64    `json:"satoshis"`
 	OutAcc      uint64    `json:"outacc"`
-	PKHash      []byte    `json:"pkhash"`
+	PKHash      *PKHash   `json:"owner"`
 	Spend       []byte    `json:"spend"`
 	Vin         uint32    `json:"vin"`
 	SpendHeight *uint32   `json:"spend_height"`
@@ -102,12 +102,14 @@ func (t *Txo) Save() {
 				// 	continue
 				// }
 			}
-			log.Panicf("insTxo Err: %s - %v", t.Outpoint, err)
+			out, err2 := json.Marshal(t.Data)
+			log.Panicf("insTxo Err: %s - %v %s %v", t.Outpoint, err, out, err2)
 		}
 		break
 	}
 	if err != nil {
-		log.Panicln("insTxo Err:", err)
+		out, err2 := json.Marshal(t.Data)
+		log.Panicln("insTxo Err:", err, string(out), err2)
 	}
 }
 

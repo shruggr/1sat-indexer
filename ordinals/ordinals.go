@@ -71,7 +71,7 @@ func CalculateOrigins(ctx *lib.IndexContext) {
 
 func ParseInscriptions(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		if len(txo.PKHash) != 0 && txo.Satoshis != 1 {
+		if txo.PKHash != nil && len(*txo.PKHash) != 0 && txo.Satoshis != 1 {
 			continue
 		}
 		ParseScript(txo)
@@ -84,7 +84,8 @@ func ParseScript(txo *lib.Txo) {
 
 	start := 0
 	if len(script) >= 25 && bscript.NewFromBytes(script[:25]).IsP2PKH() {
-		txo.PKHash = []byte(script[3:23])
+		pkhash := lib.PKHash(script[3:23])
+		txo.PKHash = &pkhash
 		start = 25
 	}
 
@@ -149,8 +150,10 @@ ordLoop:
 			if ins.Fields == nil {
 				ins.Fields = lib.Map{}
 			}
-			if op.Len <= 64 && utf8.Valid(op.Data) && !bytes.Contains(op.Data, []byte{0}) && !bytes.Contains(op.Data, []byte("\\u0000")) {
-				ins.Fields[string(op.Data)] = op2.Data
+
+			if op.Len <= 64 && utf8.Valid(op.Data) {
+				opKey := strings.Replace(string(bytes.Replace(op.Data, []byte{0}, []byte{' '}, -1)), "\\u0000", " ", -1)
+				ins.Fields[opKey] = strings.Replace(string(bytes.Replace(op2.Data, []byte{0}, []byte{' '}, -1)), "\\u0000", " ", -1)
 			}
 			if string(op.Data) == lib.MAP {
 				script := bscript.NewFromBytes(op2.Data)
@@ -252,14 +255,16 @@ ordLoop:
 		txo.Data["bsv20"] = bsv20
 	}
 
-	if len(txo.PKHash) == 0 {
+	if txo.PKHash == nil || len(*txo.PKHash) == 0 {
 		if len(script) >= pos+25 && bscript.NewFromBytes(script[pos:pos+25]).IsP2PKH() {
-			txo.PKHash = []byte(script[pos+3 : pos+23])
+			pkhash := lib.PKHash(script[pos+3 : pos+23])
+			txo.PKHash = &pkhash
 		} else if len(script) >= pos+26 &&
 			script[pos] == bscript.OpCODESEPARATOR &&
 			bscript.NewFromBytes(script[pos+1:pos+26]).IsP2PKH() {
 
-			txo.PKHash = []byte(script[pos+4 : pos+24])
+			pkhash := lib.PKHash(script[pos+4 : pos+24])
+			txo.PKHash = &pkhash
 		}
 	}
 }

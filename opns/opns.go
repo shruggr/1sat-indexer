@@ -46,7 +46,7 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 
 func ParseOpNS(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		if len(txo.PKHash) != 0 {
+		if txo.PKHash != nil && len(*txo.PKHash) != 0 {
 			continue
 		}
 		opNsMine := ParseScript(txo)

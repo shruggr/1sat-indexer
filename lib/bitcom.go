@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bitcoinschema/go-bitcoin"
@@ -101,7 +102,7 @@ func ParseMAP(script *bscript.Script, idx *int) (mp Map) {
 			*idx = prevIdx
 			break
 		}
-		opKey := op.Data
+		opKey := strings.Replace(string(bytes.Replace(op.Data, []byte{0}, []byte{' '}, -1)), "\\u0000", " ", -1)
 		prevIdx = *idx
 		op, err = ReadOp(*script, idx)
 		if err != nil || op.OpCode == bscript.OpRETURN || (op.OpCode == 1 && op.Data[0] == '|') {
@@ -109,22 +110,15 @@ func ParseMAP(script *bscript.Script, idx *int) (mp Map) {
 			break
 		}
 
-		if len(opKey) > 256 || len(op.Data) > 1024 {
+		if (len(opKey) == 1 && opKey[0] == 0) || len(opKey) > 256 || len(op.Data) > 1024 {
 			continue
 		}
 
-		if !utf8.Valid(opKey) || !utf8.Valid(op.Data) {
+		if !utf8.Valid([]byte(opKey)) || !utf8.Valid(op.Data) {
 			continue
 		}
 
-		if len(opKey) == 1 && opKey[0] == 0 {
-			opKey = []byte{}
-		}
-		if len(op.Data) == 1 && op.Data[0] == 0 {
-			op.Data = []byte{}
-		}
-
-		mp[string(opKey)] = string(op.Data)
+		mp[opKey] = strings.Replace(string(bytes.Replace(op.Data, []byte{0}, []byte{' '}, -1)), "\\u0000", " ", -1)
 
 	}
 	if val, ok := mp["subTypeData"].(string); ok {

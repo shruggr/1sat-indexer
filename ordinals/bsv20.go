@@ -49,7 +49,6 @@ type Bsv20 struct {
 	Txid          lib.ByteString `json:"txid,omitempty"`
 	Vout          uint32         `json:"vout,omitempty"`
 	Outpoint      *lib.Outpoint  `json:"outpoint,omitempty"`
-	Owner         string         `json:"owner,omitempty"`
 	Script        []byte         `json:"script,omitempty"`
 	Height        *uint32        `json:"height,omitempty"`
 	Idx           uint64         `json:"idx,omitempty"`
@@ -66,7 +65,7 @@ type Bsv20 struct {
 	Implied       bool           `json:"-"`
 	Status        Bsv20Status    `json:"-"`
 	Reason        *string        `json:"reason,omitempty"`
-	PKHash        []byte         `json:"-"`
+	PKHash        *lib.PKHash    `json:"owner,omitempty"`
 	Price         uint64         `json:"price,omitempty"`
 	PayOut        []byte         `json:"payout,omitempty"`
 	Listing       bool           `json:"listing"`
@@ -674,16 +673,12 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 			log.Printf("Validating %s %x %d\n", tick, txid, bsv20.Vout)
 			if bsv20.Listing {
 				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
-				add, err := bscript.NewAddressFromPublicKeyHash(bsv20.PKHash, true)
-				if err == nil {
-					bsv20.Owner = add.AddressString
-				}
 				out, err := json.Marshal(bsv20)
 				if err != nil {
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20listings", out)
+				Rdb.Publish(context.Background(), "bsv20listing", out)
 			}
 		}
 	}
@@ -817,16 +812,12 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 			log.Printf("Validating %s %x %d\n", id.String(), txid, bsv20.Vout)
 			if bsv20.Listing {
 				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
-				add, err := bscript.NewAddressFromPublicKeyHash(bsv20.PKHash, true)
-				if err == nil {
-					bsv20.Owner = add.AddressString
-				}
 				out, err := json.Marshal(bsv20)
 				if err != nil {
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20listings", out)
+				Rdb.Publish(context.Background(), "bsv20listing", out)
 			}
 
 		}

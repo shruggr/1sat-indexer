@@ -22,7 +22,7 @@ func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bo
 
 func ParseSigil(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		if len(txo.PKHash) != 0 {
+		if txo.PKHash != nil && len(*txo.PKHash) != 0 {
 			continue
 		}
 		sigil := ParseScript(txo)
@@ -44,7 +44,8 @@ func ParseScript(txo *lib.Txo) (sigil *json.RawMessage) {
 		script[47] == bscript.OpCHECKSIG &&
 		script[48] == bscript.OpRETURN {
 
-		txo.PKHash = script[26:46]
+		pkhash := lib.PKHash(script[26:46])
+		txo.PKHash = &pkhash
 		pos := 49
 		op, err := lib.ReadOp(script, &pos)
 		if err == nil {
@@ -64,7 +65,8 @@ func ParseScript(txo *lib.Txo) (sigil *json.RawMessage) {
 		script[60] == bscript.Op2 &&
 		script[61] == bscript.OpCHECKMULTISIG &&
 		script[62] == bscript.OpRETURN {
-		txo.PKHash = script[3:23]
+		pkhash := lib.PKHash(script[3:23])
+		txo.PKHash = &pkhash
 		pos := 63
 		op, err := lib.ReadOp(script, &pos)
 		if err == nil {
