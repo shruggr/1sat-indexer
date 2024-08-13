@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -50,7 +53,7 @@ func init() {
 
 func main() {
 	rows, err := db.Query(ctx, `
-		SELECT id, txid, spend
+		SELECT id, txid, spend, height, idx
 		FROM bsv20_txos
 		WHERE id != '\x'
 		ORDER BY height, id`,
@@ -64,7 +67,9 @@ func main() {
 		var id lib.Outpoint
 		var txid []byte
 		var spend []byte
-		err = rows.Scan(&id, &txid, &spend)
+		var height sql.NullInt32
+		var idx sql.NullInt64
+		err = rows.Scan(&id, &txid, &spend, &height, &idx)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -72,8 +77,18 @@ func main() {
 		if len(spend) == 0 {
 			continue
 		}
+		var score float64
+		if height.Int32 == 0 {
+			score = 0x1FFFFF + float64(time.Now().Unix())*math.Pow(2, -31)
+		} else {
+			score = float64(height.Int32) + float64(idx.Int64)*math.Pow(2, -31)
+		}
+
 		log.Printf("Saving Dep: %d %x %x\n", counter, spend, txid)
-		if rdb.SAdd(ctx, fmt.Sprintf("dep:%x", spend), hex.EncodeToString(txid)).Err(); err != nil {
+		if rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", spend), redis.Z{
+			Member: hex.EncodeToString(txid),
+			Score:  score,
+		}).Err(); err != nil {
 			log.Panic(err)
 		}
 	}

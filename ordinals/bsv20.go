@@ -23,6 +23,8 @@ import (
 	"github.com/libsv/go-bk/bip32"
 	"github.com/libsv/go-bk/crypto"
 	"github.com/libsv/go-bt/bscript"
+	"github.com/redis/go-redis"
+	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordlock"
 )
@@ -689,7 +691,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 	// log.Printf("Validating V2 Transfer %x %s\n", txid, id.String())
 
 	inRows, err := Db.Query(ctx, `
-		SELECT txid, vout, status, amt
+		SELECT txid, vout, status, amt, height, idx
 		FROM bsv20_txos
 		WHERE spend=$1 AND id=$2 AND op != 'burn'`,
 		txid,
@@ -708,7 +710,9 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 		var vout uint32
 		var amt uint64
 		var inStatus int
-		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt)
+		var height sql.NullInt32
+		var idx sql.NullInt64
+		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt, &height, &idx)
 		if err != nil {
 			log.Panicf("%x - %v\n", txid, err)
 		}
@@ -722,7 +726,17 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 		case 1:
 			tokensIn += amt
 		}
-		if Rdb.SAdd(ctx, fmt.Sprintf("dep:%x", txid), hex.EncodeToString(inTxid)).Err(); err != nil {
+		var score float64
+		if height.Int32 == 0 {
+			score = 0x1FFFFF + float64(time.Now().Unix())*math.Pow(2, -31)
+		} else {
+			score = float64(height.Int32) + float64(idx.Int64)*math.Pow(2, -31)
+		}
+
+		if Rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", txid), redis.Z{
+			Member: hex.EncodeToString(txid),
+			Score:  score,
+		}).Err(); err != nil {
 			log.Panic(err)
 		}
 	}
