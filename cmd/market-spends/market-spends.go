@@ -102,6 +102,7 @@ type Sale struct {
 	Id       *lib.Outpoint  `json:"id,omitempty"`
 	Amt      uint64         `json:"amt,omitempty"`
 	Seller   *lib.PKHash    `json:"seller,omitempty"`
+	Buyer    *lib.PKHash    `json:"buyer,omitempty"`
 	PricePer float64        `json:"pricePer,omitempty"`
 }
 
@@ -113,15 +114,17 @@ func handleTx(ctx *lib.IndexContext) error {
 		return nil
 	}
 
+	buyer := ctx.Txos[0].PKHash
 	if _, ok := ctx.Txos[0].Data["bsv20"].(*ordinals.Bsv20); ok {
 		rows, err := db.Query(context.Background(), `
 			UPDATE bsv20_txos
-			SET sale=true, spend_height=$2, spend_idx=$3
+			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
 			WHERE spend=$1
 			RETURNING txid, vout, tick, id, price, amt, pkhash, price_per_token`,
 			ctx.Txid,
 			ctx.Height,
 			ctx.Idx,
+			buyer,
 		)
 		if err != nil {
 			log.Panicln(err)
@@ -132,6 +135,7 @@ func handleTx(ctx *lib.IndexContext) error {
 			var vout uint32
 			bsv20Sale := &Sale{
 				Spend: ctx.Txid,
+				Buyer: buyer,
 			}
 			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Price, &bsv20Sale.Amt, &bsv20Sale.Seller, &bsv20Sale.PricePer)
 			if err != nil {
@@ -143,7 +147,7 @@ func handleTx(ctx *lib.IndexContext) error {
 				log.Panicln(err)
 			}
 			log.Println("PUBLISHING BSV20 SALE", string(out))
-			rdb.Publish(context.Background(), "bsv20sale", out)
+			rdb.Publish(context.Background(), "bsv20Sale", out)
 		}
 	} else {
 		var txid []byte
@@ -151,17 +155,19 @@ func handleTx(ctx *lib.IndexContext) error {
 		ordSale := &Sale{
 			Spend: ctx.Txid,
 			Amt:   1,
+			Buyer: buyer,
 			// Seller: &lib.PKHash{},
 		}
 		log.Println("ORDLOCK", hex.EncodeToString(ctx.Txid))
 		if rows, err := db.Query(context.Background(), `
 			UPDATE listings
-			SET sale=true, spend_height=$2, spend_idx=$3
+			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
 			WHERE spend=$1
 			RETURNING txid, vout, price, pkhash`,
 			ctx.Txid,
 			ctx.Height,
 			ctx.Idx,
+			buyer,
 		); err != nil {
 			log.Panicln(err)
 		} else if rows.Next() {

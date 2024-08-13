@@ -678,7 +678,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20listing", out)
+				Rdb.Publish(context.Background(), "bsv20Listing", out)
 			}
 		}
 	}
@@ -817,7 +817,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20listing", out)
+				Rdb.Publish(context.Background(), "bsv20Listing", out)
 			}
 
 		}
