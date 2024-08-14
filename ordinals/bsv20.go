@@ -23,7 +23,6 @@ import (
 	"github.com/libsv/go-bk/bip32"
 	"github.com/libsv/go-bk/crypto"
 	"github.com/libsv/go-bt/bscript"
-	"github.com/redis/go-redis"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordlock"

@@ -75,7 +75,7 @@ func init() {
 func main() {
 	err := indexer.Exec(
 		true,
-		true,
+		false,
 		handleTx,
 		func(height uint32) error {
 			return nil
@@ -92,18 +92,6 @@ func main() {
 		log.Panicln(err)
 	}
 
-}
-
-type Sale struct {
-	Spend    lib.ByteString `json:"spend"`
-	Outpoint *lib.Outpoint  `json:"outpoint"`
-	Price    uint64         `json:"price,omitempty"`
-	Tick     *string        `json:"tick,omitempty"`
-	Id       *lib.Outpoint  `json:"id,omitempty"`
-	Amt      uint64         `json:"amt,omitempty"`
-	Seller   *lib.PKHash    `json:"seller,omitempty"`
-	Buyer    *lib.PKHash    `json:"buyer,omitempty"`
-	PricePer float64        `json:"pricePer,omitempty"`
 }
 
 func handleTx(ctx *lib.IndexContext) error {
