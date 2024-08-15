@@ -91,7 +91,18 @@ func main() {
 	if err != nil {
 		log.Panicln(err)
 	}
+}
 
+type Sale struct {
+	Spend    lib.ByteString `json:"spend"`
+	Outpoint *lib.Outpoint  `json:"outpoint"`
+	Price    uint64         `json:"price,omitempty"`
+	Tick     *string        `json:"tick,omitempty"`
+	Id       *lib.Outpoint  `json:"id,omitempty"`
+	Amt      uint64         `json:"amt,omitempty"`
+	Seller   *lib.PKHash    `json:"seller,omitempty"`
+	Buyer    *lib.PKHash    `json:"buyer,omitempty"`
+	PricePer float64        `json:"pricePer,omitempty"`
 }
 
 func handleTx(ctx *lib.IndexContext) error {
@@ -147,7 +158,7 @@ func handleTx(ctx *lib.IndexContext) error {
 			// Seller: &lib.PKHash{},
 		}
 		log.Println("ORDLOCK", hex.EncodeToString(ctx.Txid))
-		if rows, err := db.Query(context.Background(), `
+		rows, err := db.Query(context.Background(), `
 			UPDATE listings
 			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
 			WHERE spend=$1
@@ -156,9 +167,12 @@ func handleTx(ctx *lib.IndexContext) error {
 			ctx.Height,
 			ctx.Idx,
 			buyer,
-		); err != nil {
+		)
+		if err != nil {
 			log.Panicln(err)
-		} else if rows.Next() {
+		}
+		defer rows.Close()
+		if rows.Next() {
 			if err := rows.Scan(&txid, &vout, &ordSale.Price, &ordSale.Seller); err != nil {
 				log.Panicln(err)
 			}
