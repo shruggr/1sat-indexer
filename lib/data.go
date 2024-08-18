@@ -157,9 +157,15 @@ func GetChaintip() (*models.BlockHeader, error) {
 
 func PublishEvent(ctx context.Context, event string, data string) {
 	eventId := time.Now().Unix()
-	Rdb.ZAdd(ctx, "evt:"+event, redis.Z{
-		Score:  float64(eventId),
-		Member: data,
+	cutoff := time.Now().Add(-24 * time.Hour)
+	eventKey := "evt:" + event
+	Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.ZRemRangeByScore(ctx, eventKey, "-inf", fmt.Sprintf("%d", cutoff.Unix()))
+		pipe.ZAdd(ctx, eventKey, redis.Z{
+			Score:  float64(eventId),
+			Member: data,
+		})
+		pipe.Publish(ctx, eventKey, fmt.Sprintf("%d:%s", eventId, data))
+		return nil
 	})
-	Rdb.Publish(ctx, fmt.Sprintf("evt:%s:%d", event, eventId), data)
 }
