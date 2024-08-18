@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -87,98 +84,9 @@ func main() {
 	}
 }
 
-type Sale struct {
-	Spend    lib.ByteString `json:"spend"`
-	Outpoint *lib.Outpoint  `json:"outpoint"`
-	Price    uint64         `json:"price,omitempty"`
-	Tick     *string        `json:"tick,omitempty"`
-	Id       *lib.Outpoint  `json:"id,omitempty"`
-	Amt      uint64         `json:"amt,omitempty"`
-	Seller   *lib.PKHash    `json:"seller,omitempty"`
-	Buyer    *lib.PKHash    `json:"buyer,omitempty"`
-	PricePer float64        `json:"pricePer,omitempty"`
-}
-
 func handleTx(ctx *lib.IndexContext) error {
 	ordinals.IndexInscriptions(ctx)
 	ordinals.IndexBsv20(ctx)
-
-	if !bytes.Contains(*ctx.Tx.Inputs[0].UnlockingScript, ordlock.OrdLockSuffix) {
-		return nil
-	}
-
-	buyer := ctx.Txos[0].PKHash
-	if _, ok := ctx.Txos[0].Data["bsv20"].(*ordinals.Bsv20); ok {
-		rows, err := lib.Db.Query(context.Background(), `
-			UPDATE bsv20_txos
-			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
-			WHERE spend=$1
-			RETURNING txid, vout, tick, id, price, amt, pkhash, price_per_token`,
-			ctx.Txid,
-			ctx.Height,
-			ctx.Idx,
-			buyer,
-		)
-		if err != nil {
-			log.Panicln(err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var txid []byte
-			var vout uint32
-			bsv20Sale := &Sale{
-				Spend: ctx.Txid,
-				Buyer: buyer,
-			}
-			err := rows.Scan(&txid, &vout, &bsv20Sale.Tick, &bsv20Sale.Id, &bsv20Sale.Price, &bsv20Sale.Amt, &bsv20Sale.Seller, &bsv20Sale.PricePer)
-			if err != nil {
-				log.Panicln(err)
-			}
-			bsv20Sale.Outpoint = lib.NewOutpoint(txid, vout)
-			out, err := json.Marshal(bsv20Sale)
-			if err != nil {
-				log.Panicln(err)
-			}
-			log.Println("PUBLISHING BSV20 SALE", string(out))
-			lib.PublishEvent(context.Background(), "bsv20Sale", string(out))
-		}
-	} else {
-		var txid []byte
-		var vout uint32
-		ordSale := &Sale{
-			Spend: ctx.Txid,
-			Amt:   1,
-			Buyer: buyer,
-			// Seller: &lib.PKHash{},
-		}
-		log.Println("ORDLOCK", hex.EncodeToString(ctx.Txid))
-		rows, err := lib.Db.Query(context.Background(), `
-			UPDATE listings
-			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
-			WHERE spend=$1
-			RETURNING txid, vout, price, pkhash`,
-			ctx.Txid,
-			ctx.Height,
-			ctx.Idx,
-			buyer,
-		)
-		if err != nil {
-			log.Panicln(err)
-		}
-		defer rows.Close()
-		if rows.Next() {
-			if err := rows.Scan(&txid, &vout, &ordSale.Price, &ordSale.Seller); err != nil {
-				log.Panicln(err)
-			}
-			ordSale.PricePer = float64(ordSale.Price)
-			ordSale.Outpoint = lib.NewOutpoint(txid, vout)
-			if out, err := json.Marshal(ordSale); err != nil {
-				log.Panicln(err)
-			} else {
-				log.Println("PUBLISHING ORD SALE", string(out))
-				lib.PublishEvent(context.Background(), "ordSale", string(out))
-			}
-		}
-	}
+	ordlock.ProcessSpends(ctx)
 	return nil
 }

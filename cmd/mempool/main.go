@@ -148,6 +148,9 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 	ordlock.ParseOrdinalLocks(ctx)
 	ctx.Save()
 
+	// We may want to check fees here to ensure the transaction will be mined
+	// ordlock.ProcessSpends(ctx)
+
 	tickers := ordinals.IndexBsv20(ctx)
 
 	for _, tick := range tickers {
