@@ -16,15 +16,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 // var settled = make(chan uint32, 1000)
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
@@ -45,23 +42,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(ctx, POSTGRES)
+	db, err := pgxpool.New(ctx, POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -76,7 +74,7 @@ var sub *redis.PubSub
 func main() {
 	limiter = make(chan struct{}, CONCURRENCY)
 	subRdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -85,7 +83,7 @@ func main() {
 
 	// idFunds = ordinals.RefreshV2Funding(CONCURRENCY)
 
-	fundsJson := rdb.HGetAll(ctx, "v2funds").Val()
+	fundsJson := lib.Rdb.HGetAll(ctx, "v2funds").Val()
 	for id, j := range fundsJson {
 		funds := ordinals.V2TokenFunds{}
 		err := json.Unmarshal([]byte(j), &funds)
@@ -172,7 +170,7 @@ func processV2() (didWork bool) {
 				<-limiter
 				wg.Done()
 			}()
-			row := db.QueryRow(ctx, `
+			row := lib.Db.QueryRow(ctx, `
 				SELECT COUNT(1)
 				FROM bsv20_txos
 				WHERE id=$1 AND status=0 AND height>0 AND height IS NOT NULL`,
@@ -186,7 +184,7 @@ func processV2() (didWork bool) {
 
 			limit := (funds.Balance() - int64(pending)*ordinals.BSV20V2_OP_COST) / ordinals.BSV20V2_OP_COST
 			if limit > 0 {
-				rows, err := db.Query(ctx, `
+				rows, err := lib.Db.Query(ctx, `
 					SELECT txid, height, idx, txouts
 					FROM bsv20v2_txns
 					WHERE processed=false AND id=$1
@@ -237,7 +235,7 @@ func processV2() (didWork bool) {
 						}
 					}
 					// log.Printf("Updating %s %x\n", funds.Id.String(), txid)
-					_, err = db.Exec(ctx, `
+					_, err = lib.Db.Exec(ctx, `
 					UPDATE bsv20v2_txns
 					SET processed=true
 					WHERE txid=$1 AND id=$2`,
@@ -255,7 +253,7 @@ func processV2() (didWork bool) {
 				rows.Close()
 			}
 
-			rows, err := db.Query(ctx, `
+			rows, err := lib.Db.Query(ctx, `
 				SELECT txid, vout, height, idx, id, amt
 				FROM bsv20_txos
 				WHERE op='transfer' AND id=$1 AND status=0 AND height > 0 AND height IS NOT NULL

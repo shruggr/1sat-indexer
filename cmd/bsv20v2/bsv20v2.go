@@ -23,8 +23,6 @@ import (
 
 // var settled = make(chan uint32, 1000)
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
@@ -49,26 +47,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(ctx, POSTGRES)
+	db, err := pgxpool.New(ctx, POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	err = lib.Initialize(db, rdb, cache)
 }
 
 var pkhashFunds = map[string]*ordinals.V2TokenFunds{}
@@ -82,14 +78,14 @@ var currentHeight uint32
 
 func main() {
 	subRdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 	sub = subRdb.Subscribe(ctx, "v2xfer")
 	ch1 := sub.Channel()
 
-	fundsJson := rdb.HGetAll(ctx, "v2funds").Val()
+	fundsJson := lib.Rdb.HGetAll(ctx, "v2funds").Val()
 	for id, j := range fundsJson {
 		funds := ordinals.V2TokenFunds{}
 		err := json.Unmarshal([]byte(j), &funds)
@@ -218,7 +214,7 @@ func processV2() (didWork bool) {
 				wg.Done()
 			}()
 
-			rows, err := db.Query(ctx, `
+			rows, err := lib.Db.Query(ctx, `
 				SELECT txid, vout, height, idx, id, amt
 				FROM bsv20_txos
 				WHERE op='transfer' AND id=$1 AND status=0

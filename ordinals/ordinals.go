@@ -18,23 +18,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/fxamacker/cbor"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/v2/bscript"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
-var Db *pgxpool.Pool
-var Rdb *redis.Client
-
-func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
-	Db = db
-	Rdb = rdb
-
-	lib.Initialize(db, rdb)
-	return
-}
 
 func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *lib.IndexContext) {
 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
@@ -52,7 +40,7 @@ func IndexInscriptions(ctx *lib.IndexContext) {
 	ctx.SaveSpends()
 	ctx.Save()
 
-	Db.Exec(context.Background(),
+	lib.Db.Exec(context.Background(),
 		`INSERT INTO txn_indexer(txid, indexer) 
 		VALUES ($1, 'ord')
 		ON CONFLICT DO NOTHING`,
@@ -289,7 +277,7 @@ func addBitcom(txo *lib.Txo, bitcom interface{}) {
 }
 
 func RefreshAddress(ctx context.Context, address string) error {
-	row := Db.QueryRow(ctx,
+	row := lib.Db.QueryRow(ctx,
 		"SELECT height, updated FROM addresses WHERE address=$1",
 		address,
 	)
@@ -339,7 +327,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 		if len(batch) == 0 {
 			break
 		}
-		rows, err := Db.Query(ctx, `
+		rows, err := lib.Db.Query(ctx, `
 			SELECT encode(txid, 'hex')
 			FROM txn_indexer 
 			WHERE indexer='ord' AND txid = ANY($1)`,
@@ -381,7 +369,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 	if height == 0 {
 		height = 817000
 	}
-	_, err = Db.Exec(ctx, `
+	_, err = lib.Db.Exec(ctx, `
 		INSERT INTO addresses(address, height, updated)
 		VALUES ($1, $2, CURRENT_TIMESTAMP) 
 		ON CONFLICT (address) DO UPDATE SET 
@@ -397,7 +385,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 	var latest *lib.Outpoint
 
 	// Update spends on all known unspent txos
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT outpoint
 		FROM txos
 		WHERE origin=$1 AND spend='\x'
@@ -447,7 +435,7 @@ func GetLatestOutpoint(ctx context.Context, origin *lib.Outpoint) (*lib.Outpoint
 	}
 
 	// Fast-forward origin
-	row := Db.QueryRow(ctx, `
+	row := lib.Db.QueryRow(ctx, `
 		SELECT outpoint
 		FROM txos
 		WHERE origin = $1

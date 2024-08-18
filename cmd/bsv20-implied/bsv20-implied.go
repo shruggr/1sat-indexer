@@ -12,12 +12,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 
 // var TICK string
 
@@ -34,32 +31,33 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
 	log.Println("JUNGLEBUS:", os.Getenv("JUNGLEBUS"))
 
-	err = ordinals.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = ordlock.Initialize(db, rdb)
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
 }
 
 func main() {
-	rows, err := db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT txid, vout, height, idx
 		FROM implied
 		ORDER BY height, idx, vout`,
@@ -96,7 +94,7 @@ func main() {
 
 		txo := ctx.Txos[vout]
 
-		txoRow := db.QueryRow(context.Background(), `
+		txoRow := lib.Db.QueryRow(context.Background(), `
 			SELECT tick, amt 
 			FROM bsv20_txos
 			WHERE spend=$1
@@ -129,7 +127,7 @@ func main() {
 					}
 				}
 			}
-			txoRow := db.QueryRow(context.Background(), `
+			txoRow := lib.Db.QueryRow(context.Background(), `
 				SELECT tick, amt 
 				FROM bsv20_txos
 				WHERE spend=$1
@@ -147,7 +145,7 @@ func main() {
 		ordinals.IndexBsv20(ctx)
 
 		log.Printf("Saving Implied: %s\n", txo.Outpoint.String())
-		_, err = db.Exec(context.Background(), `
+		_, err = lib.Db.Exec(context.Background(), `
 			UPDATE bsv20_txos
 			SET implied=true
 			WHERE txid=$1 AND vout=$2`,

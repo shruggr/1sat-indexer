@@ -20,8 +20,6 @@ import (
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
@@ -45,28 +43,24 @@ func init() {
 	}
 	var err error
 	// log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = ordlock.Initialize(db, rdb)
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -115,7 +109,7 @@ func handleTx(ctx *lib.IndexContext) error {
 
 	buyer := ctx.Txos[0].PKHash
 	if _, ok := ctx.Txos[0].Data["bsv20"].(*ordinals.Bsv20); ok {
-		rows, err := db.Query(context.Background(), `
+		rows, err := lib.Db.Query(context.Background(), `
 			UPDATE bsv20_txos
 			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
 			WHERE spend=$1
@@ -146,7 +140,7 @@ func handleTx(ctx *lib.IndexContext) error {
 				log.Panicln(err)
 			}
 			log.Println("PUBLISHING BSV20 SALE", string(out))
-			rdb.Publish(context.Background(), "bsv20Sale", out)
+			lib.PublishEvent(context.Background(), "bsv20Sale", string(out))
 		}
 	} else {
 		var txid []byte
@@ -158,7 +152,7 @@ func handleTx(ctx *lib.IndexContext) error {
 			// Seller: &lib.PKHash{},
 		}
 		log.Println("ORDLOCK", hex.EncodeToString(ctx.Txid))
-		rows, err := db.Query(context.Background(), `
+		rows, err := lib.Db.Query(context.Background(), `
 			UPDATE listings
 			SET sale=true, spend_height=$2, spend_idx=$3, buyer=$4
 			WHERE spend=$1
@@ -182,7 +176,7 @@ func handleTx(ctx *lib.IndexContext) error {
 				log.Panicln(err)
 			} else {
 				log.Println("PUBLISHING ORD SALE", string(out))
-				rdb.Publish(context.Background(), "ordSale", out)
+				lib.PublishEvent(context.Background(), "ordSale", string(out))
 			}
 		}
 	}

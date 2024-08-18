@@ -17,8 +17,6 @@ import (
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 
 var ctx = context.Background()
 
@@ -32,18 +30,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb)
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -54,7 +58,7 @@ func main() {
 	// prevOrigin, _ := hex.DecodeString("02062d0fbd6c4eaad76c2b548e5d4fdf6e6081b3b42dea9281364295cdf3e718_36")
 	var height sql.NullInt64
 	for {
-		rows, err := db.Query(ctx, `SELECT origin, outpoint, height
+		rows, err := lib.Db.Query(ctx, `SELECT origin, outpoint, height
 			FROM txos
 			WHERE origin IS NOT NULL AND ((origin = $1 AND height >= $2) OR origin > $1) AND spend='\x' AND height IS NOT NULL AND height > 0
 			ORDER BY origin, height, idx
@@ -100,7 +104,7 @@ func main() {
 					return
 				}
 				log.Printf("Spent: %s\n", outpoint.String())
-				_, err = db.Exec(ctx, `UPDATE txos
+				_, err = lib.Db.Exec(ctx, `UPDATE txos
 					SET spend=$2
 					WHERE outpoint=$1`,
 					outpoint,

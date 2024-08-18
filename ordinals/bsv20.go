@@ -124,7 +124,7 @@ func IndexBsv20(ctx *lib.IndexContext) (tickers []string) {
 	}
 
 	if ctx.Height != nil {
-		_, err := Db.Exec(context.Background(), `
+		_, err := lib.Db.Exec(context.Background(), `
 			UPDATE bsv20_txos t
 			SET spend_height=$2, spend_idx=$3
 			WHERE spend=$1`,
@@ -270,7 +270,7 @@ func ParseBsv20Inscription(ord *lib.File, txo *lib.Txo) (bsv20 *Bsv20, err error
 
 func (b *Bsv20) Save(t *lib.Txo) {
 	if b.Op == "deploy" {
-		_, err := Db.Exec(ctx, `
+		_, err := lib.Db.Exec(ctx, `
 			INSERT INTO bsv20(txid, vout, height, idx, tick, max, lim, dec, status, reason, fund_path, fund_pkhash)
 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT(txid, vout) DO UPDATE SET
@@ -296,7 +296,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 		}
 	}
 	if b.Op == "deploy+mint" {
-		_, err := Db.Exec(ctx, `
+		_, err := lib.Db.Exec(ctx, `
 			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec, fund_path, fund_pkhash)
 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT(id) DO UPDATE SET
@@ -325,7 +325,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 
 		for i := 0; i < 3; i++ {
 			// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
-			_, err := Db.Exec(ctx, `
+			_, err := lib.Db.Exec(ctx, `
 			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, script, status, spend)
 			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, spend
 			FROM txos
@@ -374,7 +374,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 }
 
 func ValidateBsv20Deploy(height uint32) {
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT txid, vout, height, idx, tick, max, lim, supply
 		FROM bsv20
 		WHERE status=0 AND height <= $1 AND height IS NOT NULL
@@ -394,7 +394,7 @@ func ValidateBsv20Deploy(height uint32) {
 		}
 
 		func(bsv20 *Bsv20) {
-			rows, err := Db.Query(ctx, `
+			rows, err := lib.Db.Query(ctx, `
 				SELECT txid, vout
 				FROM bsv20
 				WHERE tick=$1 AND status=1 AND (
@@ -414,7 +414,7 @@ func ValidateBsv20Deploy(height uint32) {
 			defer rows.Close()
 
 			if rows.Next() {
-				_, err = Db.Exec(ctx, `
+				_, err = lib.Db.Exec(ctx, `
 					UPDATE bsv20
 					SET status = -1, reason='duplicate'
 					WHERE txid = $1 AND vout = $2`,
@@ -426,7 +426,7 @@ func ValidateBsv20Deploy(height uint32) {
 				}
 				return
 			}
-			_, err = Db.Exec(ctx, `
+			_, err = lib.Db.Exec(ctx, `
 				UPDATE bsv20
 				SET status = 1
 				WHERE txid = $1 AND vout = $2`,
@@ -441,7 +441,7 @@ func ValidateBsv20Deploy(height uint32) {
 }
 
 func ValidateBsv20Txos(height uint32) {
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT txid, vout, height, idx, tick, id, amt
 		FROM bsv20_txos
 		WHERE status=0 AND height <= $1 AND height IS NOT NULL
@@ -479,7 +479,7 @@ func ValidateBsv20Txos(height uint32) {
 			}
 
 			if reason != "" {
-				_, err = Db.Exec(ctx, `
+				_, err = lib.Db.Exec(ctx, `
 				UPDATE bsv20_txos
 				SET status=-1, reason=$3
 				WHERE txid=$1 AND vout=$2`,
@@ -493,7 +493,7 @@ func ValidateBsv20Txos(height uint32) {
 				continue
 			}
 
-			t, err := Db.Begin(ctx)
+			t, err := lib.Db.Begin(ctx)
 			if err != nil {
 				log.Panic(err)
 			}
@@ -561,7 +561,7 @@ func ValidateBsv20Txos(height uint32) {
 func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 	// log.Printf("Validating %x %s\n", txid, tick)
 
-	inRows, err := Db.Query(ctx, `
+	inRows, err := lib.Db.Query(ctx, `
 		SELECT txid, vout, status, amt
 		FROM bsv20_txos
 		WHERE spend=$1 AND tick=$2 AND op != 'burn'`,
@@ -601,7 +601,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 	sql := `SELECT vout, status, amt
 		FROM bsv20_txos
 		WHERE txid=$1 AND tick=$2 AND op IN ('transfer', 'burn')`
-	outRows, err := Db.Query(ctx,
+	outRows, err := lib.Db.Query(ctx,
 		sql,
 		txid,
 		tick,
@@ -639,7 +639,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 		sql := `UPDATE bsv20_txos
 			SET status=-1, reason=$3
 			WHERE txid=$1 AND vout=ANY($2)`
-		_, err := Db.Exec(ctx, sql,
+		_, err := lib.Db.Exec(ctx, sql,
 			txid,
 			tokenOuts,
 			reason,
@@ -649,7 +649,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 		}
 	} else {
 		log.Printf("Transfer Valid: %x %s\n", txid, tick)
-		rows, err := Db.Query(ctx, `
+		rows, err := lib.Db.Query(ctx, `
 			UPDATE bsv20_txos
 			SET status=1
 			WHERE txid=$1 AND vout=ANY ($2)
@@ -679,7 +679,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20Listing", out)
+				lib.PublishEvent(context.Background(), "bsv20Listing", string(out))
 			}
 		}
 	}
@@ -689,7 +689,7 @@ func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
 func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int) {
 	// log.Printf("Validating V2 Transfer %x %s\n", txid, id.String())
 
-	inRows, err := Db.Query(ctx, `
+	inRows, err := lib.Db.Query(ctx, `
 		SELECT txid, vout, status, amt, height, idx
 		FROM bsv20_txos
 		WHERE spend=$1 AND id=$2 AND op != 'burn'`,
@@ -732,7 +732,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 			score = float64(height.Int32) + float64(idx.Int64)*math.Pow(2, -31)
 		}
 
-		if Rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", txid), redis.Z{
+		if lib.Rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", txid), redis.Z{
 			Member: hex.EncodeToString(txid),
 			Score:  score,
 		}).Err(); err != nil {
@@ -742,7 +742,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 	inRows.Close()
 
 	// fmt.Println("TokensIn:", tokensIn)
-	outRows, err := Db.Query(ctx, `
+	outRows, err := lib.Db.Query(ctx, `
 		SELECT vout, status, amt
 		FROM bsv20_txos
 		WHERE txid=$1 AND id=$2`,
@@ -779,7 +779,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 	}
 
 	// fmt.Println("TokensOut:", len(tokenOuts))
-	t, err := Db.Begin(ctx)
+	t, err := lib.Db.Begin(ctx)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -830,7 +830,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 					log.Panic(err)
 				}
 				// log.Println("Publishing", string(out))
-				Rdb.Publish(context.Background(), "bsv20Listing", out)
+				lib.PublishEvent(context.Background(), "bsv20Listing", string(out))
 			}
 
 		}
@@ -844,7 +844,7 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 }
 
 func LoadTicker(tick string) (ticker *Bsv20) {
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT txid, vout, height, idx, tick, max, lim, supply, fund_balance
 		FROM bsv20
 		WHERE tick=$1 AND status=1`,
@@ -865,7 +865,7 @@ func LoadTicker(tick string) (ticker *Bsv20) {
 }
 
 func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT id, height, idx, sym, icon, dec, amt, fund_balance
 		FROM bsv20_v2
 		WHERE id=$1`,
@@ -899,7 +899,7 @@ func (t *V1TokenFunds) Save() {
 	if t.Total == 0 {
 		return
 	}
-	_, err := Db.Exec(ctx, `
+	_, err := lib.Db.Exec(ctx, `
 		UPDATE bsv20
 		SET fund_total=$2, fund_used=$3
 		WHERE tick=$1`,
@@ -917,8 +917,8 @@ func (t *V1TokenFunds) Save() {
 		panic(err)
 	}
 	log.Println("Updated", string(fundsJson))
-	Rdb.HSet(ctx, "v1funds", t.Tick, fundsJson)
-	Rdb.Publish(ctx, "v1funds", fundsJson)
+	lib.Rdb.HSet(ctx, "v1funds", t.Tick, fundsJson)
+	lib.PublishEvent(ctx, "v1funds", string(fundsJson))
 }
 
 func (t *V1TokenFunds) Balance() int64 {
@@ -928,7 +928,7 @@ func (t *V1TokenFunds) Balance() int64 {
 func (t *V1TokenFunds) UpdateFunding() {
 	// log.Println("Updating funding for", t.Tick)
 	var total sql.NullInt64
-	row := Db.QueryRow(ctx, `
+	row := lib.Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
 		FROM bsv20 b
 		JOIN txos t ON t.pkhash=b.fund_pkhash
@@ -942,7 +942,7 @@ func (t *V1TokenFunds) UpdateFunding() {
 	}
 	t.Total = total.Int64
 
-	row = Db.QueryRow(ctx, `
+	row = lib.Db.QueryRow(ctx, `
 		SELECT COUNT(1) * $2
 		FROM bsv20_txos
 		WHERE tick=$1 AND status IN (-1, 1)`,
@@ -954,7 +954,7 @@ func (t *V1TokenFunds) UpdateFunding() {
 		log.Panicln(err)
 	}
 
-	row = Db.QueryRow(ctx, `
+	row = lib.Db.QueryRow(ctx, `
 		SELECT COALESCE(SUM(txouts), 0) as value
 		FROM bsv20v1_txns
 		WHERE tick=$1 AND processed=false`,
@@ -965,7 +965,7 @@ func (t *V1TokenFunds) UpdateFunding() {
 		log.Panicln(err)
 	}
 
-	row = Db.QueryRow(ctx, `
+	row = lib.Db.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amt), 0) as value
 		FROM bsv20_txos
 		WHERE op='mint' AND tick=$1 AND status=0`,
@@ -992,7 +992,7 @@ func (t *V2TokenFunds) Save() {
 	if t.Total == 0 {
 		return
 	}
-	_, err := Db.Exec(ctx, `
+	_, err := lib.Db.Exec(ctx, `
 		UPDATE bsv20_v2
 		SET fund_total=$2, fund_used=$3
 		WHERE id=$1`,
@@ -1008,8 +1008,8 @@ func (t *V2TokenFunds) Save() {
 	if err != nil {
 		panic(err)
 	}
-	Rdb.HSet(ctx, "v2funds", t.Id.String(), fundsJson)
-	Rdb.Publish(ctx, "v2funds", fundsJson)
+	lib.Rdb.HSet(ctx, "v2funds", t.Id.String(), fundsJson)
+	lib.PublishEvent(ctx, "v2funds", string(fundsJson))
 	log.Println("Updated", string(fundsJson))
 }
 
@@ -1020,7 +1020,7 @@ func (t *V2TokenFunds) Balance() int64 {
 func (t *V2TokenFunds) UpdateFunding() {
 	// log.Println("Updating funding for", t.Id.String())
 	var total sql.NullInt64
-	row := Db.QueryRow(ctx, `
+	row := lib.Db.QueryRow(ctx, `
 		SELECT SUM(satoshis)
 		FROM bsv20_v2 b
 		JOIN txos t ON t.pkhash=b.fund_pkhash
@@ -1034,7 +1034,7 @@ func (t *V2TokenFunds) UpdateFunding() {
 	}
 	t.Total = total.Int64
 
-	rows, err := Db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT status, COUNT(1)
 		FROM bsv20_txos
 		WHERE id=$1
@@ -1071,7 +1071,7 @@ func InitializeV1Funding(concurrency int) map[string]*V1TokenFunds {
 	limiter := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	var m sync.Mutex
-	rows, err := Db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT DISTINCT tick, fund_pkhash
 		FROM bsv20
 		WHERE status=1`,
@@ -1115,7 +1115,7 @@ func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
 	limiter := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	var m sync.Mutex
-	rows, err := Db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT id, fund_pkhash
 		FROM bsv20_v2`,
 	)

@@ -12,8 +12,6 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -21,8 +19,8 @@ import (
 var CONCURRENCY int = 64
 var threadLimiter chan struct{}
 
-var Db *pgxpool.Pool
-var Rdb *redis.Client
+// var Db *pgxpool.Pool
+// var Rdb *redis.Client
 var junglebusClient *junglebus.Client
 
 // var fromBlock uint
@@ -34,12 +32,6 @@ type Msg struct {
 	Status      uint32
 	Idx         uint64
 	Transaction []byte
-}
-
-func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
-	Db = db
-	Rdb = rdb
-	return lib.Initialize(db, rdb)
 }
 
 func Exec(
@@ -75,14 +67,14 @@ func Exec(
 
 	if indexer != "" {
 		var progress uint
-		row := Db.QueryRow(context.Background(), `SELECT height
+		row := lib.Db.QueryRow(context.Background(), `SELECT height
 			FROM progress
 			WHERE indexer=$1`,
 			indexer,
 		)
 		err = row.Scan(&progress)
 		if err != nil {
-			Db.Exec(context.Background(),
+			lib.Db.Exec(context.Background(),
 				`INSERT INTO progress(indexer, height)
 					VALUES($1, 0)`,
 				indexer,
@@ -128,7 +120,7 @@ func Exec(
 				// }
 
 				if indexer != "" {
-					if _, err := Db.Exec(context.Background(),
+					if _, err := lib.Db.Exec(context.Background(),
 						`UPDATE progress
 						SET height=$2
 						WHERE indexer=$1 and height<$2`,
@@ -161,7 +153,7 @@ func Exec(
 			}
 			threadLimiter <- struct{}{}
 			wg.Add(1)
-			Rdb.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
+			lib.Cache.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
 			txCount++
 			height = txn.BlockHeight
 			idx = txn.BlockIndex
@@ -187,7 +179,7 @@ func Exec(
 					txCtx.Save()
 				}
 				if indexer != "" {
-					Db.Exec(context.Background(),
+					lib.Db.Exec(context.Background(),
 						`INSERT INTO txn_indexer(txid, indexer) 
 						VALUES ($1, $2)
 						ON CONFLICT DO NOTHING`,
@@ -204,7 +196,7 @@ func Exec(
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
 			threadLimiter <- struct{}{}
-			Rdb.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
+			lib.Cache.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
 			txCount++
 			go func(txn *models.TransactionResponse) {
 				defer func() {

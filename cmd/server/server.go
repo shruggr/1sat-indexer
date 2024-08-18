@@ -23,8 +23,7 @@ import (
 var POSTGRES string
 var CONCURRENCY int
 var PORT int
-var db *pgxpool.Pool
-var rdb *redis.Client
+
 var ctx = context.Background()
 var jb *junglebus.Client
 
@@ -45,18 +44,24 @@ func init() {
 	}
 	config.MaxConnIdleTime = 15 * time.Second
 
-	db, err = pgxpool.NewWithConfig(context.Background(), config)
-
-	// db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
 
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
@@ -69,8 +74,6 @@ func init() {
 	if err != nil {
 		log.Panicln(err.Error())
 	}
-
-	ordinals.Initialize(db, rdb)
 }
 
 func main() {

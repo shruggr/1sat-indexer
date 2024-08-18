@@ -32,7 +32,7 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 		// log.Panicf("max depth exceeded %d %s\n", depth, outpoint)
 	}
 	origin := &lib.Outpoint{}
-	row := Db.QueryRow(context.Background(),
+	row := lib.Db.QueryRow(context.Background(),
 		`SELECT origin FROM txos WHERE txid=$1 AND outacc=$2`,
 		outpoint.Txid(),
 		outAcc,
@@ -52,7 +52,7 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 				origin = calcOrigin(spend.Outpoint, spend.OutAcc, depth+1)
 				if origin != nil {
 					spend.SetOrigin(origin)
-					Rdb.Publish(context.Background(), origin.String(), outpoint.String())
+					lib.PublishEvent(context.Background(), origin.String(), outpoint.String())
 				}
 				return origin
 			}
@@ -64,7 +64,7 @@ func calcOrigin(outpoint *lib.Outpoint, outAcc uint64, depth uint32) *lib.Outpoi
 }
 
 func (o *Origin) Save() {
-	_, err := Db.Exec(context.Background(), `
+	_, err := lib.Db.Exec(context.Background(), `
 		INSERT INTO origins(origin, height, idx, map)
 		VALUES($1, $2, $3, $4)
 		ON CONFLICT(origin) DO UPDATE SET
@@ -81,7 +81,7 @@ func (o *Origin) Save() {
 }
 
 func SaveMap(origin *lib.Outpoint) {
-	rows, err := Db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT data->>'map'
 		FROM txos
 		WHERE origin=$1 AND data->>'map' IS NOT NULL
@@ -105,7 +105,7 @@ func SaveMap(origin *lib.Outpoint) {
 		}
 	}
 
-	_, err = Db.Exec(context.Background(), `
+	_, err = lib.Db.Exec(context.Background(), `
 		INSERT INTO origins(origin, map)
 		VALUES($1, $2)
 		ON CONFLICT(origin) DO UPDATE SET
@@ -120,7 +120,7 @@ func SaveMap(origin *lib.Outpoint) {
 
 func SetOriginNum(height uint32) (err error) {
 
-	row := Db.QueryRow(context.Background(),
+	row := lib.Db.QueryRow(context.Background(),
 		"SELECT MAX(num) FROM origins",
 	)
 	var dbNum sql.NullInt64
@@ -134,7 +134,7 @@ func SetOriginNum(height uint32) (err error) {
 		num = uint64(dbNum.Int64 + 1)
 	}
 
-	rows, err := Db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT origin
 		FROM origins
 		WHERE num = -1 AND height <= $1 AND height IS NOT NULL
@@ -155,7 +155,7 @@ func SetOriginNum(height uint32) (err error) {
 			return
 		}
 		// fmt.Printf("Origin Num %d %s\n", num, origin)
-		_, err = Db.Exec(context.Background(), `
+		_, err = lib.Db.Exec(context.Background(), `
 			UPDATE origins
 			SET num=$2
 			WHERE origin=$1`,
@@ -167,7 +167,7 @@ func SetOriginNum(height uint32) (err error) {
 		}
 		num++
 	}
-	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
+	lib.PublishEvent(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
 	// log.Println("Height", height, "Max Origin Num", num)
 	return
 }

@@ -26,7 +26,7 @@ type Inscription struct {
 }
 
 func (i *Inscription) Save() {
-	_, err := Db.Exec(context.Background(), `
+	_, err := lib.Db.Exec(context.Background(), `
 		INSERT INTO inscriptions(outpoint, height, idx)
 		VALUES($1, $2, $3)
 		ON CONFLICT(outpoint) DO UPDATE SET
@@ -42,7 +42,7 @@ func (i *Inscription) Save() {
 }
 
 func SetInscriptionNum(height uint32) (err error) {
-	row := Db.QueryRow(context.Background(),
+	row := lib.Db.QueryRow(context.Background(),
 		"SELECT MAX(num) FROM inscriptions",
 	)
 	var dbNum sql.NullInt64
@@ -56,7 +56,7 @@ func SetInscriptionNum(height uint32) (err error) {
 		num = uint64(dbNum.Int64 + 1)
 	}
 
-	rows, err := Db.Query(context.Background(), `
+	rows, err := lib.Db.Query(context.Background(), `
 		SELECT outpoint
 		FROM inscriptions
 		WHERE num = -1 AND height <= $1 AND height IS NOT NULL
@@ -77,7 +77,7 @@ func SetInscriptionNum(height uint32) (err error) {
 			return
 		}
 		// fmt.Printf("Inscription Num %d %d %s\n", num, height, outpoint)
-		_, err = Db.Exec(context.Background(), `
+		_, err = lib.Db.Exec(context.Background(), `
 			UPDATE inscriptions
 			SET num=$2
 			WHERE outpoint=$1`,
@@ -89,7 +89,7 @@ func SetInscriptionNum(height uint32) (err error) {
 		}
 		num++
 	}
-	Rdb.Publish(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
+	lib.PublishEvent(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
 	// log.Println("Height", height, "Max Origin Num", num)
 	return
 }

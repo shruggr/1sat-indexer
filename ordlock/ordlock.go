@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -27,14 +25,6 @@ type ListingEvent struct {
 }
 
 var OrdLockSuffix, _ = hex.DecodeString("615179547a75537a537a537a0079537a75527a527a7575615579008763567901c161517957795779210ac407f0e4bd44bfc207355a778b046225a7068fc59ee7eda43ad905aadbffc800206c266b30e6a1319c66dc401e5bd6b432ba49688eecd118297041da8074ce081059795679615679aa0079610079517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01007e81517a75615779567956795679567961537956795479577995939521414136d08c5ed2bf3ba048afe6dcaebafeffffffffffffffffffffffffffffff00517951796151795179970079009f63007952799367007968517a75517a75517a7561527a75517a517951795296a0630079527994527a75517a6853798277527982775379012080517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f517f7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e7c7e01205279947f7754537993527993013051797e527e54797e58797e527e53797e52797e57797e0079517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a75517a756100795779ac517a75517a75517a75517a75517a75517a75517a75517a75517a7561517a75517a756169587951797e58797eaa577961007982775179517958947f7551790128947f77517a75517a75618777777777777777777767557951876351795779a9876957795779ac777777777777777767006868")
-var Db *pgxpool.Pool
-var Rdb *redis.Client
-
-func Initialize(db *pgxpool.Pool, rdb *redis.Client) (err error) {
-	Db = db
-	Rdb = rdb
-	return
-}
 
 func ParseOrdinalLocks(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
@@ -73,7 +63,7 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 
 func (l *Listing) Save(t *lib.Txo) {
 	if _, ok := t.Data["bsv20"]; !ok {
-		_, err := Db.Exec(context.Background(), `
+		_, err := lib.Db.Exec(context.Background(), `
 			INSERT INTO listings(txid, vout, height, idx, price, payout, origin, oheight, oidx, spend, pkhash, data)
 			SELECT $1, $2, t.height, t.idx, $3, $4, t.origin, o.height, o.idx, t.spend, t.pkhash, o.data
 			FROM txos t
@@ -101,7 +91,7 @@ func (l *Listing) Save(t *lib.Txo) {
 		}
 		if out, err := json.Marshal(event); err == nil {
 			log.Println("PUBLISHING ORD LISTING", string(out))
-			Rdb.Publish(context.Background(), "ordListing", out)
+			lib.PublishEvent(context.Background(), "ordListing", string(out))
 		}
 	}
 }

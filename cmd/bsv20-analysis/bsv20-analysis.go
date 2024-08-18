@@ -16,14 +16,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var INDEXER string = "bsv20"
 var TOPIC string
 var fromBlock uint
@@ -46,18 +43,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -77,7 +80,7 @@ func main() {
 		log.Panicln(err.Error())
 	}
 
-	row := db.QueryRow(context.Background(), `
+	row := lib.Db.QueryRow(context.Background(), `
 		SELECT height
 		FROM progress
 		WHERE indexer='bsv20'`,
@@ -177,7 +180,7 @@ func main() {
 						for ticker, txouts := range ticks {
 							id, err := lib.NewOutpointFromString(ticker)
 							if err != nil {
-								_, err = db.Exec(context.Background(), `
+								_, err = lib.Db.Exec(context.Background(), `
 									INSERT INTO bsv20v1_txns(txid, tick, height, idx, txouts)
 									VALUES($1, $2, $3, $4, $5)
 									ON CONFLICT(txid, tick) DO NOTHING`,
@@ -188,7 +191,7 @@ func main() {
 									txouts,
 								)
 							} else {
-								_, err = db.Exec(context.Background(), `
+								_, err = lib.Db.Exec(context.Background(), `
 									INSERT INTO bsv20v2_txns(txid, id, height, idx, txouts)
 									VALUES($1, $2, $3, $4, $5)
 									ON CONFLICT(txid, id) DO NOTHING`,
@@ -211,7 +214,7 @@ func main() {
 					if status.StatusCode == 200 {
 						wg.Wait()
 						lastProcessed = status.Block
-						db.Exec(context.Background(),
+						lib.Db.Exec(context.Background(),
 							`UPDATE progress
 								SET height=$1
 								WHERE indexer='bsv20' and height<$1`,

@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/lock"
 	"github.com/shruggr/1sat-indexer/ordinals"
@@ -20,8 +19,6 @@ import (
 )
 
 var THREADS uint64 = 16
-
-var db *pgxpool.Pool
 
 type Msg struct {
 	Id          string
@@ -32,13 +29,11 @@ type Msg struct {
 	Transaction []byte
 }
 
-var rdb *redis.Client
-
 func init() {
 	godotenv.Load("../../.env")
 
 	var err error
-	db, err = pgxpool.New(
+	db, err := pgxpool.New(
 		context.Background(),
 		os.Getenv("POSTGRES_FULL"),
 	)
@@ -46,13 +41,20 @@ func init() {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb)
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
+
 	if err != nil {
 		log.Panic(err)
 	}
@@ -62,21 +64,6 @@ func init() {
 		if err != nil {
 			log.Panic(err)
 		}
-	}
-
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = ordlock.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
 	}
 }
 
@@ -93,7 +80,7 @@ func main() {
 	fmt.Println("Starting Mempool")
 	// go processQueue()
 	sub := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -165,9 +152,9 @@ func processTxn(rawtx []byte) (*lib.IndexContext, error) {
 
 	for _, tick := range tickers {
 		if len(tick) <= 16 {
-			rdb.Publish(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
+			lib.PublishEvent(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
 		} else {
-			rdb.Publish(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
+			lib.PublishEvent(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
 		}
 	}
 

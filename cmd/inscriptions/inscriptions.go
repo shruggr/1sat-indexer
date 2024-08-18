@@ -21,8 +21,7 @@ import (
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
+
 var INDEXER string = "inscriptions"
 var TOPIC string
 var fromBlock uint
@@ -46,13 +45,13 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -123,7 +122,7 @@ func main() {
 						continue
 					}
 					var num int
-					row := db.QueryRow(context.Background(), `
+					row := lib.Db.QueryRow(context.Background(), `
 						INSERT INTO inscriptions(height, idx, vout)
 						VALUES($1, $2, $3)
 						ON CONFLICT DO NOTHING

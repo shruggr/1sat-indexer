@@ -19,8 +19,6 @@ import (
 
 // var settled = make(chan uint32, 1000)
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var VERBOSE int
 var CONCURRENCY int
 var ctx = context.Background()
@@ -39,20 +37,28 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(ctx, POSTGRES)
+	db, err := pgxpool.New(ctx, POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
 }
 
 func main() {
-	rows, err := db.Query(ctx, `
+	rows, err := lib.Db.Query(ctx, `
 		SELECT id, txid, spend, height, idx
 		FROM bsv20_txos
 		WHERE id != '\x'
@@ -85,7 +91,7 @@ func main() {
 		}
 
 		log.Printf("Saving Dep: %d %x %x\n", counter, spend, txid)
-		if rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", spend), redis.Z{
+		if lib.Rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", spend), redis.Z{
 			Member: hex.EncodeToString(txid),
 			Score:  score,
 		}).Err(); err != nil {

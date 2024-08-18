@@ -17,8 +17,6 @@ import (
 	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
-var rdb *redis.Client
-
 var dryRun = false
 
 var hexId = "49320521e46ec0e768ffcc87c99d9ecad00fc8c197b27692bceb6865bdc14261"
@@ -35,10 +33,10 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	defer db.Close()
+	defer lib.Db.Close()
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})

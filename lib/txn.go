@@ -53,7 +53,7 @@ func (ctx *IndexContext) Save() {
 			txo.Save()
 			if Rdb != nil && txo.PKHash != nil {
 				if address, err := txo.PKHash.Address(); err == nil {
-					Rdb.Publish(context.Background(), address, txo.Outpoint.String())
+					PublishEvent(context.Background(), address, txo.Outpoint.String())
 				}
 			}
 		}(txo)

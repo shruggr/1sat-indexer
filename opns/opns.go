@@ -12,12 +12,6 @@ import (
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
-// type Claim struct {
-// 	SubDomain string `json:"sub"`
-// 	Type      string `json:"type"`
-// 	Value     string `json:"value"`
-// }
-
 type OpNS struct {
 	Genesis *lib.Outpoint `json:"genesis,omitempty"`
 	Domain  string        `json:"domain"`

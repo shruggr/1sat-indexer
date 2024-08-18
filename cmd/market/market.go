@@ -18,8 +18,7 @@ import (
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
+
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
@@ -43,31 +42,24 @@ func init() {
 	}
 	var err error
 	// log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = ordlock.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	err = lib.Initialize(db, rdb, cache)
 }
 
 func main() {

@@ -16,15 +16,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
 // var settled = make(chan uint32, 1000)
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
@@ -46,23 +43,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(ctx, POSTGRES)
+	db, err := pgxpool.New(ctx, POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(indexer.Db, indexer.Rdb)
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -77,14 +75,14 @@ var m sync.Mutex
 
 func main() {
 	subRdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 	sub = subRdb.Subscribe(context.Background(), "v1xfer", "v1funds")
 	ch1 := sub.Channel()
 
-	fundsJson := rdb.HGetAll(ctx, "v1funds").Val()
+	fundsJson := lib.Rdb.HGetAll(ctx, "v1funds").Val()
 	for tick, j := range fundsJson {
 		funds := ordinals.V1TokenFunds{}
 		err := json.Unmarshal([]byte(j), &funds)
@@ -167,7 +165,7 @@ func main() {
 func processV1() (didWork bool) {
 	var wg sync.WaitGroup
 
-	row := db.QueryRow(ctx, `
+	row := lib.Db.QueryRow(ctx, `
 		SELECT height
 		FROM progress
 		WHERE indexer=$1`,
@@ -197,7 +195,7 @@ func processV1() (didWork bool) {
 				<-limiter
 				wg.Done()
 			}()
-			row := db.QueryRow(ctx, `
+			row := lib.Db.QueryRow(ctx, `
 				SELECT COUNT(1)
 				FROM bsv20_txos
 				WHERE tick=$1 AND status=0 AND height > 0 AND height IS NOT NULL`,
@@ -214,7 +212,7 @@ func processV1() (didWork bool) {
 
 			// log.Println("Balance V1", funds.Tick, limit, funds.Balance())
 			if limit > 0 {
-				rows, err := db.Query(ctx, `
+				rows, err := lib.Db.Query(ctx, `
 					SELECT txid, height, idx, txouts
 					FROM bsv20v1_txns
 					WHERE processed=false AND tick=$1
@@ -260,7 +258,7 @@ func processV1() (didWork bool) {
 							}
 						}
 					}
-					_, err = db.Exec(ctx, `
+					_, err = lib.Db.Exec(ctx, `
 						UPDATE bsv20v1_txns
 						SET processed=true
 						WHERE txid=$1 AND tick=$2`,
@@ -279,7 +277,7 @@ func processV1() (didWork bool) {
 			}
 
 			ticker := ordinals.LoadTicker(funds.Tick)
-			rows, err := db.Query(ctx, `
+			rows, err := lib.Db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
 				FROM bsv20_txos
 				WHERE tick=$1 AND op='mint' AND status=0 AND height > 0 AND height IS NOT NULL
@@ -311,7 +309,7 @@ func processV1() (didWork bool) {
 				}
 
 				if reason != "" {
-					_, err = db.Exec(ctx, `
+					_, err = lib.Db.Exec(ctx, `
 						UPDATE bsv20_txos
 						SET status=-1, reason=$3
 						WHERE txid=$1 AND vout=$2`,
@@ -325,7 +323,7 @@ func processV1() (didWork bool) {
 					continue
 				}
 
-				t, err := db.Begin(ctx)
+				t, err := lib.Db.Begin(ctx)
 				if err != nil {
 					log.Panic(err)
 				}
@@ -384,7 +382,7 @@ func processV1() (didWork bool) {
 			}
 			rows.Close()
 
-			rows, err = db.Query(ctx, `
+			rows, err = lib.Db.Query(ctx, `
 				SELECT txid, vout, height, idx, tick, amt, op
 				FROM bsv20_txos
 				WHERE tick=$1 AND op='transfer' AND status=0

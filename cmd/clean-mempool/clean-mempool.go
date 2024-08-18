@@ -13,13 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/indexer"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 
 var ctx = context.Background()
 
@@ -33,18 +30,24 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
-	err = indexer.Initialize(db, rdb)
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -61,7 +64,7 @@ func main() {
 }
 
 func cleanupTxns() (rowCount int, cleaned int, cleared int) {
-	rows, err := db.Query(ctx, `SELECT txid FROM txns
+	rows, err := lib.Db.Query(ctx, `SELECT txid FROM txns
 		WHERE (height IS NULL OR height=0) AND created < NOW() - interval '3h'
 		LIMIT 1000`)
 	if err != nil {
@@ -95,7 +98,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 			}
 			if txn != nil && txn.BlockHeight > 0 {
 				// log.Printf("Updating Txn: %x\n", txid)
-				_, err = db.Exec(ctx, `UPDATE txos
+				_, err = lib.Db.Exec(ctx, `UPDATE txos
 					SET height=$2, idx=$3
 					WHERE txid=$1`,
 					txid,
@@ -105,7 +108,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				if err != nil {
 					log.Panicln(err)
 				}
-				_, err = db.Exec(ctx, `UPDATE txos
+				_, err = lib.Db.Exec(ctx, `UPDATE txos
 					SET spend_height=$2, spend_idx=$3
 					WHERE spend=$1`,
 					txid,
@@ -115,7 +118,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				if err != nil {
 					log.Panicln(err)
 				}
-				_, err := db.Exec(ctx, `UPDATE txns
+				_, err := lib.Db.Exec(ctx, `UPDATE txns
 					SET block_id=decode($2, 'hex'), height=$3, idx=$4
 					WHERE txid=$1`,
 					txid,
@@ -128,7 +131,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				}
 				cleaned++
 			} else {
-				result, err := db.Exec(ctx,
+				result, err := lib.Db.Exec(ctx,
 					"UPDATE txos SET spend='\\x' WHERE spend=$1",
 					txid,
 				)
@@ -137,7 +140,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				}
 				log.Println("Spends Rolled back:", result.RowsAffected())
 
-				result, err = db.Exec(ctx,
+				result, err = lib.Db.Exec(ctx,
 					"DELETE FROM txos WHERE txid=$1",
 					txid,
 				)
@@ -146,7 +149,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				}
 				log.Println("Txos Rolled back:", result.RowsAffected())
 
-				result, err = db.Exec(context.Background(),
+				result, err = lib.Db.Exec(context.Background(),
 					"DELETE FROM txns WHERE txid=$1",
 					txid,
 				)

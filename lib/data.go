@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -21,13 +22,16 @@ import (
 var TRIGGER = uint32(783968)
 
 var Db *pgxpool.Pool
+
 var Rdb *redis.Client
+var Cache *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-func Initialize(postgres *pgxpool.Pool, rdb *redis.Client) (err error) {
+func Initialize(postgres *pgxpool.Pool, rdb *redis.Client, cache *redis.Client) (err error) {
 	Db = postgres
 	Rdb = rdb
+	Cache = cache
 
 	log.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
 	if os.Getenv("JUNGLEBUS") != "" {
@@ -63,7 +67,7 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 }
 
 func LoadRawtx(txid string) (rawtx []byte, err error) {
-	rawtx, _ = Rdb.HGet(context.Background(), "tx", txid).Bytes()
+	rawtx, _ = Cache.HGet(context.Background(), "tx", txid).Bytes()
 
 	if len(rawtx) > 100 {
 		return rawtx, nil
@@ -92,7 +96,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Rdb.HSet(context.Background(), "tx", txid, rawtx).Err()
+	Cache.HSet(context.Background(), "tx", txid, rawtx).Err()
 	return
 }
 
@@ -149,4 +153,13 @@ func GetChaintip() (*models.BlockHeader, error) {
 	}
 	fmt.Println("Chaintip", chaintip.Height)
 	return chaintip, nil
+}
+
+func PublishEvent(ctx context.Context, event string, data string) {
+	eventId := time.Now().Unix()
+	Rdb.ZAdd(ctx, "evt:"+event, redis.Z{
+		Score:  float64(eventId),
+		Member: data,
+	})
+	Rdb.Publish(ctx, fmt.Sprintf("evt:%s:%d", event, eventId), data)
 }

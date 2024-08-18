@@ -15,8 +15,6 @@ import (
 )
 
 var POSTGRES string
-var db *pgxpool.Pool
-var rdb *redis.Client
 
 func init() {
 	// wd, _ := os.Getwd()
@@ -28,27 +26,31 @@ func init() {
 	}
 	var err error
 	log.Println("POSTGRES:", POSTGRES)
-	db, err = pgxpool.New(context.Background(), POSTGRES)
+	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS"),
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	err = lib.Initialize(db, rdb, cache)
+
 	log.Println("JUNGLEBUS:", os.Getenv("JUNGLEBUS"))
 
-	err = ordinals.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
 }
 
 func main() {
-	rows, err := db.Query(context.Background(),
+	rows, err := lib.Db.Query(context.Background(),
 		`SELECT txid FROM bsv20_legacy`,
 	)
 	if err != nil {
