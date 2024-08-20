@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
@@ -112,6 +113,15 @@ func main() {
 			return err
 		}
 		return c.Send(*outpoint)
+	})
+
+	app.Get("/tx/:txid/ingest", func(c *fiber.Ctx) error {
+		txid := c.Params("txid")
+		if _, err := ingest.IngestTxid(txid); err != nil {
+			log.Println("IngestTxid", err)
+			return err
+		}
+		return c.SendStatus(http.StatusNoContent)
 	})
 
 	// app.Get("/inscription/:outpoint/index", func(c *fiber.Ctx) error {

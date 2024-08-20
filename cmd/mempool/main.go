@@ -12,10 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/lock"
-	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var THREADS uint64 = 16
@@ -99,7 +97,7 @@ func main() {
 					for i := 0; i < 4; i++ {
 						rawtx, err := lib.LoadRawtx(txid)
 						if err == nil {
-							txCtx, err := processTxn(rawtx)
+							txCtx, err := ingest.IngestRawtx(rawtx)
 							log.Printf("[INJEST]: %x %+v\n", txCtx.Txid, err)
 							break
 						}
@@ -126,7 +124,7 @@ func main() {
 							fmt.Println("Recovered in broadcast")
 						}
 					}()
-					txCtx, err := processTxn(rawtx)
+					txCtx, err := ingest.IngestRawtx(rawtx)
 					log.Printf("[INJEST]: %x %+v\n", txCtx.Txid, err)
 				}(rawtx)
 			}
@@ -134,32 +132,4 @@ func main() {
 	}()
 
 	<-make(chan struct{})
-}
-
-func processTxn(rawtx []byte) (*lib.IndexContext, error) {
-	ctx, err := lib.ParseTxn(rawtx, "", 0, 0)
-	if err != nil {
-		return nil, err
-	}
-	ctx.SaveSpends()
-	ordinals.CalculateOrigins(ctx)
-	ordinals.ParseInscriptions(ctx)
-	lock.ParseLocks(ctx)
-	ordlock.ParseOrdinalLocks(ctx)
-	ctx.Save()
-
-	// We may want to check fees here to ensure the transaction will be mined
-	// ordlock.ProcessSpends(ctx)
-
-	tickers := ordinals.IndexBsv20(ctx)
-
-	for _, tick := range tickers {
-		if len(tick) <= 16 {
-			lib.PublishEvent(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
-		} else {
-			lib.PublishEvent(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
-		}
-	}
-
-	return ctx, nil
 }
