@@ -23,3 +23,6 @@ go build
 cd ../sigil
 go build
 cd ../../
+cd ../block-sync
+go build
+cd ../../
