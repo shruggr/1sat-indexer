@@ -16,7 +16,7 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const PAGE_SIZE = 10000
+const PAGE_SIZE = uint64(10000)
 
 var JUNGLEBUS string
 var ctx = context.Background()
@@ -50,24 +50,19 @@ func init() {
 	JUNGLEBUS = os.Getenv("JUNGLEBUS")
 }
 func main() {
-	var chaintip *models.BlockHeader
-	url := fmt.Sprintf("%s/v1/block_header/tip", JUNGLEBUS)
-	if resp, err := http.Get(url); err != nil || resp.StatusCode != 200 {
-		log.Panicln("Failed to get chaintip from junglebus", resp.StatusCode, err)
-	} else {
-		err := json.NewDecoder(resp.Body).Decode(&chaintip)
-		resp.Body.Close()
-		if err != nil {
-			log.Panic(err)
-		}
-	}
-	fromBlock := uint32(1)
+	fromBlock := uint64(1)
 	if lastBlocks, err := lib.Rdb.ZPopMax(ctx, "block-sync", 1).Result(); err != nil {
 		log.Panic(err)
 	} else if len(lastBlocks) == 1 && lastBlocks[0].Score > 6 {
-		fromBlock = uint32(lastBlocks[0].Score) - 5
+		fromBlock = uint64(lastBlocks[0].Score) - 5
 	}
+
 	for {
+		blocksSynced, err := lib.Rdb.LLen(ctx, "blocks").Uint64()
+		if err != nil {
+			log.Panic(err)
+		}
+
 		var blocks []*models.BlockHeader
 		url := fmt.Sprintf("%s/v1/block_header/list/%d?limit=%d", JUNGLEBUS, fromBlock, PAGE_SIZE)
 		log.Printf("Requesting %d blocks from height %d\n", PAGE_SIZE, fromBlock)
@@ -82,22 +77,27 @@ func main() {
 		}
 		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			for _, block := range blocks {
-				pipe.ZAdd(ctx, "block-sync", redis.Z{
-					Score:  float64(block.Height),
-					Member: block.Hash,
-				})
 				if blockJson, err := json.Marshal(block); err != nil {
 					log.Panic(err)
 				} else {
-					pipe.HSet(ctx, "blocks", fmt.Sprintf("%07d", block.Height), blockJson)
+					if blocksSynced <= uint64(block.Height) {
+						pipe.RPush(ctx, "blocks", "-")
+						blocksSynced++
+					}
+					pipe.LSet(ctx, "blocks", int64(block.Height), blockJson)
+					pipe.Set(ctx, "chaintip", blockJson, 0)
+					pipe.ZAdd(ctx, "block-sync", redis.Z{
+						Score:  float64(block.Height),
+						Member: block.Hash,
+					})
 				}
-				fromBlock = block.Height - 5
+				fromBlock = uint64(block.Height - 5)
 			}
 			return nil
 		}); err != nil {
 			log.Panic(err)
 		}
-		if len(blocks) < PAGE_SIZE {
+		if len(blocks) < int(PAGE_SIZE) {
 			time.Sleep(15 * time.Second)
 		}
 	}
