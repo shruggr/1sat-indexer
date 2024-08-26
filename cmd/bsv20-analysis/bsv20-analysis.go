@@ -127,11 +127,7 @@ func main() {
 		if sub != nil {
 			continue
 		}
-		chaintip, err = lib.GetChaintip()
-		if err != nil {
-			log.Println("JB Tip", err)
-			continue
-		}
+		chaintip = lib.GetChaintip(context.Background())
 
 		if chaintip.Height < lastProcessed+5 {
 			log.Println("Waiting for chaintip", lastProcessed+5, chaintip.Height)
