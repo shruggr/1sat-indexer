@@ -81,10 +81,11 @@ func main() {
 					log.Panic(err)
 				} else {
 					if blocksSynced <= uint64(block.Height) {
-						pipe.RPush(ctx, "blocks", "-")
+						pipe.RPush(ctx, "blocks", blockJson)
 						blocksSynced++
+					} else {
+						pipe.LSet(ctx, "blocks", int64(block.Height), blockJson)
 					}
-					pipe.LSet(ctx, "blocks", int64(block.Height), blockJson)
 					pipe.Set(ctx, "chaintip", blockJson, 0)
 					pipe.ZAdd(ctx, "block-sync", redis.Z{
 						Score:  float64(block.Height),
