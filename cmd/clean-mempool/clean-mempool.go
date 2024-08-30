@@ -65,7 +65,7 @@ func main() {
 
 func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 	rows, err := lib.Db.Query(ctx, `SELECT txid FROM txns
-		WHERE (height IS NULL OR height=0) AND created < NOW() - interval '3h'
+		WHERE (height IS NULL OR height=0 OR idx=0) AND created < NOW() - interval '3h'
 		LIMIT 1000`)
 	if err != nil {
 		log.Panicln(err)
