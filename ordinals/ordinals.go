@@ -163,7 +163,10 @@ ordLoop:
 				ins.File.Type = string(op2.Data)
 			}
 		case 2:
-			pointer := binary.LittleEndian.Uint64(op2.Data)
+			var pointer uint64
+			if len(op2.Data) > 0 {
+				pointer = binary.LittleEndian.Uint64(op2.Data)
+			}
 			ins.Pointer = &pointer
 		case 3:
 			if parent, err := lib.NewOutpointFromTxOutpoint(op2.Data); err == nil {
