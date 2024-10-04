@@ -11,15 +11,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/lock"
-	"github.com/shruggr/1sat-indexer/opns"
 	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
 var dryRun = false
 
-var hexId = "49320521e46ec0e768ffcc87c99d9ecad00fc8c197b27692bceb6865bdc14261"
+var hexId = "905db47ef89809199d8a673907661316c728f57d12bbc3171d8a340be6946a1c"
 
 func main() {
 	// var err error
@@ -41,12 +38,13 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb)
-	if err != nil {
-		log.Panic(err)
-	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
-	err = ordinals.Initialize(db, rdb)
+	err = lib.Initialize(db, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -63,10 +61,10 @@ func main() {
 	}
 	ordinals.ParseInscriptions(txnCtx)
 
-	opns.ParseOpNS(txnCtx)
-	ordinals.ParseBsv20(txnCtx)
-	ordlock.ParseOrdinalLocks(txnCtx)
-	lock.ParseLocks(txnCtx)
+	// opns.ParseOpNS(txnCtx)
+	// ordinals.ParseBsv20(txnCtx)
+	// ordlock.ParseOrdinalLocks(txnCtx)
+	// lock.ParseLocks(txnCtx)
 	// sigil.ParseSigil(txnCtx)
 
 	out, err := json.MarshalIndent(txnCtx, "", "  ")
