@@ -83,7 +83,7 @@ func ParseBsv20(ctx *lib.IndexContext) (tickers []string) {
 			list := ordlock.ParseScript(txo)
 
 			if list != nil {
-				txo.PKHash = list.PKHash
+				txo.Owner = list.PKHash
 				bsv20.PKHash = list.PKHash
 				bsv20.Price = list.Price
 				bsv20.PayOut = list.PayOut
@@ -348,7 +348,7 @@ func (b *Bsv20) Save(t *lib.Txo) {
 				b.Ticker,
 				b.Op,
 				b.Amt,
-				t.PKHash,
+				t.Owner,
 				b.Price,
 				b.PayOut,
 				b.Listing,

@@ -2,46 +2,70 @@ package ingest
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/shruggr/1sat-indexer/lock"
-	"github.com/shruggr/1sat-indexer/ordinals"
-	"github.com/shruggr/1sat-indexer/ordlock"
 )
 
-func IngestTxid(txid string) (*lib.IndexContext, error) {
-	if rawtx, err := lib.LoadRawtx(txid); err != nil {
+func IngestTxid(ctx context.Context, txid string, indexers []lib.Indexer) (*lib.IndexContext, error) {
+	if tx, err := lib.LoadTx(ctx, txid); err != nil {
 		return nil, err
 	} else {
-		return IngestRawtx(rawtx)
+		return IngestTx(ctx, tx, indexers)
 	}
 }
 
-func IngestRawtx(rawtx []byte) (*lib.IndexContext, error) {
-	ctx, err := lib.ParseTxn(rawtx, "", 0, 0)
-	if err != nil {
-		return nil, err
+func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []lib.Indexer) (idxCtx *lib.IndexContext, err error) {
+	if idxCtx, err = lib.ParseTxn(ctx, tx, indexers); err != nil {
+		return
 	}
-	ctx.SaveSpends()
-	ordinals.CalculateOrigins(ctx)
-	ordinals.ParseInscriptions(ctx)
-	lock.ParseLocks(ctx)
-	ordlock.ParseOrdinalLocks(ctx)
-	ctx.Save()
+
+	idxCtx.SaveSpends(ctx)
+	// ordinals.CalculateOrigins(idxCtx)
+	// ordinals.ParseInscriptions(idxCtx)
+	// lock.ParseLocks(idxCtx)
+	// ordlock.ParseOrdinalLocks(idxCtx)
+	idxCtx.Save(ctx)
 
 	// We may want to check fees here to ensure the transaction will be mined
 	// ordlock.ProcessSpends(ctx)
 
-	tickers := ordinals.IndexBsv20(ctx)
+	// tickers := ordinals.IndexBsv20(idxCtx)
 
-	for _, tick := range tickers {
-		if len(tick) <= 16 {
-			lib.PublishEvent(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
-		} else {
-			lib.PublishEvent(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", ctx.Txid, tick))
-		}
-	}
-
-	return ctx, nil
+	// for _, tick := range tickers {
+	// 	if len(tick) <= 16 {
+	// 		lib.PublishEvent(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", idxCtx.Txid, tick))
+	// 	} else {
+	// 		lib.PublishEvent(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", idxCtx.Txid, tick))
+	// 	}
+	// }
+	return
 }
+
+// func IngestRawtx(ctx context.Context, rawtx []byte) (*lib.IndexContext, error) {
+// 	if idxCtx, err := lib.ParseTxn(rawtx); err != nil {
+// 		return nil, err
+// 	} else if err = idxCtx.SaveSpends(ctx); err != nil {
+// 		return nil, err
+// 	} else {
+// 		ordinals.CalculateOrigins(idxCtx)
+// 		ordinals.ParseInscriptions(idxCtx)
+// 		lock.ParseLocks(idxCtx)
+// 		ordlock.ParseOrdinalLocks(idxCtx)
+// 		idxCtx.Save()
+
+// 		// We may want to check fees here to ensure the transaction will be mined
+// 		// ordlock.ProcessSpends(ctx)
+
+// 		tickers := ordinals.IndexBsv20(idxCtx)
+
+// 		for _, tick := range tickers {
+// 			if len(tick) <= 16 {
+// 				lib.PublishEvent(context.Background(), "v1xfer", fmt.Sprintf("%x:%s", idxCtx.Txid, tick))
+// 			} else {
+// 				lib.PublishEvent(context.Background(), "v2xfer", fmt.Sprintf("%x:%s", idxCtx.Txid, tick))
+// 			}
+// 		}
+// 		return idxCtx, nil
+// 	}
+// }

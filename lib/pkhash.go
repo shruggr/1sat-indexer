@@ -8,20 +8,14 @@ import (
 
 type PKHash []byte
 
-func (p *PKHash) Address() (string, error) {
-	add, err := bscript.NewAddressFromPublicKeyHash(*p, true)
-	if err != nil {
-		return "", err
-	}
-	return add.AddressString, nil
+func (p *PKHash) Address() string {
+	add, _ := bscript.NewAddressFromPublicKeyHash(*p, true)
+	return add.AddressString
 }
 
 // MarshalJSON serializes ByteArray to hex
 func (p PKHash) MarshalJSON() ([]byte, error) {
-	add, err := p.Address()
-	if err != nil {
-		return nil, err
-	}
+	add := p.Address()
 	return json.Marshal(add)
 }
 

@@ -13,8 +13,8 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
 )
@@ -22,7 +22,6 @@ import (
 var TRIGGER = uint32(783968)
 
 var Db *pgxpool.Pool
-
 var Rdb *redis.Client
 var Cache *redis.Client
 var JB *junglebus.Client
@@ -54,20 +53,24 @@ func Initialize(postgres *pgxpool.Pool, rdb *redis.Client, cache *redis.Client) 
 	return
 }
 
-func LoadTx(txid string) (tx *bt.Tx, err error) {
-	rawtx, err := LoadRawtx(txid)
-	if err != nil {
+func LoadTx(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
+	var rawtx []byte
+	if rawtx, err = LoadRawtx(ctx, txid); err != nil {
 		return
-	}
-	if len(rawtx) == 0 {
+	} else if len(rawtx) == 0 {
 		err = fmt.Errorf("missing-txn %s", txid)
 		return
+	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+		return
 	}
-	return bt.NewTxFromBytes(rawtx)
+	if proof, err := LoadProof(ctx, txid); err == nil {
+		tx.MerklePath = proof
+	}
+	return
 }
 
-func LoadRawtx(txid string) (rawtx []byte, err error) {
-	rawtx, _ = Cache.HGet(context.Background(), "tx", txid).Bytes()
+func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
+	rawtx, _ = Cache.HGet(ctx, "tx", txid).Bytes()
 
 	if len(rawtx) > 100 {
 		return rawtx, nil
@@ -96,11 +99,29 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Cache.HSet(context.Background(), "tx", txid, rawtx).Err()
+	Cache.HSet(ctx, "tx", txid, rawtx).Err()
 	return
 }
 
-func LoadTxOut(outpoint *Outpoint) (txout *bt.Output, err error) {
+func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath, err error) {
+	prf, _ := Cache.HGet(ctx, "proof", txid).Bytes()
+	if len(prf) == 0 && JB != nil {
+		url := fmt.Sprintf("%s/v1/transaction/get/%s/proof", os.Getenv("JUNGLEBUS"), txid)
+
+		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
+			prf, _ = io.ReadAll(resp.Body)
+		}
+	}
+	if len(prf) > 0 {
+		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
+			return
+		}
+		Cache.HSet(ctx, "proof", txid, prf).Err()
+	}
+	return
+}
+
+func LoadTxOut(outpoint *Outpoint) (txout *transaction.TransactionOutput, err error) {
 	url := fmt.Sprintf("https://junglebus.gorillapool.io/v1/txo/get/%s", outpoint.String())
 	// log.Println("Requesting txo", url)
 	resp, err := http.Get(url)
@@ -113,7 +134,7 @@ func LoadTxOut(outpoint *Outpoint) (txout *bt.Output, err error) {
 		err = fmt.Errorf("missing-txn %s", outpoint.String())
 		return
 	}
-	txout = &bt.Output{}
+	txout = &transaction.TransactionOutput{}
 	_, err = txout.ReadFrom(resp.Body)
 	return
 }

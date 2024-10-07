@@ -34,7 +34,7 @@ func IndexLocks(ctx *lib.IndexContext) {
 
 func ParseLocks(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		if txo.PKHash != nil && len(*txo.PKHash) > 0 {
+		if txo.Owner != nil && len(*txo.Owner) > 0 {
 			continue
 		}
 		lock := ParseScript(txo)
@@ -57,7 +57,7 @@ func ParseScript(txo *lib.Txo) (lock *Lock) {
 		}
 		if len(op.Data) == 20 {
 			pkhash := lib.PKHash(op.Data)
-			txo.PKHash = &pkhash
+			txo.Owner = &pkhash
 			if address, err := pkhash.Address(); err == nil {
 				lock.Address = address
 			}

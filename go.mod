@@ -1,9 +1,12 @@
 module github.com/shruggr/1sat-indexer
 
-go 1.20
+go 1.22
+
+toolchain go1.23.1
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.13
+	github.com/bitcoin-sv/go-sdk v1.1.9
 	github.com/bitcoinschema/go-bitcoin v0.3.20
 	github.com/fxamacker/cbor v1.5.1
 	github.com/gofiber/fiber/v2 v2.52.1
@@ -59,10 +62,10 @@ require (
 	github.com/valyala/fasthttp v1.52.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.20.0 // indirect
+	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

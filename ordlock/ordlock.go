@@ -43,7 +43,7 @@ func ParseOrdinalLocks(ctx *lib.IndexContext) {
 		list := ParseScript(txo)
 		if list != nil {
 			txo.AddData("list", list)
-			txo.PKHash = list.PKHash
+			txo.Owner = list.PKHash
 		}
 	}
 }
@@ -53,7 +53,7 @@ func ProcessSpends(ctx *lib.IndexContext) {
 		return
 	}
 
-	buyer := ctx.Txos[0].PKHash
+	buyer := ctx.Txos[0].Owner
 	if _, ok := ctx.Txos[0].Data["bsv20"]; ok {
 		rows, err := lib.Db.Query(context.Background(), `
 			UPDATE bsv20_txos
@@ -140,7 +140,7 @@ func ParseScript(txo *lib.Txo) (listing *Listing) {
 				payOutput := &bt.Output{}
 				_, err = payOutput.ReadFrom(bytes.NewReader(ordLockParts[1]))
 				if err == nil {
-					txo.PKHash = &pkhash
+					txo.Owner = &pkhash
 					listing = &Listing{
 						PKHash: &pkhash,
 						Price:  payOutput.Satoshis,

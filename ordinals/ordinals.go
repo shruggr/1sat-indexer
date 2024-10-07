@@ -59,7 +59,7 @@ func CalculateOrigins(ctx *lib.IndexContext) {
 
 func ParseInscriptions(ctx *lib.IndexContext) {
 	for _, txo := range ctx.Txos {
-		if txo.PKHash != nil && len(*txo.PKHash) != 0 && txo.Satoshis != 1 {
+		if txo.Owner != nil && len(*txo.Owner) != 0 && txo.Satoshis != 1 {
 			continue
 		}
 		ParseScript(txo)
@@ -73,7 +73,7 @@ func ParseScript(txo *lib.Txo) {
 	start := 0
 	if len(script) >= 25 && bscript.NewFromBytes(script[:25]).IsP2PKH() {
 		pkhash := lib.PKHash(script[3:23])
-		txo.PKHash = &pkhash
+		txo.Owner = &pkhash
 		start = 25
 	}
 
@@ -246,16 +246,16 @@ ordLoop:
 		txo.Data["bsv20"] = bsv20
 	}
 
-	if txo.PKHash == nil || len(*txo.PKHash) == 0 {
+	if txo.Owner == nil || len(*txo.Owner) == 0 {
 		if len(script) >= pos+25 && bscript.NewFromBytes(script[pos:pos+25]).IsP2PKH() {
 			pkhash := lib.PKHash(script[pos+3 : pos+23])
-			txo.PKHash = &pkhash
+			txo.Owner = &pkhash
 		} else if len(script) >= pos+26 &&
 			script[pos] == bscript.OpCODESEPARATOR &&
 			bscript.NewFromBytes(script[pos+1:pos+26]).IsP2PKH() {
 
 			pkhash := lib.PKHash(script[pos+4 : pos+24])
-			txo.PKHash = &pkhash
+			txo.Owner = &pkhash
 		}
 	}
 }
