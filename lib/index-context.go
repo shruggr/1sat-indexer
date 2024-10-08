@@ -18,10 +18,11 @@ type Event struct {
 }
 
 type IndexData struct {
-	Data     any      `json:"data"`
-	Events   []*Event `json:"events"`
-	FullText string   `json:"text"`
-	Validate bool     `json:"validate"`
+	Data     any         `json:"data"`
+	Events   []*Event    `json:"events"`
+	FullText string      `json:"text"`
+	Deps     []*Outpoint `json:"deps"`
+	Validate bool        `json:"validate"`
 }
 
 type IndexContext struct {
