@@ -106,7 +106,7 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath, err error) {
 	prf, _ := Cache.HGet(ctx, "proof", txid).Bytes()
 	if len(prf) == 0 && JB != nil {
-		url := fmt.Sprintf("%s/v1/transaction/get/%s/proof", os.Getenv("JUNGLEBUS"), txid)
+		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", os.Getenv("JUNGLEBUS"), txid)
 
 		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
 			prf, _ = io.ReadAll(resp.Body)

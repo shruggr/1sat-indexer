@@ -9,14 +9,13 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/bitcoin-sv/go-sdk/util"
 )
 
 type Outpoint []byte
 
-func NewOutpoint(txid *chainhash.Hash, vout uint32) *Outpoint {
-	o := Outpoint(binary.LittleEndian.AppendUint32(txid.CloneBytes(), vout))
+func NewOutpoint(txid []byte, vout uint32) *Outpoint {
+	o := Outpoint(binary.LittleEndian.AppendUint32(util.ReverseBytes(txid), vout))
 	return &o
 }
 
@@ -41,9 +40,12 @@ func (o *Outpoint) String() string {
 	return fmt.Sprintf("%x_%d", util.ReverseBytes((*o)[:32]), binary.LittleEndian.Uint32((*o)[32:]))
 }
 
-func (o *Outpoint) Txid() *chainhash.Hash {
-	txid, _ := chainhash.NewHash((*o)[:32])
-	return txid
+func (o *Outpoint) Txid() []byte {
+	return util.ReverseBytes((*o)[:32])
+}
+
+func (o *Outpoint) TxidHex() string {
+	return hex.EncodeToString(o.Txid())
 }
 
 func (o *Outpoint) Vout() uint32 {

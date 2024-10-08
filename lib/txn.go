@@ -1,11 +1,13 @@
 package lib
 
 import (
+	"bytes"
 	"context"
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bitcoin-sv/go-sdk/util"
 )
 
 const THREADS = 64
@@ -16,15 +18,17 @@ type Block struct {
 }
 
 func ParseTxn(ctx context.Context, tx *transaction.Transaction, indexers []Indexer) (idxCtx *IndexContext, err error) {
+	txidLE := tx.TxID().CloneBytes()
+	txid := ByteString(util.ReverseBytes(txidLE))
 	idxCtx = &IndexContext{
 		Tx:   tx,
-		Txid: tx.TxID(),
+		Txid: &txid,
 	}
 
 	if tx.MerklePath != nil {
 		idxCtx.Height = tx.MerklePath.BlockHeight
 		for _, path := range tx.MerklePath.Path[0] {
-			if idxCtx.Txid.Equal(*path.Hash) {
+			if bytes.Equal(txidLE, path.Hash.CloneBytes()) {
 				idxCtx.Idx = path.Offset
 				break
 			}
@@ -44,19 +48,18 @@ func ParseTxn(ctx context.Context, tx *transaction.Transaction, indexers []Index
 func ParseTxos(idxCtx *IndexContext, indexers []Indexer) {
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
-		outpoint := NewOutpoint(idxCtx.Txid, uint32(vout))
+		outpoint := NewOutpoint(*idxCtx.Txid, uint32(vout))
 		txo := &Txo{
 			Height:   idxCtx.Height,
 			Idx:      idxCtx.Idx,
 			Satoshis: txout.Satoshis,
 			OutAcc:   accSats,
 			Outpoint: outpoint,
+			Owners:   make(map[string]struct{}),
 		}
-		if len(*txout.LockingScript) >= 25 {
-			if scr := script.NewFromBytes((*txout.LockingScript)[:25]); scr.IsP2PKH() {
-				pkhash := PKHash((*txout.LockingScript)[3:23])
-				txo.Owners[pkhash.Address()] = struct{}{}
-			}
+		if len(*txout.LockingScript) >= 25 && script.NewFromBytes((*txout.LockingScript)[:25]).IsP2PKH() {
+			pkhash := PKHash((*txout.LockingScript)[3:23])
+			txo.Owners[pkhash.Address()] = struct{}{}
 		}
 		idxCtx.Txos = append(idxCtx.Txos, txo)
 		accSats += txout.Satoshis
@@ -70,11 +73,11 @@ func ParseTxos(idxCtx *IndexContext, indexers []Indexer) {
 
 func (idxCtx *IndexContext) ParseSpends(ctx context.Context) {
 	for _, txin := range idxCtx.Tx.Inputs {
-		outpoint := NewOutpoint(txin.SourceTXID, txin.SourceTxOutIndex)
+		outpoint := NewOutpoint(util.ReverseBytes((*txin.SourceTXID)[:]), txin.SourceTxOutIndex)
 		spend := &Txo{
 			Outpoint:    outpoint,
-			Spend:       idxCtx.Txid,
-			SpendHeight: &idxCtx.Height,
+			Spend:       *idxCtx.Txid,
+			SpendHeight: idxCtx.Height,
 			SpendIdx:    idxCtx.Idx,
 		}
 

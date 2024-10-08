@@ -1,4 +1,4 @@
-package lib
+package bopen
 
 import (
 	"database/sql/driver"

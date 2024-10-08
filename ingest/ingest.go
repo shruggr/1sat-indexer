@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"log"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -20,7 +21,8 @@ func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []lib.I
 		return
 	}
 
-	idxCtx.SaveSpends(ctx)
+	log.Printf("Ingesting %s", idxCtx.Txid)
+
 	// ordinals.CalculateOrigins(idxCtx)
 	// ordinals.ParseInscriptions(idxCtx)
 	// lock.ParseLocks(idxCtx)

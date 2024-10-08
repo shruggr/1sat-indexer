@@ -2,13 +2,12 @@ package lib
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strconv"
 	"sync"
-	"time"
 
-	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/redis/go-redis/v9"
 )
@@ -19,14 +18,14 @@ type Event struct {
 }
 
 type IndexData struct {
-	Data     any     `json:"data"`
-	Events   []Event `json:"events"`
-	FullText string  `json:"text"`
+	Data     any      `json:"data"`
+	Events   []*Event `json:"events"`
+	FullText string   `json:"text"`
 }
 
 type IndexContext struct {
 	Tx     *transaction.Transaction `json:"-"`
-	Txid   *chainhash.Hash          `json:"txid"`
+	Txid   *ByteString              `json:"txid"`
 	Height uint32                   `json:"height"`
 	Idx    uint64                   `json:"idx"`
 	Txos   []*Txo                   `json:"txos"`
@@ -39,50 +38,29 @@ func (idxCtx *IndexContext) Score() float64 {
 }
 
 func (idxCtx *IndexContext) Save(ctx context.Context) {
-	if _, err := Db.Exec(context.Background(), `
-		INSERT INTO txns(txid, block_id, height, idx)
-		VALUES($1, decode($2, 'hex'), $3, $4)
-		ON CONFLICT(txid) DO UPDATE SET
-			block_id=EXCLUDED.block_id,
-			height=EXCLUDED.height,
-			idx=EXCLUDED.idx`,
+	txid := hex.EncodeToString(*idxCtx.Txid)
+	if err := Rdb.ZAdd(ctx, "status", redis.Z{
+		Score:  float64(idxCtx.Height / 10000000),
+		Member: txid,
+	}).Err(); err != nil {
+		log.Panicf("%x %v\n", idxCtx.Txid, err)
+	} else if _, err := Db.Exec(context.Background(), `
+		INSERT INTO txns(txid, height, idx)
+		VALUES($1, $2, $3)
+		ON CONFLICT(txid) DO NOTHING`,
 		idxCtx.Txid,
 		idxCtx.Height,
 		idxCtx.Idx,
 	); err != nil {
 		log.Panicf("%x %v\n", idxCtx.Txid, err)
-	} else if err := Rdb.ZAdd(ctx, "processed", redis.Z{
-		Score:  float64(time.Now().Unix()),
-		Member: idxCtx.Txid,
-	}).Err(); err != nil {
-		log.Panicf("%x %v\n", idxCtx.Txid, err)
+		// } else if err := Rdb.ZAdd(ctx, "processed", redis.Z{
+		// 	Score:  float64(time.Now().Unix()),
+		// 	Member: idxCtx.Txid,
+		// }).Err(); err != nil {
+		// 	log.Panicf("%x %v\n", idxCtx.Txid, err)
 	}
-
-	// limiter := make(chan struct{}, 32)
-	// var wg sync.WaitGroup
-	// for _, txo := range idxCtx.Txos {
-	// 	limiter <- struct{}{}
-	// 	wg.Add(1)
-	// 	go func(txo *Txo) {
-	// 		defer func() {
-	// 			<-limiter
-	// 			wg.Done()
-	// 		}()
-	// 		txo.Save()
-	// 		if Rdb != nil && txo.Owner != nil {
-	// 			if address, err := txo.Owner.Address(); err == nil {
-	// 				PublishEvent(context.Background(), address, txo.Outpoint.String())
-	// 			}
-	// 		}
-	// 	}(txo)
-	// }
-	// wg.Wait()
-}
-
-func (idxCtx *IndexContext) SaveSpends(ctx context.Context) {
-	limiter := make(chan struct{}, 32)
+	limiter := make(chan struct{}, 4)
 	var wg sync.WaitGroup
-
 	for _, spend := range idxCtx.Spends {
 		limiter <- struct{}{}
 		wg.Add(1)
@@ -91,10 +69,41 @@ func (idxCtx *IndexContext) SaveSpends(ctx context.Context) {
 				<-limiter
 				wg.Done()
 			}()
-			spend.SaveSpend(ctx)
+			if err := spend.SaveSpend(ctx); err != nil {
+				log.Panic(err)
+			}
 		}(spend)
 	}
+	for _, txo := range idxCtx.Txos {
+		limiter <- struct{}{}
+		wg.Add(1)
+		go func(txo *Txo) {
+			defer func() {
+				<-limiter
+				wg.Done()
+			}()
+			if err := txo.Save(); err != nil {
+				log.Panic(err)
+			}
+			// if Rdb != nil && txo.Owner != nil {
+			// 	if address, err := txo.Owner.Address(); err == nil {
+			// 		PublishEvent(context.Background(), address, txo.Outpoint.String())
+			// 	}
+			// }
+		}(txo)
+	}
 	wg.Wait()
+	status := 1
+	if idxCtx.Height > 0 && idxCtx.Height < 50000000 {
+		status = 2
+	}
+	if err := Rdb.ZAdd(ctx, "status", redis.Z{
+		Score:  float64(status) + float64(idxCtx.Height/10000000),
+		Member: txid,
+	}).Err(); err != nil {
+		log.Panicf("%x %v\n", idxCtx.Txid, err)
+	}
+
 }
 
 // func (idxCtx *IndexContext) SaveSpends(ctx context.Context) error {

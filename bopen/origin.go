@@ -1,4 +1,4 @@
-package ordinals
+package bopen
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type Origin struct {
 	Num    uint64        `json:"num"`
 	Height *uint32       `json:"height"`
 	Idx    uint64        `json:"idx"`
-	Map    lib.Map       `json:"map,omitempty"`
+	Map    Map           `json:"map,omitempty"`
 }
 
 func LoadOrigin(outpoint *lib.Outpoint, outAcc uint64) *lib.Outpoint {
