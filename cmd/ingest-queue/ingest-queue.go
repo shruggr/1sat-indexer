@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
 )
@@ -50,7 +51,15 @@ func init() {
 func main() {
 	limiter := make(chan struct{}, 4)
 	var wg sync.WaitGroup
-	indexers := make([]lib.Indexer, 0)
+	indexers := []lib.Indexer{
+		&bopen.BOpenIndexer{},
+		&bopen.InscriptionIndexer{},
+		&bopen.MapIndexer{},
+		&bopen.BIndexer{},
+		&bopen.SigmaIndexer{},
+		&bopen.Bsv21Indexer{},
+		&bopen.Bsv20Indexer{},
+	}
 	for {
 		if txids, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
 			Key:   "ingest",

@@ -45,7 +45,7 @@ func (i *SigmaIndexer) Tag() string {
 	return "sigma"
 }
 
-func (i *SigmaIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData, err error) {
+func (i *SigmaIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN]; ok {
 		if bopenData, ok := bopen.Data.(map[string]any); ok {

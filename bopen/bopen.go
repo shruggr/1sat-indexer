@@ -20,7 +20,7 @@ func (i *BOpenIndexer) Tag() string {
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
 
-func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData, err error) {
+func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
 

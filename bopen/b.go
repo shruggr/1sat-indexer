@@ -15,7 +15,7 @@ func (i *BIndexer) Tag() string {
 	return "b"
 }
 
-func (i *BIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData, err error) {
+func (i *BIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN]; ok {
 		if bopenData, ok := bopen.Data.(map[string]any); ok {

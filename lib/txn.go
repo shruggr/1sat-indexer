@@ -64,7 +64,7 @@ func ParseTxos(idxCtx *IndexContext, indexers []Indexer) {
 		idxCtx.Txos = append(idxCtx.Txos, txo)
 		accSats += txout.Satoshis
 		for _, indexer := range indexers {
-			if data, err := indexer.Parse(idxCtx, uint32(vout)); err != nil && data != nil {
+			if data := indexer.Parse(idxCtx, uint32(vout)); data != nil {
 				txo.Data[indexer.Tag()] = data
 			}
 		}
