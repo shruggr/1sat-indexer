@@ -43,7 +43,7 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *li
 			if opReturn == 0 {
 				opReturn = startI
 			}
-			bitcom, err := ParseBitcom(idxCtx.Tx, vout, &i)
+			bitcom, err := lib.ParseBitcom(idxCtx.Tx, vout, &i)
 			if err != nil {
 				continue
 			}
@@ -51,7 +51,7 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *li
 
 		case script.OpDATA1:
 			if op.Data[0] == '|' && opReturn > 0 {
-				bitcom, err := ParseBitcom(idxCtx.Tx, vout, &i)
+				bitcom, err := lib.ParseBitcom(idxCtx.Tx, vout, &i)
 				if err != nil {
 					continue
 				}
@@ -86,18 +86,14 @@ func addInstance(txo *lib.Txo, instance interface{}) {
 			sigmas = prev
 		}
 		sigmas = append(sigmas, bo)
-		bopen["sigma"] = sigmas
 	case Map:
 		var m Map
 		if prev, ok := bopen["map"].(Map); ok {
 			m = prev
-			for k, v := range bo {
-				m[k] = v
-			}
-		} else {
-			m = bo
 		}
-		bopen["map"] = m
+		for k, v := range bo {
+			m[k] = v
+		}
 	case *File:
 		bopen["b"] = bo
 

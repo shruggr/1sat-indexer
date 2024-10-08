@@ -56,6 +56,7 @@ func ParseTxos(idxCtx *IndexContext, indexers []Indexer) {
 			OutAcc:   accSats,
 			Outpoint: outpoint,
 			Owners:   make(map[string]struct{}),
+			Data:     make(map[string]*IndexData),
 		}
 		if len(*txout.LockingScript) >= 25 && script.NewFromBytes((*txout.LockingScript)[:25]).IsP2PKH() {
 			pkhash := PKHash((*txout.LockingScript)[3:23])

@@ -21,6 +21,7 @@ type IndexData struct {
 	Data     any      `json:"data"`
 	Events   []*Event `json:"events"`
 	FullText string   `json:"text"`
+	Validate bool     `json:"validate"`
 }
 
 type IndexContext struct {
@@ -82,7 +83,7 @@ func (idxCtx *IndexContext) Save(ctx context.Context) {
 				<-limiter
 				wg.Done()
 			}()
-			if err := txo.Save(); err != nil {
+			if err := txo.Save(ctx); err != nil {
 				log.Panic(err)
 			}
 			// if Rdb != nil && txo.Owner != nil {

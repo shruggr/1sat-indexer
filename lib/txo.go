@@ -19,13 +19,22 @@ type Txo struct {
 	Idx         uint64                `json:"idx"`
 	Satoshis    uint64                `json:"satoshis"`
 	OutAcc      uint64                `json:"outacc"`
-	Owners      map[string]struct{}   `json:"-"`
+	Owners      []string              `json:"owners,omitempty"`
 	Spend       ByteString            `json:"spend"`
 	SpendHeight uint32                `json:"spend_height"`
 	SpendIdx    uint64                `json:"spend_idx"`
 	Origin      *Outpoint             `json:"origin,omitempty"`
 	Data        map[string]*IndexData `json:"data,omitempty"`
 	// Script      []byte                   `json:"-"`
+}
+
+func (t *Txo) AddOwner(owner string) {
+	for _, o := range t.Owners {
+		if o == owner {
+			return
+		}
+	}
+	t.Owners = append(t.Owners, owner)
 }
 
 func (t *Txo) EnsureTxn(ctx context.Context) error {
@@ -66,7 +75,7 @@ func (t *Txo) EnsureTxn(ctx context.Context) error {
 				idx,
 			); err != nil {
 				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) {
+				if errors.As(err, &pgErr) && i < 2 {
 					if pgErr.Code == "23505" {
 						time.Sleep(100 * time.Millisecond)
 						log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
@@ -116,11 +125,11 @@ func (t *Txo) EnsureTxn(ctx context.Context) error {
 // 	return data, nil
 // }
 
-func (t *Txo) Save() error {
+func (t *Txo) Save(ctx context.Context) error {
 	var err error
 	log.Printf("SaveTxo %s %s\n", t.Outpoint, t.Spend)
 	for i := 0; i < 3; i++ {
-		if _, err = Db.Exec(context.Background(), `
+		if _, err = Db.Exec(ctx, `
 			INSERT INTO txos(outpoint, txid, vout, satoshis, outacc, height, idx)
 			SELECT $1, txid, $3, $4, $5, height, idx
 			FROM txns
@@ -137,7 +146,7 @@ func (t *Txo) Save() error {
 			t.OutAcc,
 		); err != nil {
 			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
+			if errors.As(err, &pgErr) && i < 2 {
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
 					log.Printf("Conflict. Retrying Save Txo %s\n", t.Outpoint)
@@ -149,28 +158,60 @@ func (t *Txo) Save() error {
 		}
 		break
 	}
-	if err != nil {
-		log.Panicln("insTxo Err:", err)
-		return err
-	}
 	var owners []string
 	for owner := range t.Owners {
 		owners = append(owners, owner)
 	}
-	if _, err = Db.Exec(context.Background(), `
-		INSERT INTO owners(owner, txid, vout, height, idx, spend, spend_height, spend_idx)
-		SELECT o.owner, t.txid, t.vout, t.height, t.idx, t.spend, t.spend_height, t.spend_idx
-		FROM txos t, unnest($1::text[]) o(owner)
-		WHERE t.outpoint=$2
-		ON CONFLICT(owner, txid, vout) DO NOTHING`,
-		owners,
-		t.Outpoint,
-	); err != nil {
-		log.Panicln("insOwner Err:", err)
-		return err
+	for i := 0; i < 3; i++ {
+		if _, err = Db.Exec(ctx, `
+			INSERT INTO owners(owner, txid, vout, height, idx, spend, spend_height, spend_idx)
+			SELECT o.owner, t.txid, t.vout, t.height, t.idx, t.spend, t.spend_height, t.spend_idx
+			FROM txos t, unnest($1::text[]) o(owner)
+			WHERE t.outpoint=$2
+			ON CONFLICT(owner, txid, vout) DO NOTHING`,
+			owners,
+			t.Outpoint,
+		); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && i < 2 {
+				if pgErr.Code == "23505" {
+					time.Sleep(100 * time.Millisecond)
+					log.Printf("Conflict. Retrying Save Txo %s\n", t.Outpoint)
+					continue
+				}
+			}
+			log.Panicln("insOwner Err:", err)
+			return err
+		}
+		break
 	}
 
-	return err
+	// if _, err = Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+	// 	outpoint := t.Outpoint.String()
+	// 	for tag, idxData := range t.Data {
+	// 		pipe.ZAdd(ctx, fmt.Sprintf("tag:%s", tag), redis.Z{
+	// 			Score:  float64(t.Height) + (float64(t.Idx) / 1000000000),
+	// 			Member: outpoint,
+	// 		})
+	// 		if idxData.Validate {
+	// 			pipe.ZAdd(ctx, fmt.Sprintf("val:%s", tag), redis.Z{
+	// 				Score:  float64(t.Height) + (float64(t.Idx) / 1000000000),
+	// 				Member: outpoint,
+	// 			})
+	// 		}
+	// 		for _, event := range idxData.Events {
+	// 			pipe.ZAdd(ctx, fmt.Sprintf("evt:%s:%s:%s", tag, event.Id, event.Value), redis.Z{
+	// 				Score:  float64(t.Height) + (float64(t.Idx) / 1000000000),
+	// 				Member: outpoint,
+	// 			})
+	// 		}
+	// 	}
+	// 	return nil
+	// }); err != nil {
+	// 	log.Panicln("insOwner Err:", err)
+	// 	return err
+	// }
+	return nil
 }
 
 func (t *Txo) SaveSpend(ctx context.Context) (err error) {
@@ -195,7 +236,7 @@ func (t *Txo) SaveSpend(ctx context.Context) (err error) {
 			t.Spend,
 		); err != nil {
 			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
+			if errors.As(err, &pgErr) && i < 2 {
 				if pgErr.Code == "23505" {
 					time.Sleep(100 * time.Millisecond)
 					log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
@@ -206,9 +247,6 @@ func (t *Txo) SaveSpend(ctx context.Context) (err error) {
 			return
 		}
 		break
-	}
-	if err != nil {
-		log.Panicln("insTxo Err:", err)
 	}
 	return err
 }

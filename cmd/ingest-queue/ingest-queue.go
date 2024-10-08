@@ -53,12 +53,12 @@ func main() {
 	var wg sync.WaitGroup
 	indexers := []lib.Indexer{
 		&bopen.BOpenIndexer{},
-		&bopen.InscriptionIndexer{},
-		&bopen.MapIndexer{},
-		&bopen.BIndexer{},
-		&bopen.SigmaIndexer{},
-		&bopen.Bsv21Indexer{},
-		&bopen.Bsv20Indexer{},
+		// &bopen.InscriptionIndexer{},
+		// &bopen.MapIndexer{},
+		// &bopen.BIndexer{},
+		// &bopen.SigmaIndexer{},
+		// &bopen.Bsv21Indexer{},
+		// &bopen.Bsv20Indexer{},
 	}
 	for {
 		if txids, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{

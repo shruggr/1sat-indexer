@@ -1,5 +1,9 @@
 package bopen
 
+import (
+	"github.com/shruggr/1sat-indexer/lib"
+)
+
 // var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
 
 // func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *lib.IndexContext) {
@@ -26,14 +30,14 @@ package bopen
 // 	)
 // }
 
-// func CalculateOrigins(ctx *lib.IndexContext) {
-// 	for _, txo := range ctx.Txos {
-// 		if txo.Satoshis != 1 {
-// 			continue
-// 		}
-// 		txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
-// 	}
-// }
+func CalculateOrigins(ctx *lib.IndexContext) {
+	for _, txo := range ctx.Txos {
+		if txo.Satoshis != 1 {
+			continue
+		}
+		txo.Origin = LoadOrigin(txo.Outpoint, txo.OutAcc)
+	}
+}
 
 // func ParseInscriptions(ctx *lib.IndexContext) {
 // 	for _, txo := range ctx.Txos {
