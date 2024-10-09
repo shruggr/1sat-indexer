@@ -27,7 +27,7 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *li
 	start := 0
 	if len(*scr) >= 25 && script.NewFromBytes((*scr)[:25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[3:23])
-		txo.Owners[pkhash.Address()] = struct{}{}
+		txo.AddOwner(pkhash.Address())
 		start = 25
 	}
 

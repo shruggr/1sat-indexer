@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -164,17 +163,17 @@ func GetChaintip(ctx context.Context) *models.BlockHeader {
 	return chaintip
 }
 
-func PublishEvent(ctx context.Context, event string, data string) {
-	eventId := time.Now().Unix()
-	cutoff := time.Now().Add(-24 * time.Hour)
-	eventKey := "evt:" + event
-	Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.ZRemRangeByScore(ctx, eventKey, "-inf", fmt.Sprintf("%d", cutoff.Unix()))
-		pipe.ZAdd(ctx, eventKey, redis.Z{
-			Score:  float64(eventId),
-			Member: data,
-		})
-		pipe.Publish(ctx, eventKey, fmt.Sprintf("%d:%s", eventId, data))
-		return nil
-	})
-}
+// func PublishEvent(ctx context.Context, event string, data string) {
+// 	eventId := time.Now().Unix()
+// 	cutoff := time.Now().Add(-24 * time.Hour)
+// 	eventKey := "evt:" + event
+// 	Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+// 		pipe.ZRemRangeByScore(ctx, eventKey, "-inf", fmt.Sprintf("%d", cutoff.Unix()))
+// 		pipe.ZAdd(ctx, eventKey, redis.Z{
+// 			Score:  float64(eventId),
+// 			Member: data,
+// 		})
+// 		pipe.Publish(ctx, eventKey, fmt.Sprintf("%d:%s", eventId, data))
+// 		return nil
+// 	})
+// }

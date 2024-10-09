@@ -17,9 +17,8 @@ func IngestTxid(ctx context.Context, txid string, indexers []lib.Indexer) (*lib.
 }
 
 func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []lib.Indexer) (idxCtx *lib.IndexContext, err error) {
-	if idxCtx, err = lib.ParseTxn(ctx, tx, indexers); err != nil {
-		return
-	}
+	idxCtx = lib.NewIndexContext(tx, indexers)
+	idxCtx.ParseTxn(ctx)
 
 	log.Printf("Ingesting %s", idxCtx.Txid)
 

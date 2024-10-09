@@ -182,12 +182,12 @@ ordLoop:
 
 	if len(*scr) >= pos+25 && bscript.NewFromBytes((*scr)[pos:pos+25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+3 : pos+23])
-		txo.Owners[pkhash.Address()] = struct{}{}
+		txo.AddOwner(pkhash.Address())
 	} else if len(*scr) >= pos+26 &&
 		(*scr)[pos] == bscript.OpCODESEPARATOR &&
 		script.NewFromBytes((*scr)[pos+1:pos+26]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+4 : pos+24])
-		txo.Owners[pkhash.Address()] = struct{}{}
+		txo.AddOwner(pkhash.Address())
 	}
 
 	return idxData

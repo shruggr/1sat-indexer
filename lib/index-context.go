@@ -2,12 +2,12 @@ package lib
 
 import (
 	"context"
-	"encoding/hex"
-	"fmt"
+	"encoding/json"
 	"log"
-	"strconv"
-	"sync"
+	"time"
 
+	"github.com/bitcoin-sv/go-sdk/chainhash"
+	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/redis/go-redis/v9"
 )
@@ -25,216 +25,294 @@ type IndexData struct {
 	Validate bool        `json:"validate"`
 }
 
+func NewIndexContext(tx *transaction.Transaction, indexers []Indexer) *IndexContext {
+	idxCtx := &IndexContext{
+		Tx:       tx,
+		Txid:     tx.TxID(),
+		Indexers: indexers,
+	}
+
+	if tx.MerklePath != nil {
+		idxCtx.Height = tx.MerklePath.BlockHeight
+		for _, path := range tx.MerklePath.Path[0] {
+			if idxCtx.Txid.IsEqual(path.Hash) {
+				idxCtx.Idx = path.Offset
+				break
+			}
+		}
+	} else {
+		idxCtx.Height = uint32(time.Now().Unix())
+	}
+	return idxCtx
+}
+
 type IndexContext struct {
-	Tx     *transaction.Transaction `json:"-"`
-	Txid   *ByteString              `json:"txid"`
-	Height uint32                   `json:"height"`
-	Idx    uint64                   `json:"idx"`
-	Txos   []*Txo                   `json:"txos"`
-	Spends []*Txo                   `json:"spends"`
+	Tx       *transaction.Transaction `json:"-"`
+	Txid     *chainhash.Hash          `json:"txid"`
+	Height   uint32                   `json:"height"`
+	Idx      uint64                   `json:"idx"`
+	Txos     []*Txo                   `json:"txos"`
+	Spends   []*Txo                   `json:"spends"`
+	Indexers []Indexer                `json:"-"`
 }
 
-func (idxCtx *IndexContext) Score() float64 {
-	score, _ := strconv.ParseFloat(fmt.Sprintf("%07d.%09d", idxCtx.Height, idxCtx.Idx), 64)
-	return score
+func (idxCtx *IndexContext) ParseTxn(ctx context.Context) {
+	if !idxCtx.Tx.IsCoinbase() {
+		idxCtx.ParseSpends(ctx)
+	}
+
+	idxCtx.ParseTxos()
 }
 
-func (idxCtx *IndexContext) Save(ctx context.Context) {
-	txid := hex.EncodeToString(*idxCtx.Txid)
-	if err := Rdb.ZAdd(ctx, "status", redis.Z{
+func (idxCtx *IndexContext) ParseTxos() {
+	accSats := uint64(0)
+	for vout, txout := range idxCtx.Tx.Outputs {
+		outpoint := NewOutpointFromHash(idxCtx.Txid, uint32(vout))
+		txo := &Txo{
+			Outpoint: outpoint,
+			Satoshis: txout.Satoshis,
+			OutAcc:   accSats,
+			Data:     make(map[string]*IndexData),
+		}
+		if len(*txout.LockingScript) >= 25 && script.NewFromBytes((*txout.LockingScript)[:25]).IsP2PKH() {
+			pkhash := PKHash((*txout.LockingScript)[3:23])
+			txo.AddOwner(pkhash.Address())
+		}
+		idxCtx.Txos = append(idxCtx.Txos, txo)
+		accSats += txout.Satoshis
+		for _, indexer := range idxCtx.Indexers {
+			if data := indexer.Parse(idxCtx, uint32(vout)); data != nil {
+				txo.Data[indexer.Tag()] = data
+			}
+		}
+	}
+}
+
+func (idxCtx *IndexContext) ParseSpends(ctx context.Context) {
+	for _, txin := range idxCtx.Tx.Inputs {
+		outpoint := NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
+		if spend, err := idxCtx.LoadTxo(ctx, outpoint); err != nil {
+			log.Panic(err)
+		} else {
+			idxCtx.Spends = append(idxCtx.Spends, spend)
+		}
+	}
+}
+
+func (idxCtx *IndexContext) Save(ctx context.Context) error {
+	txid := idxCtx.Txid.String()
+	if err := Rdb.ZAdd(ctx, TxStatusKey, redis.Z{
 		Score:  float64(idxCtx.Height / 10000000),
 		Member: txid,
 	}).Err(); err != nil {
 		log.Panicf("%x %v\n", idxCtx.Txid, err)
-	} else if _, err := Db.Exec(context.Background(), `
-		INSERT INTO txns(txid, height, idx)
-		VALUES($1, $2, $3)
-		ON CONFLICT(txid) DO NOTHING`,
-		idxCtx.Txid,
-		idxCtx.Height,
-		idxCtx.Idx,
-	); err != nil {
-		log.Panicf("%x %v\n", idxCtx.Txid, err)
-		// } else if err := Rdb.ZAdd(ctx, "processed", redis.Z{
-		// 	Score:  float64(time.Now().Unix()),
-		// 	Member: idxCtx.Txid,
-		// }).Err(); err != nil {
-		// 	log.Panicf("%x %v\n", idxCtx.Txid, err)
+		return err
+	} else if err := idxCtx.SaveTxos(ctx); err != nil {
+		log.Panic(err)
+		return err
+	} else if err := idxCtx.SaveSpends(ctx); err != nil {
+		log.Panic(err)
+		return err
 	}
-	limiter := make(chan struct{}, 4)
-	var wg sync.WaitGroup
-	for _, spend := range idxCtx.Spends {
-		limiter <- struct{}{}
-		wg.Add(1)
-		go func(spend *Txo) {
-			defer func() {
-				<-limiter
-				wg.Done()
-			}()
-			if err := spend.SaveSpend(ctx); err != nil {
-				log.Panic(err)
-			}
-		}(spend)
-	}
-	for _, txo := range idxCtx.Txos {
-		limiter <- struct{}{}
-		wg.Add(1)
-		go func(txo *Txo) {
-			defer func() {
-				<-limiter
-				wg.Done()
-			}()
-			if err := txo.Save(ctx); err != nil {
-				log.Panic(err)
-			}
-			// if Rdb != nil && txo.Owner != nil {
-			// 	if address, err := txo.Owner.Address(); err == nil {
-			// 		PublishEvent(context.Background(), address, txo.Outpoint.String())
-			// 	}
-			// }
-		}(txo)
-	}
-	wg.Wait()
+
 	status := 1
 	if idxCtx.Height > 0 && idxCtx.Height < 50000000 {
 		status = 2
 	}
-	if err := Rdb.ZAdd(ctx, "status", redis.Z{
+	if err := Rdb.ZAdd(ctx, TxStatusKey, redis.Z{
 		Score:  float64(status) + float64(idxCtx.Height/10000000),
 		Member: txid,
 	}).Err(); err != nil {
 		log.Panicf("%x %v\n", idxCtx.Txid, err)
+		return err
 	}
-
+	return nil
 }
 
-// func (idxCtx *IndexContext) SaveSpends(ctx context.Context) error {
-// 	outpoints := make([][]byte, 0, len(idxCtx.Spends))
-// 	for _, spend := range idxCtx.Spends {
-// 		outpoints = append(outpoints, *spend.Outpoint)
-// 	}
+func (idxCtx *IndexContext) LoadTxo(ctx context.Context, outpoint *Outpoint) (*Txo, error) {
+	txo := &Txo{}
+	if j, err := Rdb.JSONGet(ctx, TxoKey(outpoint), "").Result(); err == redis.Nil || j == "" {
+		if tx, err := LoadTx(ctx, outpoint.TxidHex()); err != nil {
+			log.Panicln(err)
+			return nil, err
+		} else {
+			spendCtx := NewIndexContext(tx, idxCtx.Indexers)
+			spendCtx.ParseTxos()
+			if err := spendCtx.SaveTxos(ctx); err != nil {
+				log.Panic(err)
+				return nil, err
+			}
+			return spendCtx.Txos[outpoint.Vout()], nil
+		}
+	} else if err != nil {
+		log.Panicln(err)
+		return nil, err
+	} else if err = json.Unmarshal([]byte(j), txo); err != nil {
+		log.Println("JSON", j)
+		log.Panicln(err)
+		return nil, err
+	} else {
+		return txo, nil
+	}
+}
 
-// 	_, err := Db.Exec(ctx, `UPDATE txos
-// 		SET spend=$1, spend_height=$2, spend_idx=$3
-// 		WHERE outpoint=ANY($4)`,
-// 		idxCtx.Txid,
-// 		idxCtx.Height,
-// 		idxCtx.Idx,
-// 		outpoints,
-// 	)
-// 	return err
-// }
+func (idxCtx *IndexContext) SaveTxos(ctx context.Context) error {
+	for vout := range idxCtx.Txos {
+		if err := idxCtx.SaveTxo(ctx, uint32(vout)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-// func (idxCtx *IndexContext) Save() error {
-// 	if err := Rdb.ZAdd(context.Background(), "txns", redis.Z{
-// 		Score:  idxCtx.Score(),
-// 		Member: hex.EncodeToString(idxCtx.Txid),
-// 	}).Err(); err != nil {
-// 		return err
-// 	}
-// 	outpoints := make([]string, len(idxCtx.Txos))
-// 	for _, txo := range idxCtx.Txos {
-// 		outpoints = append(outpoints, txo.Outpoint.String())
-// 	}
-// 	score := idxCtx.Score()
-// 	var spends map[string]string
-// 	err := Rdb.HMGet(ctx, "spends", outpoints...).Scan(&spends)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-// 		for _, txo := range idxCtx.Txos {
-// 			outpoint := txo.Outpoint.String()
-// 			pipe.ZAdd(ctx, "txos", redis.Z{
-// 				Score:  score,
-// 				Member: outpoint,
-// 			})
-// 			if txo.Owner == nil {
-// 				continue
-// 			}
-// 			if add, err := txo.Owner.Address(); err != nil {
-// 				continue
-// 			} else if err := pipe.ZAdd(ctx, "add:"+add, redis.Z{
-// 				Score:  score,
-// 				Member: outpoint,
-// 			}).Err(); err != nil {
-// 				return err
-// 			} else if err := pipe.SAdd(ctx, "own:"+outpoint, add).Err(); err != nil {
-// 				return err
-// 			} else if spend, ok := spends[outpoint]; ok {
-// 				if score, err := pipe.ZScore(ctx, "txns", spend).Result(); err != nil {
-// 					return err
-// 				} else if err := pipe.ZAdd(ctx, "add:"+add, redis.Z{
-// 					Score:  score,
-// 					Member: spend,
-// 				}).Err(); err != nil {
-// 					return err
-// 				}
-// 			}
-// 		}
-// 		return nil
-// 	}); err != nil {
-// 		return err
-// 	}
+func (idxCtx *IndexContext) SaveTxo(ctx context.Context, vout uint32) error {
+	txo := idxCtx.Txos[vout]
+	spendKey := SpendKey(txo.Outpoint)
+	outpoint := txo.Outpoint.String()
+	score := float64(idxCtx.Height) + (float64(idxCtx.Idx) / 1000000000)
 
-// 	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-// 		for _, spend := range idxCtx.Spends {
-// 			outpoint := spend.Outpoint.String()
-// 			if err := pipe.HSet(ctx, "spends", outpoint, hex.EncodeToString(idxCtx.Txid)).Err(); err != nil {
-// 				return err
-// 			} else if err := pipe.SAdd(ctx, "own:"+outpoint, add).Err(); err != nil {
-// 				return err
-// 			} else if spend, ok := spends[outpoint]; ok {
-// 				if score, err := pipe.ZScore(ctx, "txns", spend).Result(); err != nil {
-// 					return err
-// 				} else if err := pipe.ZAdd(ctx, "add:"+add, redis.Z{
-// 					Score:  score,
-// 					Member: spend,
-// 				}).Err(); err != nil {
-// 					return err
-// 				}
-// 			}
-// 		}
-// 		return nil
-// 	}); err != nil {
-// 		return err
-// 	}
+	accts := map[string]struct{}{}
+	if len(txo.Owners) > 0 {
+		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, txo.Owners...).Result(); err != nil {
+			log.Panic(err)
+			return err
+		} else {
+			for _, item := range result {
+				if acct, ok := item.(string); ok && acct != "" {
+					accts[acct] = struct{}{}
+				}
+			}
+		}
+	}
+	if err := Rdb.Watch(ctx, func(tx *redis.Tx) error {
+		if spendVal, err := tx.Get(ctx, spendKey).Bytes(); err != nil && err != redis.Nil {
+			return err
+		} else if err != redis.Nil {
+			if _, score, err = ParseSpendValue(spendVal); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+			if err := pipe.JSONSet(ctx, TxoKey(txo.Outpoint), "$", txo).Err(); err != nil {
+				return err
+			}
+			for _, owner := range txo.Owners {
+				if err := pipe.ZAdd(ctx, OwnerTxosKey(owner), redis.Z{
+					Score:  score,
+					Member: outpoint,
+				}).Err(); err != nil {
+					return err
+				} else if err := pipe.Publish(ctx, PubOwnerKey(owner), outpoint).Err(); err != nil {
+					return err
+				}
+			}
+			for acct := range accts {
+				if err := pipe.ZAdd(ctx, AccountTxosKey(acct), redis.Z{
+					Score:  score,
+					Member: outpoint,
+				}).Err(); err != nil {
+					return err
+				} else if err := pipe.Publish(ctx, PubAccountKey(acct), outpoint).Err(); err != nil {
+					return err
+				} else {
+					log.Println("Publish", PubAccountKey(acct), outpoint)
+				}
+			}
+			for tag, data := range txo.Data {
+				if data.Validate {
+					if err := pipe.ZAdd(ctx, ValidateKey(tag), redis.Z{
+						Score:  score,
+						Member: outpoint,
+					}).Err(); err != nil {
+						return err
+					}
+				}
+				for _, event := range data.Events {
+					pipe.Publish(ctx, PubEventKey(tag, event), outpoint)
+				}
+			}
+			return nil
+		})
+		return err
+	}, spendKey); err != nil {
+		log.Panic(err)
+	}
+	return nil
+}
 
-// 	// if err := Rdb.HSet(ctx, "spends", spend.Outpoint, idxCtx.Txid).Err(); err != nil {
-// 	// 	return err
-// 	// }
-// 	// if _, err := Rdb.Pipelined(context.Background(), func(pipe redis.Pipeliner) error {
-// 	// 	for _, txo := range idxCtx.Txos {
-// 	// 		if add, err := txo.PKHash.Address(); err != nil {
-// 	// 			log.Panic(err)
-// 	// 		} else if err := pipe.ZAdd(ctx, "txos:"+add, redis.Z{
-// 	// 			Score:  score,
-// 	// 			Member: txo.Outpoint,
-// 	// 		}).Err(); err != nil {
-// 	// 			return err
-// 	// 		}
-// 	// 	}
+func (idxCtx *IndexContext) SaveSpends(ctx context.Context) error {
+	for vin := range idxCtx.Spends {
+		if err := idxCtx.SaveSpend(ctx, uint32(vin)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-// 	// 	return nil
-// 	// }); err != nil {
-// 	// 	log.Panic(err)
-// 	// }
-// }
+func (idxCtx *IndexContext) SaveSpend(ctx context.Context, vin uint32) error {
+	spend := idxCtx.Spends[vin]
+	score := float64(idxCtx.Height) + (float64(idxCtx.Idx) / 1000000000)
+	// outpoint := spend.Outpoint.String()
+	accts := map[string]struct{}{}
+	if len(spend.Owners) > 0 {
+		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, spend.Owners...).Result(); err != nil {
+			log.Panic(err)
+			return err
+		} else {
+			for _, item := range result {
+				if acct, ok := item.(string); ok && acct != "" {
+					accts[acct] = struct{}{}
+				}
+			}
+		}
+	}
+	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if err := pipe.Set(ctx,
+			SpendKey(spend.Outpoint),
+			SpendValue(spend.Outpoint.Txid(), score),
+			0,
+		).Err(); err != nil {
+			return err
+		}
+		txid := idxCtx.Txid.String()
+		for _, owner := range spend.Owners {
+			ownerKey := OwnerTxosKey(owner)
+			if err := pipe.ZAdd(ctx, ownerKey, redis.Z{
+				Score:  score,
+				Member: txid,
+			}).Err(); err != nil {
+				return err
+				// } else if err := pipe.ZAdd(ctx, ownerKey, redis.Z{
+				// 	Score:  -1 * score,
+				// 	Member: outpoint,
+				// }).Err(); err != nil {
+				// 	return err
+			} else if err := pipe.Publish(ctx, PubOwnerKey(owner), txid).Err(); err != nil {
+				return err
+			}
+		}
+		for acct := range accts {
+			if err := pipe.ZAdd(ctx, AccountTxosKey(acct), redis.Z{
+				Score:  score,
+				Member: txid,
+			}).Err(); err != nil {
+				return err
+				// } else if err := pipe.ZAdd(ctx, AccountTxosKey(acct), redis.Z{
+				// 	Score:  -1 * score,
+				// 	Member: outpoint,
+				// }).Err(); err != nil {
+				// 	return err
+			} else if err := pipe.Publish(ctx, PubAccountKey(acct), txid).Err(); err != nil {
+				return err
+			} else {
+				log.Println("Publish", PubAccountKey(acct), txid)
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Panic(err)
+		return err
+	}
 
-// // func (ctx *IndexContext) SaveSpends() {
-// // 	limiter := make(chan struct{}, 32)
-// // 	var wg sync.WaitGroup
-
-// // 	for _, spend := range ctx.Spends {
-// // 		limiter <- struct{}{}
-// // 		wg.Add(1)
-// // 		go func(spend *Txo) {
-// // 			defer func() {
-// // 				<-limiter
-// // 				wg.Done()
-// // 			}()
-// // 			spend.SaveSpend()
-// 		}(spend)
-// 	}
-// 	wg.Wait()
-// }
+	return nil
+}

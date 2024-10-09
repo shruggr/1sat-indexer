@@ -62,7 +62,7 @@ func main() {
 	}
 	for {
 		if txids, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
-			Key:   "ingest",
+			Key:   lib.IngestKey,
 			Start: 0,
 			Stop:  100,
 		}).Result(); err != nil {
@@ -76,8 +76,8 @@ func main() {
 						<-limiter
 						wg.Done()
 					}()
-					log.Println("Processing", txid)
-					if status, err := lib.Rdb.ZScore(ctx, "status", txid).Result(); err != nil && err != redis.Nil {
+					// log.Println("Processing", txid)
+					if status, err := lib.Rdb.ZScore(ctx, lib.TxStatusKey, txid).Result(); err != nil && err != redis.Nil {
 						log.Panic(err)
 					} else if status < 1 {
 						if tx, err := lib.LoadTx(ctx, txid); err != nil {
@@ -85,13 +85,12 @@ func main() {
 						} else if _, err = ingest.IngestTx(ctx, tx, indexers); err != nil {
 							log.Panic(err)
 						}
+						// log.Println("Ingested", txid)
 					} else {
 						log.Println("Skipping", status, txid)
 					}
-					if err := lib.Rdb.ZRem(ctx, "ingest", txid).Err(); err != nil {
+					if err := lib.Rdb.ZRem(ctx, lib.IngestKey, txid).Err(); err != nil {
 						log.Panic(err)
-					} else {
-						log.Println("Ingested", txid)
 					}
 				}(txid)
 			}

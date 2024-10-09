@@ -51,7 +51,7 @@ func init() {
 func main() {
 	// indexers := make([]lib.Indexer, 0)
 	for {
-		iter := lib.Rdb.ZScan(ctx, "address", 0, "", 100).Iterator()
+		iter := lib.Rdb.ZScan(ctx, lib.OwnerSyncKey, 0, "", 100).Iterator()
 		for iter.Next(ctx) {
 			add := iter.Val()
 			iter.Next(ctx)
@@ -71,26 +71,26 @@ func main() {
 				}
 				for _, addTxn := range addTxns {
 					score, _ := strconv.ParseFloat(fmt.Sprintf("%07d.%09d", addTxn.Height, addTxn.Idx), 64)
-					if err := lib.Rdb.ZAdd(ctx, "ingest", redis.Z{
+					if err := lib.Rdb.ZAdd(ctx, lib.IngestKey, redis.Z{
 						Score:  score,
 						Member: addTxn.Txid,
 					}).Err(); err != nil {
 						log.Panic(err)
 					}
-					log.Println("Ingesting", addTxn.Txid, score)
+					log.Println("Queuing", addTxn.Txid, score)
 					if addTxn.Height > uint32(lastHeight) {
 						lastHeight = int(addTxn.Height)
 					}
 				}
-				if err := lib.Rdb.ZAdd(ctx, "address", redis.Z{
+				if err := lib.Rdb.ZAdd(ctx, lib.OwnerSyncKey, redis.Z{
 					Score:  float64(lastHeight),
 					Member: add,
 				}).Err(); err != nil {
 					log.Panic(err)
 				}
-				log.Println("Ingested", add, lastHeight)
+				log.Println("Queued", add, lastHeight)
 			}
-			time.Sleep(time.Minute)
 		}
+		time.Sleep(time.Minute)
 	}
 }
