@@ -18,11 +18,9 @@ func (i *BIndexer) Tag() string {
 func (i *BIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN]; ok {
-		if bopenData, ok := bopen.Data.(map[string]any); ok {
-			if b, ok := bopenData[i.Tag()].(*File); ok {
-				idxData = &lib.IndexData{
-					Data: b,
-				}
+		if b, ok := bopen.Data.(BOpen)[i.Tag()].(*File); ok {
+			idxData = &lib.IndexData{
+				Data: b,
 			}
 		}
 	}

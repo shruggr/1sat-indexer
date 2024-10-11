@@ -40,11 +40,9 @@ func (i *MapIndexer) Tag() string {
 func (i *MapIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN]; ok {
-		if bopenData, ok := bopen.Data.(map[string]any); ok {
-			if m, ok := bopenData[i.Tag()].(Map); ok {
-				idxData = &lib.IndexData{
-					Data: m,
-				}
+		if m, ok := bopen.Data.(BOpen)[i.Tag()].(Map); ok {
+			idxData = &lib.IndexData{
+				Data: m,
 			}
 		}
 	}

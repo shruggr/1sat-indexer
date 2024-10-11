@@ -51,14 +51,14 @@ func init() {
 }
 func main() {
 	fromBlock := uint64(1)
-	if lastBlocks, err := lib.Rdb.ZPopMax(ctx, "block-sync", 1).Result(); err != nil {
+	if lastBlocks, err := lib.Cache.ZPopMax(ctx, "block-sync", 1).Result(); err != nil {
 		log.Panic(err)
 	} else if len(lastBlocks) == 1 && lastBlocks[0].Score > 6 {
 		fromBlock = uint64(lastBlocks[0].Score) - 5
 	}
 
 	for {
-		blocksSynced, err := lib.Rdb.LLen(ctx, "blocks").Uint64()
+		blocksSynced, err := lib.Cache.LLen(ctx, "blocks").Uint64()
 		if err != nil {
 			log.Panic(err)
 		}
@@ -77,7 +77,7 @@ func main() {
 			if blockJson, err := json.Marshal(genesis); err != nil {
 				log.Panic(err)
 			} else {
-				lib.Rdb.RPush(ctx, "blocks", blockJson)
+				lib.Cache.RPush(ctx, "blocks", blockJson)
 			}
 		}
 
@@ -93,22 +93,28 @@ func main() {
 				log.Panic(err)
 			}
 		}
-		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			for _, block := range blocks {
 				if blockJson, err := json.Marshal(block); err != nil {
 					log.Panic(err)
 				} else {
 					if blocksSynced <= uint64(block.Height) {
-						pipe.RPush(ctx, "blocks", blockJson)
+						if err := pipe.RPush(ctx, "blocks", blockJson).Err(); err != nil {
+							return err
+						}
 						blocksSynced++
-					} else {
-						pipe.LSet(ctx, "blocks", int64(block.Height), blockJson)
+					} else if err := pipe.LSet(ctx, "blocks", int64(block.Height), blockJson).Err(); err != nil {
+						return err
 					}
-					pipe.Set(ctx, "chaintip", blockJson, 0)
-					pipe.ZAdd(ctx, "block-sync", redis.Z{
+					if err := pipe.Set(ctx, "chaintip", blockJson, 0).Err(); err != nil {
+						return err
+					} else if err := pipe.ZAdd(ctx, "block-sync", redis.Z{
 						Score:  float64(block.Height),
 						Member: block.Hash,
-					})
+					}).Err(); err != nil {
+						return err
+					}
+					// lib.Cache.Publish(ctx, "block", blockJson)
 				}
 				fromBlock = uint64(block.Height - 5)
 			}
@@ -116,6 +122,7 @@ func main() {
 		}); err != nil {
 			log.Panic(err)
 		}
+
 		if len(blocks) < int(PAGE_SIZE) {
 			time.Sleep(15 * time.Second)
 		}

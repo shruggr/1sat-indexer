@@ -10,6 +10,36 @@ import (
 
 const BOPEN = "bopen"
 
+type BOpen map[string]any
+
+func (b *BOpen) addInstance(instance interface{}) {
+	switch bo := instance.(type) {
+	case *Sigma:
+		var sigmas Sigmas
+		if prev, ok := (*b)["sigma"].(Sigmas); ok {
+			sigmas = prev
+		}
+		sigmas = append(sigmas, bo)
+		(*b)["sigma"] = sigmas
+	case Map:
+		var m Map
+		if prev, ok := (*b)["map"].(Map); ok {
+			m = prev
+			for k, v := range bo {
+				m[k] = v
+			}
+		} else {
+			m = bo
+		}
+		(*b)["map"] = m
+	case *File:
+		(*b)["b"] = bo
+
+	case *Inscription:
+		(*b)["insc"] = bo
+	}
+}
+
 type BOpenIndexer struct {
 	lib.BaseIndexer
 }
@@ -20,9 +50,11 @@ func (i *BOpenIndexer) Tag() string {
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
 
-func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
 	txo := idxCtx.Txos[vout]
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
+
+	bopen := make(BOpen)
 
 	start := 0
 	if len(*scr) >= 25 && script.NewFromBytes((*scr)[:25]).IsP2PKH() {
@@ -47,7 +79,7 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *li
 			if err != nil {
 				continue
 			}
-			addInstance(txo, bitcom)
+			bopen.addInstance(bitcom)
 
 		case script.OpDATA1:
 			if op.Data[0] == '|' && opReturn > 0 {
@@ -55,60 +87,27 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *li
 				if err != nil {
 					continue
 				}
-				addInstance(txo, bitcom)
+				bopen.addInstance(bitcom)
 			}
 		case script.OpDATA3:
 			if i > 2 && bytes.Equal(op.Data, []byte("ord")) && (*scr)[startI-2] == 0 && (*scr)[startI-1] == script.OpIF {
-				idxData = ParseInscription(txo, scr, &i)
+				insc := ParseInscription(txo, scr, &i, bopen)
+				bopen.addInstance(insc)
 			}
 		}
 	}
-	return
-}
-
-func addInstance(txo *lib.Txo, instance interface{}) {
-	if instance == nil {
-		return
-	}
-	var bopen map[string]any
-	if idxData, ok := txo.Data[BOPEN]; ok {
-		bopen = idxData.Data.(map[string]any)
-	} else {
-		bopen = map[string]any{}
-		txo.Data[BOPEN] = &lib.IndexData{
+	if len(bopen) > 0 {
+		return &lib.IndexData{
 			Data: bopen,
 		}
 	}
-	switch bo := instance.(type) {
-	case *Sigma:
-		var sigmas Sigmas
-		if prev, ok := bopen["sigma"].(Sigmas); ok {
-			sigmas = prev
-		}
-		sigmas = append(sigmas, bo)
-		bopen["sigma"] = sigmas
-	case Map:
-		var m Map
-		if prev, ok := bopen["map"].(Map); ok {
-			m = prev
-			for k, v := range bo {
-				m[k] = v
-			}
-		} else {
-			m = bo
-		}
-		bopen["map"] = m
-	case *File:
-		bopen["b"] = bo
-
-	case *Inscription:
-		bopen["insc"] = bo
-
-	}
+	return nil
 }
 
 func (i *BOpenIndexer) PreSave(idxCtx *lib.IndexContext) {
 	for _, txo := range idxCtx.Txos {
-		delete(txo.Data, BOPEN)
+		if txo.Data[BOPEN] != nil {
+			delete(txo.Data, BOPEN)
+		}
 	}
 }

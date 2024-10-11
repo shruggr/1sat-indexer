@@ -1,8 +1,6 @@
 package lib
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 )
 
@@ -12,58 +10,45 @@ const TxStatusKey = "tx:stat"
 const IngestKey = "ingest"
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:act"
+const TxosKey = "txos"
+const SpendsKey = "spends"
 
-func TxoKey(outpoint *Outpoint) string {
-	return "txo:" + outpoint.String()
-}
+// func TxoKey(outpoint *Outpoint) string {
+// 	return "txo:" + outpoint.String()
+// }
 
-func SpendKey(outpoint *Outpoint) string {
-	return "spd:" + outpoint.String()
-}
+// func SpendKey(outpoint *Outpoint) string {
+// 	return "spd:" + outpoint.String()
+// }
 
 func OwnerTxosKey(owner string) string {
 	return "own:txo:" + owner
 }
 
-func AccountTxosKey(acct string) string {
-	return "act:txo:" + acct
+func AccountTxosKey(account string) string {
+	return "act:txo:" + account
 }
 
 func ValidateKey(tag string) string {
 	return "val:" + tag
 }
 
-func AccountKey(owner string) string {
-	return "act:" + owner
+func AccountKey(account string) string {
+	return "act:" + account
 }
 
 func PubEventKey(tag string, event *Event) string {
-	return fmt.Sprintf("evt:%s:%s:%s:%s", tag, event.Id, event.Value)
+	return fmt.Sprintf("evt:%s:%s:%s", tag, event.Id, event.Value)
 }
 
 func PubOwnerKey(owner string) string {
 	return "own:" + owner
 }
 
-func PubAccountKey(owner string) string {
-	return "act:" + owner
+func PubAccountKey(account string) string {
+	return "act:" + account
 }
 
-func SpendValue(txid []byte, score float64) []byte {
-	buf := new(bytes.Buffer)
-	buf.Write(txid)
-	binary.Write(buf, binary.BigEndian, score)
-	return buf.Bytes()
-}
-
-func ParseSpendValue(val []byte) (txid []byte, score float64, err error) {
-	buf := bytes.NewReader(val)
-	txid = make([]byte, 32)
-	if _, err := buf.Read(txid); err != nil {
-		return nil, 0, err
-	} else if err := binary.Read(buf, binary.BigEndian, &score); err != nil {
-		return nil, 0, err
-	} else {
-		return txid, score, nil
-	}
+func HeightScore(height uint32, idx uint64) float64 {
+	return float64(uint64(height)*1000000000 + idx)
 }

@@ -8,7 +8,6 @@ require (
 	github.com/GorillaPool/go-junglebus v0.2.13
 	github.com/bitcoin-sv/go-sdk v1.1.9
 	github.com/bitcoinschema/go-bitcoin v0.3.20
-	github.com/fxamacker/cbor v1.5.1
 	github.com/gofiber/fiber/v2 v2.52.1
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/jackc/pgx/v5 v5.5.3
@@ -18,6 +17,7 @@ require (
 	github.com/libsv/go-bt/v2 v2.2.5
 	github.com/ordishs/go-bitcoin v1.0.86
 	github.com/redis/go-redis/v9 v9.5.1
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 )
 
 require (
@@ -38,6 +38,7 @@ require (
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/go-zeromq/zmq4 v0.16.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -61,11 +62,12 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.52.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/tools v0.22.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

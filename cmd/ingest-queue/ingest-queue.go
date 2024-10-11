@@ -16,6 +16,8 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
+const CONCURRENCY = 1
+
 var JUNGLEBUS string
 var ctx = context.Background()
 
@@ -49,14 +51,14 @@ func init() {
 }
 
 func main() {
-	limiter := make(chan struct{}, 4)
+	limiter := make(chan struct{}, CONCURRENCY)
 	var wg sync.WaitGroup
 	indexers := []lib.Indexer{
 		&bopen.BOpenIndexer{},
-		// &bopen.InscriptionIndexer{},
-		// &bopen.MapIndexer{},
-		// &bopen.BIndexer{},
-		// &bopen.SigmaIndexer{},
+		&bopen.InscriptionIndexer{},
+		&bopen.MapIndexer{},
+		&bopen.BIndexer{},
+		&bopen.SigmaIndexer{},
 		// &bopen.Bsv21Indexer{},
 		// &bopen.Bsv20Indexer{},
 	}
@@ -77,18 +79,18 @@ func main() {
 						wg.Done()
 					}()
 					// log.Println("Processing", txid)
-					if status, err := lib.Rdb.ZScore(ctx, lib.TxStatusKey, txid).Result(); err != nil && err != redis.Nil {
+					// if status, err := lib.Rdb.ZScore(ctx, lib.TxStatusKey, txid).Result(); err != nil && err != redis.Nil {
+					// 	log.Panic(err)
+					// } else if status < 0 {
+					if tx, err := lib.LoadTx(ctx, txid); err != nil {
 						log.Panic(err)
-					} else if status < 1 {
-						if tx, err := lib.LoadTx(ctx, txid); err != nil {
-							log.Panic(err)
-						} else if _, err = ingest.IngestTx(ctx, tx, indexers); err != nil {
-							log.Panic(err)
-						}
-						// log.Println("Ingested", txid)
-					} else {
-						log.Println("Skipping", status, txid)
+					} else if _, err = ingest.IngestTx(ctx, tx, indexers); err != nil {
+						log.Panic(err)
 					}
+					// log.Println("Ingested", txid)
+					// } else {
+					// 	log.Println("Skipping", status, txid)
+					// }
 					if err := lib.Rdb.ZRem(ctx, lib.IngestKey, txid).Err(); err != nil {
 						log.Panic(err)
 					}

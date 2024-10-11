@@ -57,7 +57,7 @@ func LoadTx(ctx context.Context, txid string) (tx *transaction.Transaction, err 
 	if rawtx, err = LoadRawtx(ctx, txid); err != nil {
 		return
 	} else if len(rawtx) == 0 {
-		err = fmt.Errorf("missing-txn %s", txid)
+		fmt.Printf("missing-txn %s", txid)
 		return
 	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
 		return
@@ -93,12 +93,10 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 		}
 	}
 
-	if len(rawtx) == 0 {
-		err = fmt.Errorf("missing-txn %s", txid)
-		return
+	if len(rawtx) > 0 {
+		Cache.HSet(ctx, "tx", txid, rawtx).Err()
 	}
 
-	Cache.HSet(ctx, "tx", txid, rawtx).Err()
 	return
 }
 

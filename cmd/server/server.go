@@ -1,20 +1,20 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -23,7 +23,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/valyala/fasthttp"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var POSTGRES string
@@ -67,7 +67,9 @@ func init() {
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb, cache)
+	if err = lib.Initialize(db, rdb, cache); err != nil {
+		log.Panic(err)
+	}
 
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
@@ -97,7 +99,7 @@ func main() {
 	app.Use(logger.New())
 
 	app.Get("/v1/blocks/tip", func(c *fiber.Ctx) error {
-		if tip, err := lib.Rdb.Get(ctx, lib.ChaintipKey).Result(); err != nil {
+		if tip, err := lib.Cache.Get(ctx, lib.ChaintipKey).Result(); err != nil {
 			return err
 		} else {
 			c.Set("Content-Type", "application/json")
@@ -105,10 +107,21 @@ func main() {
 		}
 	})
 
+	app.Get("/v1/blocks/:height", func(c *fiber.Ctx) error {
+		if height, err := strconv.ParseInt(c.Params("height"), 10, 32); err != nil {
+			return c.SendStatus(400)
+		} else if block, err := lib.Cache.LIndex(ctx, lib.BlocksKey, height).Result(); err != nil {
+			return err
+		} else {
+			c.Set("Content-Type", "application/json")
+			return c.SendString(block)
+		}
+	})
+
 	app.Get("/v1/blocks/list/:from", func(c *fiber.Ctx) error {
 		if height, err := strconv.ParseInt(c.Params("from"), 10, 32); err != nil {
 			return c.SendStatus(400)
-		} else if blockJsons, err := lib.Rdb.LRange(c.Context(), lib.BlocksKey, height, height+10000).Result(); err != nil {
+		} else if blockJsons, err := lib.Cache.LRange(c.Context(), lib.BlocksKey, height, height+10000).Result(); err != nil {
 			return err
 		} else {
 			blocks := make([]*models.BlockHeader, 0, len(blockJsons))
@@ -124,62 +137,192 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/address/:address/:from", func(c *fiber.Ctx) (err error) {
-		address := c.Params("address")
-		var start float64
-		if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
+	app.Get("/v1/tx/:txid", func(c *fiber.Ctx) error {
+		txid := c.Params("txid")
+		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
 			return err
-		}
+		} else if len(rawtx) == 0 {
+			return c.SendStatus(404)
+		} else {
+			c.Set("Content-Type", "application/octet-stream")
+			// 		const writer = new Utils.Writer();
+			// writer.writeVarIntNum(rawtx.length)
+			// writer.write(rawtx)
+			// writer.writeVarIntNum(proof.length)
+			// writer.write(proof)
+			// const resp = writer.toArray();
+			buf := bytes.NewBuffer([]byte{})
+			buf.Write(transaction.VarInt(uint64(len(rawtx))).Bytes())
+			buf.Write(rawtx)
+			if proof, err := lib.LoadProof(c.Context(), txid); err != nil {
+				return err
+			} else if proof == nil {
+				buf.Write(transaction.VarInt(0).Bytes())
+			} else {
+				bin := proof.Bytes()
+				buf.Write(transaction.VarInt(uint64(len(bin))).Bytes())
+				buf.Write(bin)
+			}
 
-		scores := make([]float64, 0, 250)
-		txMap := make(map[float64]*lib.TxResult)
-		if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
-			Key:     lib.OwnerTxosKey(address),
-			ByScore: true,
-			Start:   start,
-			Stop:    "+inf",
-			Count:   1000,
+			return c.Send(buf.Bytes())
+		}
+	})
+
+	app.Get("/v1/tx/:txid/raw", func(c *fiber.Ctx) error {
+		txid := c.Params("txid")
+		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
+			return err
+		} else if rawtx == nil {
+			return c.SendStatus(404)
+		} else {
+			c.Set("Content-Type", "application/octet-stream")
+			return c.Send(rawtx)
+		}
+	})
+
+	app.Get("/v1/tx/:txid/proof", func(c *fiber.Ctx) error {
+		txid := c.Params("txid")
+		if proof, err := lib.LoadProof(c.Context(), txid); err != nil {
+			return err
+		} else if proof == nil {
+			return c.SendStatus(404)
+		} else {
+			c.Set("Content-Type", "application/octet-stream")
+			return c.Send(proof.Bytes())
+		}
+	})
+
+	app.Get("/v1/txo/:outpoint", func(c *fiber.Ctx) error {
+		outpoint := c.Params("outpoint")
+		t := lib.Txo{}
+		if mp, err := lib.Rdb.HGet(c.Context(), lib.TxosKey, outpoint).Bytes(); err != nil {
+			return err
+		} else if msgpack.Unmarshal(mp, &t); err != nil {
+			return err
+		} else {
+			return c.JSON(t)
+		}
+	})
+
+	// app.Get("/v1/address/:address/:from", func(c *fiber.Ctx) (err error) {
+	// 	address := c.Params("address")
+	// 	var start float64
+	// 	if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
+	// 		return err
+	// 	}
+
+	// 	scores := make([]float64, 0, 1000)
+	// 	txMap := make(map[float64]*lib.TxResult)
+	// 	if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
+	// 		Key:     lib.OwnerTxosKey(address),
+	// 		ByScore: true,
+	// 		Start:   start,
+	// 		Stop:    "+inf",
+	// 		Count:   1000,
+	// 	}).Result(); err != nil {
+	// 		return err
+	// 	} else {
+	// 		for _, item := range outpoints {
+	// 			var txid string
+	// 			var out *uint32
+	// 			member := item.Member.(string)
+	// 			if len(member) == 64 {
+	// 				txid = member
+	// 			} else if outpoint, err := lib.NewOutpointFromString(member); err != nil {
+	// 				return err
+	// 			} else {
+	// 				txid = outpoint.TxidHex()
+	// 				vout := outpoint.Vout()
+	// 				out = &vout
+	// 			}
+	// 			var result *lib.TxResult
+	// 			var ok bool
+	// 			if result, ok = txMap[item.Score]; !ok {
+	// 				height := uint32(item.Score)
+	// 				result = &lib.TxResult{
+	// 					Txid:    txid,
+	// 					Height:  height,
+	// 					Idx:     uint64((item.Score - float64(height)) * 1000000000),
+	// 					Outputs: lib.NewOutputMap(),
+	// 					Score:   item.Score,
+	// 				}
+
+	// 				txMap[item.Score] = result
+	// 				scores = append(scores, item.Score)
+	// 			}
+	// 			if out != nil {
+	// 				result.Outputs[*out] = struct{}{}
+	// 			}
+	// 		}
+	// 		slices.Sort(scores)
+	// 		results := make([]*lib.TxResult, 0, len(scores))
+	// 		for _, score := range scores {
+	// 			results = append(results, txMap[score])
+	// 		}
+	// 		return c.JSON(results)
+	// 	}
+	// })
+
+	app.Get("/v1/acct/:account/utxos", func(c *fiber.Ctx) (err error) {
+		account := c.Params("account")
+
+		if scores, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
+			Key:   lib.AccountTxosKey(account),
+			Start: 0,
+			Stop:  -1,
 		}).Result(); err != nil {
 			return err
 		} else {
-			for _, item := range outpoints {
-				var txid string
-				var out *uint32
+			outpoints := make([]string, 0, len(scores))
+			for _, item := range scores {
 				member := item.Member.(string)
-				if len(member) == 64 {
-					txid = member
-				} else if outpoint, err := lib.NewOutpointFromString(member); err != nil {
+				if len(member) > 64 {
+					outpoints = append(outpoints, member)
+				}
+			}
+			if spends, err := lib.Rdb.HMGet(c.Context(), lib.SpendsKey, outpoints...).Result(); err != nil {
+				return err
+			} else {
+				unspent := make([]string, 0, len(outpoints))
+				for i, outpoint := range outpoints {
+					if spends[i] == nil {
+						unspent = append(unspent, outpoint)
+					}
+				}
+				if msgpacks, err := lib.Rdb.HMGet(c.Context(), lib.TxosKey, unspent...).Result(); err != nil {
 					return err
 				} else {
-					txid = outpoint.TxidHex()
-					vout := outpoint.Vout()
-					out = &vout
-				}
-				var result *lib.TxResult
-				var ok bool
-				if result, ok = txMap[item.Score]; !ok {
-					height := uint32(item.Score)
-					result = &lib.TxResult{
-						Txid:    txid,
-						Height:  height,
-						Idx:     uint64((item.Score - float64(height)) * 1000000000),
-						Outputs: lib.NewOutputMap(),
+					txos := make([]*lib.Txo, 0, len(msgpacks))
+					for _, mp := range msgpacks {
+						if mp != nil {
+							var txo lib.Txo
+							if err := msgpack.Unmarshal([]byte(mp.(string)), &txo); err != nil {
+								return err
+							}
+							txos = append(txos, &txo)
+						}
 					}
-
-					txMap[item.Score] = result
-					scores = append(scores, item.Score)
-				}
-				if out != nil {
-					result.Outputs[*out] = struct{}{}
+					return c.JSON(txos)
 				}
 			}
-			slices.Sort(scores)
-			results := make([]*lib.TxResult, 0, len(scores))
-			for _, score := range scores {
-				results = append(results, txMap[score])
-			}
-			return c.JSON(results)
 		}
+		// if outpoints, err := lib.Rdb.ZRangeArgs(c.Context(), redis.ZRangeArgs{
+		// 	Key:   lib.AccountTxosKey(account),
+		// 	Start: 0,
+		// 	Stop:  -1,
+		// }).Result(); err != nil {
+		// 	return err
+		// } else if spends, err := lib.Rdb.HMGet(c.Context(), lib.SpendsKey, outpoints...).Result(); err != nil {
+		// 	return err
+		// } else {
+		// 	for i, outpoint := range outpoints {
+		// 		if spends[i] != nil || len(outpoint) == 64 {
+		// 			continue
+		// 		}
+		// 		results = append(results, outpoint)
+		// 	}
+		// }
+
 	})
 
 	app.Get("/v1/acct/:account/:from", func(c *fiber.Ctx) (err error) {
@@ -189,12 +332,12 @@ func main() {
 			return err
 		}
 
-		scores := make([]float64, 0, 250)
+		results := make([]*lib.TxResult, 0, 1000)
 		txMap := make(map[float64]*lib.TxResult)
 		if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
 			Key:     lib.AccountTxosKey(account),
 			ByScore: true,
-			Start:   start,
+			Start:   fmt.Sprintf("(%f", start),
 			Stop:    "+inf",
 			Count:   1000,
 		}).Result(); err != nil {
@@ -216,26 +359,23 @@ func main() {
 				var result *lib.TxResult
 				var ok bool
 				if result, ok = txMap[item.Score]; !ok {
-					height := uint32(item.Score)
+					height := uint32(item.Score / 1000000000)
 					result = &lib.TxResult{
-						Txid:    txid,
-						Height:  height,
-						Idx:     uint64((item.Score - float64(height)) * 1000000000),
+						Txid:   txid,
+						Height: height,
+						// Idx:     uint64((item.Score - float64(height)) * 1000000000),
+						Idx:     uint64(item.Score) % 1000000000,
 						Outputs: lib.NewOutputMap(),
+						Score:   item.Score,
 					}
 
 					txMap[item.Score] = result
-					scores = append(scores, item.Score)
+					results = append(results, result)
 				}
 				if out != nil {
 					result.Outputs[*out] = struct{}{}
 				}
 			}
-		}
-		slices.Sort(scores)
-		results := make([]*lib.TxResult, 0, len(scores))
-		for _, score := range scores {
-			results = append(results, txMap[score])
 		}
 		return c.JSON(results)
 	})
@@ -249,80 +389,47 @@ func main() {
 			return c.SendStatus(400)
 		}
 		ownerTxoKeys := make([]string, 0, len(owners))
+
+		resync := false
+		accountKey := lib.AccountKey(account)
 		for _, owner := range owners {
 			if owner == "" {
 				return c.SendStatus(400)
 			}
 			ownerTxoKeys = append(ownerTxoKeys, lib.OwnerTxosKey(owner))
-		}
-		if _, err := lib.Rdb.Pipelined(c.Context(), func(pipe redis.Pipeliner) error {
-			for _, owner := range owners {
-				if err := pipe.SAdd(c.Context(), lib.AccountKey(account), owner).Err(); err != nil {
-					return err
-				} else if err := pipe.HSet(c.Context(), lib.OwnerAccountKey, owner, account).Err(); err != nil {
-					return err
-				}
-			}
-			if err := pipe.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
-				Keys:      ownerTxoKeys,
-				Aggregate: "MIN",
+			if err := lib.Rdb.ZAddNX(c.Context(), lib.OwnerSyncKey, redis.Z{
+				Score:  0,
+				Member: owner,
 			}).Err(); err != nil {
 				return err
+			} else if exists, err := lib.Rdb.SIsMember(c.Context(), accountKey, owner).Result(); err != nil {
+				return err
+			} else if !exists {
+				resync = true
 			}
-			return nil
-		}); err != nil {
-			return err
+		}
+		if resync {
+			if _, err := lib.Rdb.Pipelined(c.Context(), func(pipe redis.Pipeliner) error {
+				for _, owner := range owners {
+					if err := pipe.SAdd(c.Context(), accountKey, owner).Err(); err != nil {
+						return err
+					} else if err := pipe.HSet(c.Context(), lib.OwnerAccountKey, owner, account).Err(); err != nil {
+						return err
+					}
+				}
+				if err := pipe.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
+					Keys:      ownerTxoKeys,
+					Aggregate: "MIN",
+				}).Err(); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
 		}
 		return c.SendStatus(204)
 	})
-
-	// app.Get("/v1/sse", func(c *fiber.Ctx) error {
-	// 	c.Set("Content-Type", "text/event-stream")
-	// 	c.Set("Cache-Control", "no-cache")
-	// 	c.Set("Connection", "keep-alive")
-	// 	c.Set("Transfer-Encoding", "chunked")
-
-	// 	topicVal := c.Queries()["topic"]
-	// 	topics := strings.Split(topicVal, ",")
-	// 	if len(topics) == 0 {
-	// 		return c.SendStatus(400)
-	// 	}
-	// 	log.Println("Subscribing to", topics)
-	// 	interval := time.NewTicker(15 * time.Second)
-	// 	sub := redis.NewClient(&redis.Options{
-	// 		Addr:     os.Getenv("REDISDB"),
-	// 		Password: "", // no password set
-	// 		DB:       0,  // use default DB
-	// 	})
-	// 	defer func() {
-	// 		interval.Stop()
-	// 		sub.Close()
-	// 	}()
-
-	// 	ch := sub.Subscribe(context.Background(), topics...).Channel()
-	// 	notify := c.Context().Done()
-	// 	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
-	// 		for loop := true; loop; {
-	// 			select {
-	// 			case <-notify:
-	// 				return
-	// 			case <-interval.C:
-	// 				c.WriteString(":keepalive\n")
-	// 				log.Println("Sending keepalive")
-	// 			case msg := <-ch:
-	// 				if _, err := fmt.Fprintf(w, fmt.Sprintf("event: %s\ndata: %s\n\n", msg.Channel, msg.Payload)); err != nil {
-	// 					log.Printf("Error while writing Data: %v\n", err)
-	// 					loop = false
-	// 				}
-
-	// 				log.Println("Sending Event", msg.Channel, msg.Payload)
-	// 			}
-	// 		}
-
-	// 		log.Println("Exiting stream")
-	// 	}))
-	// 	return nil
-	// })
 
 	app.Get("/v1/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")
@@ -345,82 +452,86 @@ func main() {
 		}
 
 		currentSessions.AddSession(&s)
+		keepAliveTickler := time.NewTicker(15 * time.Second)
 
-		notify := c.Context().Done()
+		defer func() {
+			log.Println("Removing Session")
+			currentSessions.RemoveSession(&s)
+			keepAliveTickler.Stop()
+		}()
 
-		c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
-			keepAliveTickler := time.NewTicker(15 * time.Second)
-			keepAliveMsg := ":keepalive\n"
+		// notify := c.Context().Done()
 
-			// listen to signal to close and unregister (doesn't seem to be called)
-			go func() {
-				<-notify
-				log.Printf("Stopped Request\n")
-				currentSessions.RemoveSession(&s)
-				keepAliveTickler.Stop()
-			}()
+		// c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
+		// keepAliveMsg := ":keepalive\n"
 
-			for loop := true; loop; {
-				select {
+		// 	// listen to signal to close and unregister (doesn't seem to be called)
+		// 	go func() {
+		// 		<-notify
+		// 		log.Printf("Stopped Request\n")
+		// 		currentSessions.RemoveSession(&s)
+		// 		keepAliveTickler.Stop()
+		// 	}()
 
-				case ev := <-stateChan:
-					log.Println("Sending Event", ev.Channel, ev.Payload)
-					sseMessage, err := sse.FormatSSEMessage(ev.Channel, ev.Payload)
-					if err != nil {
-						log.Printf("Error formatting sse message: %v\n", err)
-						continue
-					}
+		for loop := true; loop; {
+			select {
 
-					// send sse formatted message
-					_, err = fmt.Fprintf(w, sseMessage)
-
-					if err != nil {
-						log.Printf("Error while writing Data: %v\n", err)
-						continue
-					}
-
-					err = w.Flush()
-					if err != nil {
-						log.Printf("Error while flushing Data: %v\n", err)
-						currentSessions.RemoveSession(&s)
-						keepAliveTickler.Stop()
-						loop = false
-						break
-					}
-				case <-keepAliveTickler.C:
-					fmt.Fprintf(w, keepAliveMsg)
-					err := w.Flush()
-					if err != nil {
-						log.Printf("Error while flushing: %v.\n", err)
-						currentSessions.RemoveSession(&s)
-						keepAliveTickler.Stop()
-						loop = false
-						break
-					}
+			case ev := <-stateChan:
+				log.Println("Sending Event", ev.Channel, ev.Payload)
+				sseMessage, err := sse.FormatSSEMessage(ev.Channel, ev.Payload)
+				if err != nil {
+					log.Printf("Error formatting sse message: %v\n", err)
+					continue
 				}
-			}
 
-			log.Println("Exiting stream")
-		}))
+				// send sse formatted message
+				if _, err := c.WriteString(sseMessage); err != nil {
+					log.Printf("Error while writing keepalive: %v\n", err)
+				}
+				// if _, err = fmt.Fprintf(w, sseMessage); err != nil {
+				// 	log.Printf("Error while writing Data: %v\n", err)
+				// 	continue
+				// }
+
+				// err = w.Flush()
+				// if err != nil {
+				// 	log.Printf("Error while flushing Data: %v\n", err)
+				// 	currentSessions.RemoveSession(&s)
+				// 	keepAliveTickler.Stop()
+				// 	loop = false
+				// 	break
+				// }
+			case <-keepAliveTickler.C:
+				if _, err := c.WriteString(":keepalive\n"); err != nil {
+					log.Printf("Error while writing keepalive: %v\n", err)
+				}
+				// fmt.Fprintf(w, keepAliveMsg)
+				// err := w.Flush()
+				// if err != nil {
+				// 	log.Printf("Error while flushing: %v.\n", err)
+				// 	currentSessions.RemoveSession(&s)
+				// 	keepAliveTickler.Stop()
+				// 	loop = false
+				// 	break
+				// }
+			}
+		}
+
+		// 	log.Println("Exiting stream")
+		// }))
 
 		return nil
 	})
 
-	// ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	// defer cancel()
-
-	// ticker := time.NewTicker(1 * time.Second)
-
 	go func() {
 		sub := redis.NewClient(&redis.Options{
-			Addr:     os.Getenv("REDISCACHE"),
+			Addr:     os.Getenv("REDISDB"),
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		})
 		ctx := context.Background()
-		pubsub := sub.Subscribe(ctx, "act:shruggr")
+		pubsub := sub.Subscribe(ctx, "block")
 		ch := pubsub.Channel()
-		iterval := time.NewTicker(5 * time.Second)
 
 		for {
 			select {
@@ -435,13 +546,6 @@ func main() {
 				for _, session := range currentSessions.Topics[msg.Channel] {
 					session.StateChannel <- msg
 				}
-			case <-iterval.C:
-				if err := lib.Cache.Publish(ctx, "act:shruggr", "test"); err != nil {
-					log.Println("Error publishing", err)
-				}
-				log.Println("Publishing")
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()

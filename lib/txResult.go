@@ -22,4 +22,5 @@ type TxResult struct {
 	Outputs OutputMap `json:"outs"`
 	Height  uint32    `json:"height"`
 	Idx     uint64    `json:"idx"`
+	Score   float64   `json:"score"`
 }

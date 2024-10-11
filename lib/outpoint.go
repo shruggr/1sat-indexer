@@ -25,6 +25,13 @@ func NewOutpointFromHash(txid *chainhash.Hash, vout uint32) *Outpoint {
 	return &o
 }
 
+func NewOutpointFromBytes(b []byte) *Outpoint {
+	buf := make([]byte, 36)
+	copy(buf, b)
+	o := Outpoint(buf)
+	return &o
+}
+
 func NewOutpointFromString(s string) (o *Outpoint, err error) {
 	if len(s) < 66 {
 		return nil, fmt.Errorf("invalid-string")

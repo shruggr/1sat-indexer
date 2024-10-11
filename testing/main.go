@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -47,7 +46,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	scores, err := rdb.ZMScore(context.Background(), "txqueue", "1", "2").Result()
+	// scores, err := rdb.ZMScore(context.Background(), "txqueue", "1", "2").Result()
 
 	// tx, err := lib.JB.GetTransaction(context.Background(), hexId)
 	// if err != nil {
@@ -83,5 +82,5 @@ func main() {
 	// // 	log.Panic(err)
 	// // }
 
-	fmt.Println(scores)
+	// fmt.Println(scores)
 }
