@@ -8,7 +8,6 @@ import (
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/redis/go-redis/v9"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 type IndexContext struct {
@@ -94,9 +93,11 @@ func (idxCtx *IndexContext) Save(ctx context.Context) error {
 	return nil
 }
 
-func (idxCtx *IndexContext) LoadTxo(ctx context.Context, outpoint *Outpoint) (*Txo, error) {
-	txo := &Txo{}
-	if mp, err := Rdb.HGet(ctx, TxosKey, outpoint.String()).Bytes(); err == redis.Nil {
+func (idxCtx *IndexContext) LoadTxo(ctx context.Context, outpoint *Outpoint) (txo *Txo, err error) {
+	if txo, err = LoadTxo(ctx, outpoint); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if txo == nil {
 		if tx, err := LoadTx(ctx, outpoint.TxidHex()); err != nil {
 			log.Panicln(err)
 			return nil, err
@@ -109,12 +110,6 @@ func (idxCtx *IndexContext) LoadTxo(ctx context.Context, outpoint *Outpoint) (*T
 			}
 			txo = spendCtx.Txos[outpoint.Vout()]
 		}
-	} else if err != nil {
-		log.Panicln(err)
-		return nil, err
-	} else if err = msgpack.Unmarshal(mp, txo); err != nil {
-		log.Panic(err)
-		return nil, err
 	}
 	return txo, nil
 }

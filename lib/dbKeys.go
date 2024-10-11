@@ -5,21 +5,16 @@ import (
 )
 
 const ChaintipKey = "chaintip"
-const BlocksKey = "blocks"
+const BlockHeightKey = "block:height"
+const BlockHeadersKey = "block:headers"
 const TxStatusKey = "tx:stat"
 const IngestKey = "ingest"
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:act"
 const TxosKey = "txos"
+
+// const TxoDataKey = "txo:data"
 const SpendsKey = "spends"
-
-// func TxoKey(outpoint *Outpoint) string {
-// 	return "txo:" + outpoint.String()
-// }
-
-// func SpendKey(outpoint *Outpoint) string {
-// 	return "spd:" + outpoint.String()
-// }
 
 func OwnerTxosKey(owner string) string {
 	return "own:txo:" + owner

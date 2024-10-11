@@ -145,12 +145,6 @@ func main() {
 			return c.SendStatus(404)
 		} else {
 			c.Set("Content-Type", "application/octet-stream")
-			// 		const writer = new Utils.Writer();
-			// writer.writeVarIntNum(rawtx.length)
-			// writer.write(rawtx)
-			// writer.writeVarIntNum(proof.length)
-			// writer.write(proof)
-			// const resp = writer.toArray();
 			buf := bytes.NewBuffer([]byte{})
 			buf.Write(transaction.VarInt(uint64(len(rawtx))).Bytes())
 			buf.Write(rawtx)
@@ -193,14 +187,12 @@ func main() {
 	})
 
 	app.Get("/v1/txo/:outpoint", func(c *fiber.Ctx) error {
-		outpoint := c.Params("outpoint")
-		t := lib.Txo{}
-		if mp, err := lib.Rdb.HGet(c.Context(), lib.TxosKey, outpoint).Bytes(); err != nil {
-			return err
-		} else if msgpack.Unmarshal(mp, &t); err != nil {
+		if outpoint, err := lib.NewOutpointFromString(c.Params("outpoint")); err != nil {
+			return c.SendStatus(400)
+		} else if txo, err := lib.LoadTxo(c.Context(), outpoint); err != nil {
 			return err
 		} else {
-			return c.JSON(t)
+			return c.JSON(txo)
 		}
 	})
 
@@ -306,23 +298,6 @@ func main() {
 				}
 			}
 		}
-		// if outpoints, err := lib.Rdb.ZRangeArgs(c.Context(), redis.ZRangeArgs{
-		// 	Key:   lib.AccountTxosKey(account),
-		// 	Start: 0,
-		// 	Stop:  -1,
-		// }).Result(); err != nil {
-		// 	return err
-		// } else if spends, err := lib.Rdb.HMGet(c.Context(), lib.SpendsKey, outpoints...).Result(); err != nil {
-		// 	return err
-		// } else {
-		// 	for i, outpoint := range outpoints {
-		// 		if spends[i] != nil || len(outpoint) == 64 {
-		// 			continue
-		// 		}
-		// 		results = append(results, outpoint)
-		// 	}
-		// }
-
 	})
 
 	app.Get("/v1/acct/:account/:from", func(c *fiber.Ctx) (err error) {

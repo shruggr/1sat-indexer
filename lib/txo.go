@@ -16,7 +16,7 @@ type Txo struct {
 	Height   uint32                `json:"height"`
 	Idx      uint64                `json:"idx"`
 	Satoshis uint64                `json:"satoshis"`
-	OutAcc   uint64                `json:"outacc"`
+	OutAcc   uint64                `json:"_"`
 	Owners   []string              `json:"owners,omitempty"`
 	Data     map[string]*IndexData `json:"-"`
 }
@@ -30,9 +30,25 @@ func (t *Txo) AddOwner(owner string) {
 	t.Owners = append(t.Owners, owner)
 }
 
+func LoadTxo(ctx context.Context, outpoint *Outpoint) (*Txo, error) {
+	if result, err := Rdb.HGet(ctx, TxosKey, outpoint.String()).Bytes(); err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		log.Panic(err)
+		return nil, err
+	} else {
+		txo := &Txo{}
+		if err := msgpack.Unmarshal(result, txo); err != nil {
+			log.Panic(err)
+			return nil, err
+		}
+		return txo, nil
+	}
+}
+
 func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 	outpoint := txo.Outpoint.String()
-	score := HeightScore(idxCtx.Height, idxCtx.Idx, false)
+	score := HeightScore(idxCtx.Height, idxCtx.Idx)
 
 	accts := map[string]struct{}{}
 	if len(txo.Owners) > 0 {
@@ -105,8 +121,7 @@ func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 }
 
 func (spend *Txo) SaveSpend(ctx context.Context, idxCtx *IndexContext) error {
-	score := HeightScore(idxCtx.Height, idxCtx.Idx, false)
-	// outpoint := spend.Outpoint.String()
+	score := HeightScore(idxCtx.Height, idxCtx.Idx)
 	txid := idxCtx.Txid.String()
 	accts := map[string]struct{}{}
 	if len(spend.Owners) > 0 {
@@ -168,7 +183,7 @@ func (t Txo) MarshalJSON() ([]byte, error) {
 	m["height"] = t.Height
 	m["idx"] = t.Idx
 	m["satoshis"] = t.Satoshis
-	m["outacc"] = t.OutAcc
+	// m["outacc"] = t.OutAcc
 	m["owners"] = t.Owners
 
 	if len(t.Data) > 0 {
