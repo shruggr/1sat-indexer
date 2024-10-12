@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/bopen"
-	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -51,49 +49,35 @@ func init() {
 }
 
 func main() {
-	limiter := make(chan struct{}, CONCURRENCY)
-	var wg sync.WaitGroup
-	indexers := []lib.Indexer{
-		&bopen.BOpenIndexer{},
-		&bopen.InscriptionIndexer{},
-		&bopen.MapIndexer{},
-		&bopen.BIndexer{},
-		&bopen.SigmaIndexer{},
-		&bopen.OriginIndexer{},
-		// &bopen.Bsv21Indexer{},
-		// &bopen.Bsv20Indexer{},
-	}
+	// indexers := []lib.Indexer{
+	// 	&bopen.BOpenIndexer{},
+	// 	&bopen.InscriptionIndexer{},
+	// 	&bopen.MapIndexer{},
+	// 	&bopen.SigmaIndexer{},
+	// 	&bopen.OriginIndexer{},
+	// }
+	originIndexer := &bopen.OriginIndexer{}
 	for {
-		if txids, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
-			Key:   lib.IngestKey,
+		if outpoints, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+			Key:   lib.PostProcessingKey(originIndexer.Tag()),
 			Start: 0,
-			Stop:  100,
+			Stop:  1000,
 		}).Result(); err != nil {
 			log.Panic(err)
 		} else {
-			for _, txid := range txids {
-				limiter <- struct{}{}
-				wg.Add(1)
-				go func(txid string) {
-					defer func() {
-						<-limiter
-						wg.Done()
-					}()
-					// log.Println("Processing", txid)
-					if tx, err := lib.LoadTx(ctx, txid); err != nil {
-						log.Panic(err)
-					} else if _, err = ingest.IngestTx(ctx, tx, indexers); err != nil {
-						log.Panic(err)
-					} else if err := lib.Rdb.ZRem(ctx, lib.IngestKey, txid).Err(); err != nil {
-						log.Panic(err)
-					}
-				}(txid)
+			for _, op := range outpoints {
+				if outpoint, err := lib.NewOutpointFromString(op); err != nil {
+					log.Panic(err)
+				} else if err = originIndexer.PostProcess(ctx, outpoint); err != nil {
+					log.Panic(err)
+				} else {
+					log.Println("Processed", outpoint)
+				}
 			}
-			if len(txids) == 0 {
+			if len(outpoints) == 0 {
 				log.Println("No transactions to ingest")
 				time.Sleep(time.Second)
 			}
-			wg.Wait()
 		}
 	}
 }

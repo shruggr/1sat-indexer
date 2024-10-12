@@ -2,18 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-var dryRun = false
-
-var hexId = "905db47ef89809199d8a673907661316c728f57d12bbc3171d8a340be6946a1c"
+var hexId = "ddea8c4e5b88e5c07f7531188ae345e4a6d0fe6dadedb5c27854caae411e3852"
 
 func main() {
 	// var err error
@@ -23,11 +23,11 @@ func main() {
 	}
 	log.Println("POSTGRES_FULL:", os.Getenv("POSTGRES_FULL"))
 
-	db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES_FULL"))
-	if err != nil {
-		log.Panic(err)
-	}
-	defer lib.Db.Close()
+	// db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES_FULL"))
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// defer lib.Db.Close()
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDISDB"),
@@ -41,11 +41,33 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	err = lib.Initialize(db, rdb, cache)
+	err = lib.Initialize(nil, rdb, cache)
 	if err != nil {
 		log.Panic(err)
 	}
 
+	ctx := context.Background()
+
+	indexers := []lib.Indexer{
+		&bopen.BOpenIndexer{},
+		&bopen.InscriptionIndexer{},
+		&bopen.MapIndexer{},
+		&bopen.BIndexer{},
+		&bopen.SigmaIndexer{},
+		&bopen.OriginIndexer{},
+		// &bopen.Bsv21Indexer{},
+		// &bopen.Bsv20Indexer{},
+	}
+
+	if tx, err := lib.LoadTx(ctx, hexId); err != nil {
+		log.Panic(err)
+	} else if idxCtx, err := ingest.IngestTx(ctx, tx, indexers); err != nil {
+		log.Panic(err)
+	} else if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
+		log.Panic(err)
+	} else {
+		log.Println(string(out))
+	}
 	// scores, err := rdb.ZMScore(context.Background(), "txqueue", "1", "2").Result()
 
 	// tx, err := lib.JB.GetTransaction(context.Background(), hexId)

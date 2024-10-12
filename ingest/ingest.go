@@ -17,8 +17,8 @@ func IngestTxid(ctx context.Context, txid string, indexers []lib.Indexer) (*lib.
 }
 
 func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []lib.Indexer) (idxCtx *lib.IndexContext, err error) {
-	idxCtx = lib.NewIndexContext(tx, indexers)
-	idxCtx.ParseTxn(ctx)
+	idxCtx = lib.NewIndexContext(ctx, tx, indexers)
+	idxCtx.ParseTxn()
 
 	log.Printf("Ingesting %s", idxCtx.Txid)
 
@@ -26,7 +26,7 @@ func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []lib.I
 	// ordinals.ParseInscriptions(idxCtx)
 	// lock.ParseLocks(idxCtx)
 	// ordlock.ParseOrdinalLocks(idxCtx)
-	idxCtx.Save(ctx)
+	idxCtx.Save()
 
 	// We may want to check fees here to ensure the transaction will be mined
 	// ordlock.ProcessSpends(ctx)

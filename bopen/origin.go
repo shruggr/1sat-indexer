@@ -1,17 +1,21 @@
 package bopen
 
 import (
+	"encoding/json"
+	"log"
+
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
 const MAX_DEPTH = 256
+const ORIGIN_TAG = "origin"
 
 type Origin struct {
-	Origin *lib.Outpoint `json:"origin"`
-	Num    uint64        `json:"num"`
-	Height *uint32       `json:"height"`
-	Idx    uint64        `json:"idx"`
-	Map    Map           `json:"map,omitempty"`
+	Outpoint    *lib.Outpoint `json:"outpoint"`
+	Nonce       uint64        `json:"nonce"`
+	Map         Map           `json:"map"`
+	Inscription *Inscription  `json:"insc,omitempty"`
+	Sigmas      *Sigmas       `json:"sigma,omitempty"`
 }
 
 type OriginIndexer struct {
@@ -19,32 +23,107 @@ type OriginIndexer struct {
 }
 
 func (i *OriginIndexer) Tag() string {
-	return "origin"
+	return ORIGIN_TAG
 }
 
-// func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
-// 	txo := idxCtx.Txos[vout]
-// 	if txo.Satoshis != 1 {
-// 		return
+func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+	txo := idxCtx.Txos[vout]
+
+	if txo.Satoshis != 1 {
+		return nil
+	}
+
+	if origin, err := i.calculateOrigin(idxCtx, uint32(vout), 0); err != nil {
+		log.Panicln(err)
+		return nil
+	} else {
+		idxData := &lib.IndexData{
+			Data: origin,
+		}
+		if origin != nil {
+			idxData.Events = append(idxData.Events, &lib.Event{
+				Id:    "outpoint",
+				Value: origin.Outpoint.String(),
+			})
+		}
+		return idxData
+	}
+}
+
+// func (oi *OriginIndexer) PreSave(idxCtx *lib.IndexContext) error {
+// 	tag := oi.Tag()
+// 	for vout, txo := range idxCtx.Txos {
+// 		if txo.Data[tag] == nil {
+// 			continue
+// 		}
+// 		if txo.Data[tag].PostProcess {
+// 			if origin, err := oi.calculateOrigin(idxCtx, uint32(vout), 0); err != nil {
+// 				return err
+// 			} else {
+// 				txo.Data[tag].Data = origin
+// 			}
+// 		}
 // 	}
-// 	// origin := LoadOrigin(txo.Outpoint, txo.OutAcc)
-// 	// if bopen, ok := txo.Data[BOPEN]; ok {
-// 	// 	if bopenData, ok := bopen.Data.(map[string]any); ok {
-// 	// 		if insc, ok := bopenData[i.Tag()].(*Inscription); ok {
-// 	// 			idxData = &lib.IndexData{
-// 	// 				Data: insc,
-// 	// 				Events: []*lib.Event{
-// 	// 					{
-// 	// 						Id:    "type",
-// 	// 						Value: insc.File.Type,
-// 	// 					},
-// 	// 				},
-// 	// 			}
-// 	// 		}
-// 	// 	}
-// 	// }
-// 	return
+// 	return nil
 // }
+
+func (i *OriginIndexer) calculateOrigin(idxCtx *lib.IndexContext, vout uint32, depth uint) (origin *Origin, err error) {
+	if depth > MAX_DEPTH {
+		log.Panic("Max Depth Exceeded")
+		return nil, nil
+	}
+	txo := idxCtx.Txos[vout]
+	inSats := uint64(0)
+	for _, spend := range idxCtx.Spends {
+		if inSats < txo.OutAcc {
+			inSats += spend.Satoshis
+			continue
+		}
+		if inSats == txo.OutAcc && spend.Satoshis == 1 {
+			if o, ok := spend.Data[i.Tag()]; ok {
+				switch oData := o.Data.(type) {
+				case *Origin:
+					return oData, nil
+				case json.RawMessage:
+					origin := &Origin{}
+					if err := json.Unmarshal(oData, origin); err != nil {
+						return nil, err
+					}
+					origin.Nonce++
+					return origin, nil
+				default:
+					log.Panic("Unknown Origin Data Type")
+				}
+			}
+			if tx, err := lib.LoadTx(idxCtx.Ctx, spend.Outpoint.TxidHex()); err != nil {
+				log.Panicln(err)
+				return nil, err
+			} else {
+				spendCtx := lib.NewIndexContext(idxCtx.Ctx, tx, nil)
+				spendCtx.ParseTxn()
+				if parent, err := i.calculateOrigin(spendCtx, spend.Outpoint.Vout(), depth+1); err != nil {
+					return nil, err
+				} else {
+					origin := *parent
+					origin.Nonce++
+					spend.Data[ORIGIN_TAG] = &lib.IndexData{
+						Data: &origin,
+					}
+					spend.SaveData(idxCtx.Ctx, []string{ORIGIN_TAG})
+					return &origin, nil
+				}
+			}
+		}
+		break
+
+	}
+
+	origin = &Origin{
+		Outpoint: txo.Outpoint,
+		Map:      make(Map),
+	}
+	return origin, nil
+}
 
 // func LoadOrigin(outpoint *lib.Outpoint, outAcc uint64) *lib.Outpoint {
 // 	// fmt.Println("LoadOrigin", outpoint, outAcc)
@@ -87,113 +166,4 @@ func (i *OriginIndexer) Tag() string {
 // 		return outpoint
 // 	}
 // 	return origin
-// }
-
-// func (o *Origin) Save() {
-// 	_, err := lib.Db.Exec(context.Background(), `
-// 		INSERT INTO origins(origin, height, idx, map)
-// 		VALUES($1, $2, $3, $4)
-// 		ON CONFLICT(origin) DO UPDATE SET
-// 			height=EXCLUDED.height,
-// 			idx=EXCLUDED.idx`,
-// 		o.Origin,
-// 		o.Height,
-// 		o.Idx,
-// 		o.Map,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("Save Error: %s %+v\n", o.Origin, err)
-// 	}
-// }
-
-// func SaveMap(origin *lib.Outpoint) {
-// 	rows, err := lib.Db.Query(context.Background(), `
-// 		SELECT data->>'map'
-// 		FROM txos
-// 		WHERE origin=$1 AND data->>'map' IS NOT NULL
-// 		ORDER BY height ASC, idx ASC, vout ASC`,
-// 		origin,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("BuildMap Error: %s %+v\n", origin, err)
-// 	}
-// 	rows.Close()
-
-// 	m := lib.Map{}
-// 	for rows.Next() {
-// 		var data lib.Map
-// 		err = rows.Scan(&data)
-// 		if err != nil {
-// 			log.Panicln(err)
-// 		}
-// 		for k, v := range data {
-// 			m[k] = v
-// 		}
-// 	}
-
-// 	_, err = lib.Db.Exec(context.Background(), `
-// 		INSERT INTO origins(origin, map)
-// 		VALUES($1, $2)
-// 		ON CONFLICT(origin) DO UPDATE SET
-// 			map=EXCLUDED.map`,
-// 		origin,
-// 		m,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("Save Error: %s %+v\n", origin, err)
-// 	}
-// }
-
-// func SetOriginNum(height uint32) (err error) {
-
-// 	row := lib.Db.QueryRow(context.Background(),
-// 		"SELECT MAX(num) FROM origins",
-// 	)
-// 	var dbNum sql.NullInt64
-// 	err = row.Scan(&dbNum)
-// 	if err != nil {
-// 		log.Panic(err)
-// 		return
-// 	}
-// 	var num uint64
-// 	if dbNum.Valid {
-// 		num = uint64(dbNum.Int64 + 1)
-// 	}
-
-// 	rows, err := lib.Db.Query(context.Background(), `
-// 		SELECT origin
-// 		FROM origins
-// 		WHERE num = -1 AND height <= $1 AND height IS NOT NULL
-// 		ORDER BY height, idx
-// 		LIMIT 100`,
-// 		height,
-// 	)
-// 	if err != nil {
-// 		log.Panic(err)
-// 		return
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		origin := &lib.Outpoint{}
-// 		err = rows.Scan(&origin)
-// 		if err != nil {
-// 			log.Panic(err)
-// 			return
-// 		}
-// 		// fmt.Printf("Origin Num %d %s\n", num, origin)
-// 		_, err = lib.Db.Exec(context.Background(), `
-// 			UPDATE origins
-// 			SET num=$2
-// 			WHERE origin=$1`,
-// 			origin, num,
-// 		)
-// 		if err != nil {
-// 			log.Panic(err)
-// 			return
-// 		}
-// 		num++
-// 	}
-// 	lib.PublishEvent(context.Background(), "inscriptionNum", fmt.Sprintf("%d", num))
-// 	// log.Println("Height", height, "Max Origin Num", num)
-// 	return
 // }

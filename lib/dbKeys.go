@@ -10,26 +10,38 @@ const BlockHeadersKey = "block:headers"
 const TxStatusKey = "tx:stat"
 const IngestKey = "ingest"
 const OwnerSyncKey = "own:sync"
-const OwnerAccountKey = "own:act"
+const OwnerAccountKey = "own:acct"
 const TxosKey = "txos"
+const ProgressKey = "progress"
 
 // const TxoDataKey = "txo:data"
 const SpendsKey = "spends"
 
+func TxoDataKey(outpoint string) string {
+	return "txo:data:" + outpoint
+}
 func OwnerTxosKey(owner string) string {
 	return "own:txo:" + owner
 }
 
 func AccountTxosKey(account string) string {
-	return "act:txo:" + account
+	return "acct:txo:" + account
 }
 
-func ValidateKey(tag string) string {
-	return "val:" + tag
+func PostProcessingKey(tag string) string {
+	return "post:" + tag
 }
 
 func AccountKey(account string) string {
-	return "act:" + account
+	return "acct:" + account
+}
+
+func TagKey(tag string) string {
+	return "tag:" + tag
+}
+
+func EventKey(tag string, event *Event) string {
+	return fmt.Sprintf("evt:%s:%s:%s", tag, event.Id, event.Value)
 }
 
 func PubEventKey(tag string, event *Event) string {
@@ -41,7 +53,7 @@ func PubOwnerKey(owner string) string {
 }
 
 func PubAccountKey(account string) string {
-	return "act:" + account
+	return "acct:" + account
 }
 
 func HeightScore(height uint32, idx uint64) float64 {

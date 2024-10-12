@@ -12,15 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/vmihailenco/msgpack/v5"
@@ -31,7 +32,8 @@ var CONCURRENCY int
 var PORT int
 
 var ctx = context.Background()
-var jb *junglebus.Client
+
+// var jb *junglebus.Client
 
 func init() {
 	wd, _ := os.Getwd()
@@ -71,22 +73,30 @@ func init() {
 		log.Panic(err)
 	}
 
-	JUNGLEBUS := os.Getenv("JUNGLEBUS")
-	if JUNGLEBUS == "" {
-		JUNGLEBUS = "https://junglebus.gorillapool.io"
-	}
+	// JUNGLEBUS := os.Getenv("JUNGLEBUS")
+	// if JUNGLEBUS == "" {
+	// 	JUNGLEBUS = "https://junglebus.gorillapool.io"
+	// }
 
-	jb, err = junglebus.New(
-		junglebus.WithHTTP(JUNGLEBUS),
-	)
-	if err != nil {
-		log.Panicln(err.Error())
-	}
+	// jb, err = junglebus.New(
+	// 	junglebus.WithHTTP(JUNGLEBUS),
+	// )
+	// if err != nil {
+	// 	log.Panicln(err.Error())
+	// }
 
 }
 
 var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
+}
+
+var tags = []string{
+	(&bopen.InscriptionIndexer{}).Tag(),
+	(&bopen.MapIndexer{}).Tag(),
+	(&bopen.BIndexer{}).Tag(),
+	(&bopen.SigmaIndexer{}).Tag(),
+	(&bopen.OriginIndexer{}).Tag(),
 }
 
 func main() {
@@ -97,6 +107,7 @@ func main() {
 	app := fiber.New()
 	app.Use(recover.New())
 	app.Use(logger.New())
+	app.Use(compress.New())
 
 	app.Get("/v1/blocks/tip", func(c *fiber.Ctx) error {
 		if tip, err := lib.Cache.Get(ctx, lib.ChaintipKey).Result(); err != nil {
@@ -107,11 +118,25 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/blocks/:height", func(c *fiber.Ctx) error {
-		if height, err := strconv.ParseInt(c.Params("height"), 10, 32); err != nil {
+	app.Get("/v1/blocks/:hashOrHeight", func(c *fiber.Ctx) error {
+		hashOrHeight := c.Params("hashOrHeight")
+		if len(hashOrHeight) <= 8 {
+			if blocks, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
+				Min:   hashOrHeight,
+				Max:   hashOrHeight,
+				Count: 1,
+			}).Result(); err != nil {
+				return err
+			} else if len(blocks) == 0 {
+				return c.SendStatus(404)
+			} else {
+				hashOrHeight = blocks[0]
+			}
+		} else if len(hashOrHeight) != 64 {
 			return c.SendStatus(400)
-		} else if block, err := lib.Cache.LIndex(ctx, lib.BlocksKey, height).Result(); err != nil {
-			return err
+		}
+		if block, err := lib.Cache.HGet(ctx, lib.BlockHeadersKey, hashOrHeight).Result(); err != nil {
+			return c.SendStatus(404)
 		} else {
 			c.Set("Content-Type", "application/json")
 			return c.SendString(block)
@@ -119,22 +144,28 @@ func main() {
 	})
 
 	app.Get("/v1/blocks/list/:from", func(c *fiber.Ctx) error {
-		if height, err := strconv.ParseInt(c.Params("from"), 10, 32); err != nil {
-			return c.SendStatus(400)
-		} else if blockJsons, err := lib.Cache.LRange(c.Context(), lib.BlocksKey, height, height+10000).Result(); err != nil {
+		from := c.Params("from")
+		blocks := make([]*models.BlockHeader, 0, 10000)
+		if hashes, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
+			Min:   from,
+			Max:   "+inf",
+			Count: 10000,
+		}).Result(); err != nil {
 			return err
-		} else {
-			blocks := make([]*models.BlockHeader, 0, len(blockJsons))
-			for _, blockJson := range blockJsons {
-				var block models.BlockHeader
-				if err := json.Unmarshal([]byte(blockJson), &block); err != nil {
-					return err
+		} else if len(hashes) > 0 {
+			if blockJsons, err := lib.Cache.HMGet(c.Context(), lib.BlockHeadersKey, hashes...).Result(); err != nil {
+				return err
+			} else {
+				for _, blockJson := range blockJsons {
+					var block models.BlockHeader
+					if err := json.Unmarshal([]byte(blockJson.(string)), &block); err != nil {
+						return err
+					}
+					blocks = append(blocks, &block)
 				}
-				blocks = append(blocks, &block)
 			}
-
-			return c.JSON(blocks)
 		}
+		return c.JSON(blocks)
 	})
 
 	app.Get("/v1/tx/:txid", func(c *fiber.Ctx) error {
@@ -187,10 +218,10 @@ func main() {
 	})
 
 	app.Get("/v1/txo/:outpoint", func(c *fiber.Ctx) error {
-		if outpoint, err := lib.NewOutpointFromString(c.Params("outpoint")); err != nil {
-			return c.SendStatus(400)
-		} else if txo, err := lib.LoadTxo(c.Context(), outpoint); err != nil {
+		if txo, err := lib.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
 			return err
+		} else if txo == nil {
+			return c.SendStatus(404)
 		} else {
 			return c.JSON(txo)
 		}

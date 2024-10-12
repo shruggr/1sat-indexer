@@ -50,10 +50,8 @@ func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxDa
 func (i *InscriptionIndexer) PreSave(idxCtx *lib.IndexContext) {
 	for _, txo := range idxCtx.Txos {
 		if bopen, ok := txo.Data[BOPEN]; ok {
-			if bopenData, ok := bopen.Data.(map[string]any); ok {
-				if insc, ok := bopenData[i.Tag()].(*Inscription); ok {
-					insc.File.Content = nil
-				}
+			if insc, ok := bopen.Data.(BOpen)[i.Tag()].(*Inscription); ok {
+				insc.File.Content = nil
 			}
 		}
 	}
@@ -128,7 +126,6 @@ ordLoop:
 		mime := strings.ToLower(insc.File.Type)
 		if strings.HasPrefix(mime, "application/json") ||
 			strings.HasPrefix(mime, "text") {
-
 			var data json.RawMessage
 			if err := json.Unmarshal(insc.File.Content, &data); err == nil {
 				insType = "json"

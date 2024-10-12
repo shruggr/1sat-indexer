@@ -48,11 +48,15 @@ func (i *SigmaIndexer) Tag() string {
 func (i *SigmaIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN]; ok {
-		if bopenData, ok := bopen.Data.(map[string]any); ok {
-			if sigs, ok := bopenData[i.Tag()].(*Sigmas); ok {
-				idxData = &lib.IndexData{
-					Data: sigs,
-				}
+		if sigs, ok := bopen.Data.(BOpen)[i.Tag()].(*Sigmas); ok {
+			idxData = &lib.IndexData{
+				Data: sigs,
+			}
+			for _, sig := range *sigs {
+				idxData.Events = append(idxData.Events, &lib.Event{
+					Id:    "address",
+					Value: sig.Address,
+				})
 			}
 		}
 	}

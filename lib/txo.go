@@ -16,9 +16,9 @@ type Txo struct {
 	Height   uint32                `json:"height"`
 	Idx      uint64                `json:"idx"`
 	Satoshis uint64                `json:"satoshis"`
-	OutAcc   uint64                `json:"_"`
+	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
-	Data     map[string]*IndexData `json:"-"`
+	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
 }
 
 func (t *Txo) AddOwner(owner string) {
@@ -30,25 +30,42 @@ func (t *Txo) AddOwner(owner string) {
 	t.Owners = append(t.Owners, owner)
 }
 
-func LoadTxo(ctx context.Context, outpoint *Outpoint) (*Txo, error) {
-	if result, err := Rdb.HGet(ctx, TxosKey, outpoint.String()).Bytes(); err == redis.Nil {
+func LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error) {
+	if result, err := Rdb.HGet(ctx, TxosKey, outpoint).Bytes(); err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)
 		return nil, err
 	} else {
-		txo := &Txo{}
+		txo := &Txo{
+			Data: make(map[string]*IndexData),
+		}
 		if err := msgpack.Unmarshal(result, txo); err != nil {
 			log.Panic(err)
 			return nil, err
+		}
+		if len(tags) > 0 {
+			if datas, err := Rdb.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
+				log.Panic(err)
+				return nil, err
+			} else {
+				for i, tag := range tags {
+					data := datas[i]
+					if data != nil {
+						txo.Data[tag] = &IndexData{
+							Data: json.RawMessage(data.(string)),
+						}
+					}
+				}
+			}
 		}
 		return txo, nil
 	}
 }
 
-func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
+func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 	outpoint := txo.Outpoint.String()
-	score := HeightScore(idxCtx.Height, idxCtx.Idx)
+	score := HeightScore(height, idx)
 
 	accts := map[string]struct{}{}
 	if len(txo.Owners) > 0 {
@@ -63,12 +80,14 @@ func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 			}
 		}
 	}
-	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		if mp, err := msgpack.Marshal(txo); err != nil {
-			log.Panic(err)
-			return err
-		} else if err := pipe.HSet(ctx, TxosKey, outpoint, mp).Err(); err != nil {
+	if mp, err := msgpack.Marshal(txo); err != nil {
+		log.Println("Marshal Txo", err)
+		log.Panic(err)
+		return err
+	} else if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) (err error) {
+		if err := pipe.HSet(ctx, TxosKey, outpoint, mp).Err(); err != nil {
 			log.Println("HSET Txo", err)
+			log.Panic(err)
 			return err
 		}
 		for _, owner := range txo.Owners {
@@ -77,6 +96,7 @@ func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 				Member: outpoint,
 			}).Err(); err != nil {
 				log.Println("ZADD Owner", err)
+				log.Panic(err)
 				return err
 			}
 		}
@@ -87,19 +107,43 @@ func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 				Member: outpoint,
 			}).Err(); err != nil {
 				log.Println("ZADD Account", err)
+				log.Panic(err)
 				return err
 			}
 		}
-		for tag, data := range txo.Data {
-			if data.Validate {
-				if err := pipe.ZAdd(ctx, ValidateKey(tag), redis.Z{
+		if len(txo.Data) > 0 {
+			datas := make(map[string][]byte, len(txo.Data))
+			for tag, data := range txo.Data {
+				tagKey := TagKey(tag)
+				if err := pipe.ZAdd(ctx, tagKey, redis.Z{
 					Score:  score,
 					Member: outpoint,
 				}).Err(); err != nil {
-					log.Println("ZADD Validate", err)
+					log.Println("ZADD Tag", tagKey, err)
+					log.Panic(err)
+					return err
+				}
+				for _, event := range data.Events {
+					eventKey := EventKey(tag, event)
+					if err := pipe.ZAdd(ctx, eventKey, redis.Z{
+						Score:  score,
+						Member: outpoint,
+					}).Err(); err != nil {
+						log.Panic(err)
+						log.Println("ZADD Event", eventKey, err)
+						return err
+					}
+				}
+				if datas[tag], err = data.MarshalJSON(); err != nil {
+					log.Panic(err)
 					return err
 				}
 			}
+			// if err := pipe.HSet(ctx, TxoDataKey(outpoint), txo.Data).Err(); err != nil {
+			// 	log.Panic(err)
+			// 	log.Println("HSET TxoData", err)
+			// 	return err
+			// }
 		}
 		return nil
 	}); err != nil {
@@ -120,9 +164,8 @@ func (txo *Txo) Save(ctx context.Context, idxCtx *IndexContext) error {
 	return nil
 }
 
-func (spend *Txo) SaveSpend(ctx context.Context, idxCtx *IndexContext) error {
-	score := HeightScore(idxCtx.Height, idxCtx.Idx)
-	txid := idxCtx.Txid.String()
+func (spend *Txo) SaveSpend(ctx context.Context, txid string, height uint32, idx uint64) error {
+	score := HeightScore(height, idx)
 	accts := map[string]struct{}{}
 	if len(spend.Owners) > 0 {
 		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, spend.Owners...).Result(); err != nil {
@@ -140,7 +183,7 @@ func (spend *Txo) SaveSpend(ctx context.Context, idxCtx *IndexContext) error {
 		if err := pipe.HSet(ctx,
 			SpendsKey,
 			spend.Outpoint.String(),
-			idxCtx.Txid.String(),
+			txid,
 		).Err(); err != nil {
 			return err
 		}
@@ -177,21 +220,72 @@ func (spend *Txo) SaveSpend(ctx context.Context, idxCtx *IndexContext) error {
 	return nil
 }
 
-func (t Txo) MarshalJSON() ([]byte, error) {
-	m := map[string]any{}
-	m["outpoint"] = t.Outpoint
-	m["height"] = t.Height
-	m["idx"] = t.Idx
-	m["satoshis"] = t.Satoshis
-	// m["outacc"] = t.OutAcc
-	m["owners"] = t.Owners
-
-	if len(t.Data) > 0 {
-		d := map[string]any{}
-		for tag, v := range t.Data {
-			d[tag] = v.Data
-		}
-		m["data"] = d
+func (t *Txo) SaveData(ctx context.Context, tags []string) (err error) {
+	if len(tags) == 0 {
+		return nil
 	}
-	return json.Marshal(m)
+
+	outpoint := t.Outpoint.String()
+	score := HeightScore(t.Height, t.Idx)
+	datas := make(map[string]any, len(tags))
+	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, tag := range tags {
+			if data, ok := t.Data[tag]; ok {
+				tagKey := TagKey(tag)
+				if err := pipe.ZAdd(ctx, tagKey, redis.Z{
+					Score:  score,
+					Member: outpoint,
+				}).Err(); err != nil {
+					log.Println("ZADD Tag", tagKey, err)
+					return err
+				}
+				for _, event := range data.Events {
+					eventKey := EventKey(tag, event)
+					if err := pipe.ZAdd(ctx, eventKey, redis.Z{
+						Score:  score,
+						Member: outpoint,
+					}).Err(); err != nil {
+						return err
+					}
+				}
+				if datas[tag], err = data.MarshalJSON(); err != nil {
+					log.Panic(err)
+					return err
+				}
+			}
+		}
+		if err := pipe.HMSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
+			log.Println("HMSET TxoData", err)
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Panic(err)
+		return err
+	}
+	for _, tag := range tags {
+		for _, event := range t.Data[tag].Events {
+			Rdb.Publish(ctx, PubEventKey(tag, event), outpoint)
+		}
+	}
+	return nil
 }
+
+// func (t Txo) MarshalJSON() ([]byte, error) {
+// 	m := map[string]any{}
+// 	m["outpoint"] = t.Outpoint
+// 	m["height"] = t.Height
+// 	m["idx"] = t.Idx
+// 	m["satoshis"] = t.Satoshis
+// 	// m["outacc"] = t.OutAcc
+// 	m["owners"] = t.Owners
+
+// 	if len(t.Data) > 0 {
+// 		d := map[string]any{}
+// 		for tag, v := range t.Data {
+// 			d[tag] = v.Data
+// 		}
+// 		m["data"] = d
+// 	}
+// 	return json.Marshal(m)
+// }
