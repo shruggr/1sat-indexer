@@ -19,6 +19,7 @@ type Txo struct {
 	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
 	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
+	// DepQueue []*Outpoint           `json:"-"`
 }
 
 func (t *Txo) AddOwner(owner string) {
@@ -67,6 +68,7 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 	outpoint := txo.Outpoint.String()
 	score := HeightScore(height, idx)
 
+	// TODO: preload all account into memory
 	accts := map[string]struct{}{}
 	if len(txo.Owners) > 0 {
 		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, txo.Owners...).Result(); err != nil {
@@ -112,8 +114,12 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 			}
 		}
 		if len(txo.Data) > 0 {
-			datas := make(map[string][]byte, len(txo.Data))
+			datas := make(map[string]any, len(txo.Data))
 			for tag, data := range txo.Data {
+				// if len(data.DepQueue) > 0 {
+				// 	txo.DepQueue = append(txo.DepQueue, data.DepQueue...)
+				// 	continue
+				// }
 				tagKey := TagKey(tag)
 				if err := pipe.ZAdd(ctx, tagKey, redis.Z{
 					Score:  score,
@@ -134,16 +140,19 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 						return err
 					}
 				}
+				// if datas[tag], err = msgpack.Marshal(data); err != nil {
 				if datas[tag], err = data.MarshalJSON(); err != nil {
 					log.Panic(err)
 					return err
 				}
 			}
-			// if err := pipe.HSet(ctx, TxoDataKey(outpoint), txo.Data).Err(); err != nil {
-			// 	log.Panic(err)
-			// 	log.Println("HSET TxoData", err)
-			// 	return err
-			// }
+			if len(datas) > 0 {
+				if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
+					log.Panic(err)
+					log.Println("HSET TxoData", err)
+					return err
+				}
+			}
 		}
 		return nil
 	}); err != nil {
@@ -248,6 +257,7 @@ func (t *Txo) SaveData(ctx context.Context, tags []string) (err error) {
 						return err
 					}
 				}
+				// if datas[tag], err = msgpack.Marshal(data); err != nil {
 				if datas[tag], err = data.MarshalJSON(); err != nil {
 					log.Panic(err)
 					return err
@@ -270,22 +280,3 @@ func (t *Txo) SaveData(ctx context.Context, tags []string) (err error) {
 	}
 	return nil
 }
-
-// func (t Txo) MarshalJSON() ([]byte, error) {
-// 	m := map[string]any{}
-// 	m["outpoint"] = t.Outpoint
-// 	m["height"] = t.Height
-// 	m["idx"] = t.Idx
-// 	m["satoshis"] = t.Satoshis
-// 	// m["outacc"] = t.OutAcc
-// 	m["owners"] = t.Owners
-
-// 	if len(t.Data) > 0 {
-// 		d := map[string]any{}
-// 		for tag, v := range t.Data {
-// 			d[tag] = v.Data
-// 		}
-// 		m["data"] = d
-// 	}
-// 	return json.Marshal(m)
-// }

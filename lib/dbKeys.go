@@ -4,15 +4,30 @@ import (
 	"fmt"
 )
 
-const ChaintipKey = "chaintip"
-const BlockHeightKey = "block:height"
-const BlockHeadersKey = "block:headers"
+const BlockHeightKey = "blk:height"
+const BlockHeadersKey = "blk:headers"
+const ChaintipKey = "blk:tip"
+
 const TxStatusKey = "tx:stat"
-const IngestKey = "ingest"
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
 const TxosKey = "txos"
-const ProgressKey = "progress"
+
+func ProgressQueueKey(tag string) string {
+	return "progress:" + tag
+}
+
+func IngestQueueKey(tag string) string {
+	return "ingest:" + tag
+}
+
+func DepQueueKey(txid string) string {
+	return "dep:" + txid
+}
+
+func IngestLogKey(tag string) string {
+	return "ing:log:" + tag
+}
 
 // const TxoDataKey = "txo:data"
 const SpendsKey = "spends"

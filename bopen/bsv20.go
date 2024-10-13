@@ -109,6 +109,7 @@ func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 			}
 		}
 
+		var err error
 		switch bsv20.Op {
 		case "deploy":
 			if max, ok := data["max"]; ok {

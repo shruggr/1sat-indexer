@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"time"
 
@@ -12,25 +13,32 @@ import (
 )
 
 type IndexContext struct {
-	Id       uint64                   `json:"id"`
-	Tx       *transaction.Transaction `json:"-"`
-	Txid     *chainhash.Hash          `json:"txid"`
-	Height   uint32                   `json:"height"`
-	Idx      uint64                   `json:"idx"`
-	Txos     []*Txo                   `json:"txos"`
-	Spends   []*Txo                   `json:"spends"`
-	Indexers []Indexer                `json:"-"`
-	Ctx      context.Context          `json:"-"`
-	tags     []string                 `json:"-"`
+	// Id            uint64                   `json:"id"`
+	Tx            *transaction.Transaction `json:"-"`
+	Txid          *chainhash.Hash          `json:"txid"`
+	Height        uint32                   `json:"height"`
+	Idx           uint64                   `json:"idx"`
+	Txos          []*Txo                   `json:"txos"`
+	Spends        []*Txo                   `json:"spends"`
+	Indexers      []Indexer                `json:"-"`
+	Ctx           context.Context          `json:"-"`
+	tags          []string                 `json:"-"`
+	LoadAncestors bool                     `json:"-"`
+	SaveAncestors bool                     `json:"-"`
+	txoCache      map[string]*Txo          `json:"-"`
+	// DepQueue      []*Outpoint              `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer) *IndexContext {
+func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, loadAncestors bool, saveAncestors bool) *IndexContext {
 	idxCtx := &IndexContext{
-		Id:       uint64(time.Now().UnixNano()),
-		Tx:       tx,
-		Txid:     tx.TxID(),
-		Indexers: indexers,
-		Ctx:      ctx,
+		// Id:            uint64(time.Now().UnixNano()),
+		Tx:            tx,
+		Txid:          tx.TxID(),
+		Indexers:      indexers,
+		Ctx:           ctx,
+		LoadAncestors: loadAncestors,
+		SaveAncestors: saveAncestors,
+		txoCache:      make(map[string]*Txo),
 	}
 
 	if tx.MerklePath != nil {
@@ -50,12 +58,17 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 	return idxCtx
 }
 
+// func (idxCtx *IndexContext) QueueDependency(outpoint *Outpoint) {
+// 	idxCtx.DepQueue = append(idxCtx.DepQueue, outpoint)
+// }
+
 func (idxCtx *IndexContext) ParseTxn() {
 	idxCtx.ParseSpends()
 	idxCtx.ParseTxos()
 }
 
 func (idxCtx *IndexContext) ParseTxos() {
+	// log.Println("ParseTxos", idxCtx.Txid.String())
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
 		outpoint := NewOutpointFromHash(idxCtx.Txid, uint32(vout))
@@ -87,39 +100,61 @@ func (idxCtx *IndexContext) ParseSpends() {
 	}
 	for _, txin := range idxCtx.Tx.Inputs {
 		outpoint := NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
-		if spend, err := idxCtx.LoadTxo(outpoint, idxCtx.tags); err != nil {
-			log.Panic(err)
+		var spend *Txo
+		if idxCtx.LoadAncestors {
+			if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
+				log.Panic(err)
+			} else {
+				spend = txo
+			}
 		} else {
-			idxCtx.Spends = append(idxCtx.Spends, spend)
+			spend = &Txo{
+				Outpoint: outpoint,
+			}
 		}
+		idxCtx.Spends = append(idxCtx.Spends, spend)
 	}
 }
 
-func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint, tags []string) (txo *Txo, err error) {
+func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
+	if txo, ok := idxCtx.txoCache[op]; ok {
+		return txo, nil
+	}
+	// log.Println("LoadTxo", op)
 	if txo, err = LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
 		log.Panic(err)
 		return nil, err
-	}
-	if txo == nil {
-		if tx, err := LoadTx(idxCtx.Ctx, outpoint.TxidHex()); err != nil {
+	} else if txo != nil {
+		for i, indexer := range idxCtx.Indexers {
+			tag := idxCtx.tags[i]
+			if data, ok := txo.Data[tag]; ok {
+				if data.Data, err = indexer.FromBytes(data.Data.(json.RawMessage)); err != nil {
+					log.Panic(err)
+					return nil, err
+				}
+			}
+		}
+	} else {
+		parentTxid := outpoint.TxidHex()
+		if tx, err := LoadTx(idxCtx.Ctx, parentTxid); err != nil {
 			log.Panicln(err)
 			return nil, err
 		} else {
-			// spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers)
-			spendCtx := NewIndexContext(idxCtx.Ctx, tx, nil)
+			log.Println("LoadParentTx", parentTxid)
+			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, idxCtx.LoadAncestors, idxCtx.SaveAncestors)
+			spendCtx.txoCache = idxCtx.txoCache
 			spendCtx.ParseTxos()
-			// if err := spendCtx.SaveTxos(); err != nil {
-			// 	log.Panic(err)
-			// 	return nil, err
-			// }
-			txo = spendCtx.Txos[outpoint.Vout()]
-			if err := txo.Save(idxCtx.Ctx, idxCtx.Height, idxCtx.Idx); err != nil {
-				log.Panic(err)
-				return nil, err
+			if idxCtx.SaveAncestors {
+				if err := spendCtx.SaveTxos(); err != nil {
+					log.Panic(err)
+					return nil, err
+				}
 			}
+			txo = spendCtx.Txos[outpoint.Vout()]
 		}
 	}
+	idxCtx.txoCache[op] = txo
 	return txo, nil
 }
 
@@ -138,6 +173,16 @@ func (idxCtx *IndexContext) Save() error {
 	} else if err := idxCtx.SaveSpends(); err != nil {
 		log.Panic(err)
 		return err
+	} else if children, err := Rdb.SMembers(idxCtx.Ctx, DepQueueKey(txid)).Result(); err != nil {
+		log.Panic(err)
+		return err
+	} else {
+		for _, child := range children {
+			if err := Rdb.SAdd(idxCtx.Ctx, ProgressQueueKey(child), txid).Err(); err != nil {
+				log.Panic(err)
+				return err
+			}
+		}
 	}
 
 	if err := Rdb.ZAdd(idxCtx.Ctx, TxStatusKey, redis.Z{
