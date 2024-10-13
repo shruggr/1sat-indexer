@@ -2,9 +2,7 @@ package bopen
 
 import (
 	"bytes"
-	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"strings"
 	"unicode/utf8"
 
@@ -12,35 +10,30 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
+const MAP_TAG = "map"
+
 type Map map[string]interface{}
-
-func (m Map) Value() (driver.Value, error) {
-	if m == nil {
-		return nil, nil
-	}
-	return json.Marshal(m)
-}
-
-func (m *Map) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed")
-	}
-	return json.Unmarshal(b, &m)
-}
 
 type MapIndexer struct {
 	lib.BaseIndexer
 }
 
 func (i *MapIndexer) Tag() string {
-	return "map"
+	return MAP_TAG
+}
+
+func (i *MapIndexer) FromBytes(data []byte) (any, error) {
+	obj := Map{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, err
+	}
+	return obj, nil
 }
 
 func (i *MapIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[BOPEN]; ok {
-		if m, ok := bopen.Data.(BOpen)[i.Tag()].(Map); ok {
+	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+		if m, ok := bopen.Data.(BOpen)[MAP_TAG].(Map); ok {
 			idxData = &lib.IndexData{
 				Data: m,
 			}

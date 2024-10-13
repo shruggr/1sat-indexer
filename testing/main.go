@@ -9,11 +9,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/bopen"
-	"github.com/shruggr/1sat-indexer/ingest"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-var hexId = "ddea8c4e5b88e5c07f7531188ae345e4a6d0fe6dadedb5c27854caae411e3852"
+// var hexId = "d3c588a17edce9cb213bc3d99afbbb93f11854909afc76037d46b5e98cbbc4ca"
+
+var hexId = "faf4ad68d1f349dd5e3801fb18a36b550404ec6c7da71a4a7ec5233ac277d0b3"
 
 func main() {
 	// var err error
@@ -55,18 +56,21 @@ func main() {
 		&bopen.BIndexer{},
 		&bopen.SigmaIndexer{},
 		&bopen.OriginIndexer{},
-		// &bopen.Bsv21Indexer{},
-		// &bopen.Bsv20Indexer{},
+		&bopen.Bsv21Indexer{},
+		&bopen.Bsv20Indexer{},
+		&bopen.OrdLockIndexer{},
 	}
 
 	if tx, err := lib.LoadTx(ctx, hexId); err != nil {
 		log.Panic(err)
-	} else if idxCtx, err := ingest.IngestTx(ctx, tx, indexers); err != nil {
-		log.Panic(err)
-	} else if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
+	} else if idxCtx, err := lib.IngestTx(ctx, tx, indexers); err != nil {
 		log.Panic(err)
 	} else {
-		log.Println(string(out))
+		if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
+			log.Panic(err)
+		} else {
+			log.Println(string(out))
+		}
 	}
 	// scores, err := rdb.ZMScore(context.Background(), "txqueue", "1", "2").Result()
 

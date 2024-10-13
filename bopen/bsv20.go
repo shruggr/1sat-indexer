@@ -1,10 +1,8 @@
 package bopen
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -30,8 +28,6 @@ const BSV20_INDEX_FEE = 1000
 
 const BSV20_INCLUDE_FEE = 10000000
 
-var ctx = context.Background()
-
 type Bsv20 struct {
 	Ticker        string        `json:"tick,omitempty"`
 	Op            string        `json:"op"`
@@ -54,1003 +50,110 @@ type Bsv20 struct {
 	FundBalance   int           `json:"-"`
 }
 
+const BSV20_TAG = "bsv20"
+
 type Bsv20Indexer struct {
 	lib.BaseIndexer
+	WhitelistFn *func(tick string) bool
+	BlacklistFn *func(tick string) bool
 }
 
 func (i *Bsv20Indexer) Tag() string {
-	return "bsv20"
+	return BSV20_TAG
 }
 
-func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
 	txo := idxCtx.Txos[vout]
-	bopen, ok := txo.Data[BOPEN]
-	if !ok {
-		return
-	}
-	bopenData, ok := bopen.Data.(map[string]any)
-	if !ok {
-		return
-	}
-	insc, ok := bopenData[i.Tag()].(*Inscription)
-	if !ok || strings.ToLower(insc.File.Type) != "application/bsv-20" {
-		return
-	}
-	if bsv21 := ParseBsv20Inscription(insc.File, txo); bsv21 == nil {
-		return
+
+	if idxData, ok := txo.Data[BOPEN_TAG]; !ok {
+		return nil
+	} else if bopen, ok := idxData.Data.(BOpen); !ok {
+		return nil
+	} else if data, ok := bopen[BSV20_TAG].(map[string]string); !ok {
+		return nil
+	} else if protocol, ok := data["p"]; !ok || protocol != "bsv-20" {
+		return nil
+	} else if tick, ok := data["tick"]; !ok {
+		return nil
 	} else {
+		if chars := []rune(tick); len(chars) > 4 {
+			return nil
+		}
+		bsv20 := &Bsv20{
+			Ticker: strings.ToUpper(tick),
+		}
+		// if i.WhitelistFn != nil && !(*i.WhitelistFn)(bsv20.Ticker) {
+		// 	return nil
+		// } else if i.BlacklistFn != nil || (*i.BlacklistFn)(bsv20.Ticker) {
+		// 	return nil
+		// } else
+		if op, ok := data["op"]; !ok {
+			return nil
+		} else {
+			bsv20.Op = strings.ToLower(op)
+		}
+
+		if amt, ok := data["amt"]; ok {
+			if amt, err := strconv.ParseUint(amt, 10, 64); err != nil {
+				return nil
+			} else {
+				bsv20.Amt = &amt
+			}
+		}
+
+		if dec, ok := data["dec"]; ok {
+			if val, err := strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
+				return nil
+			} else {
+				bsv20.Decimals = uint8(val)
+			}
+		}
+
+		switch bsv20.Op {
+		case "deploy":
+			if max, ok := data["max"]; ok {
+				if bsv20.Max, err = strconv.ParseUint(max, 10, 64); err != nil {
+					return nil
+				}
+			}
+			if limit, ok := data["lim"]; ok {
+				if bsv20.Limit, err = strconv.ParseUint(limit, 10, 64); err != nil {
+					return nil
+				}
+			}
+			hash := sha256.Sum256([]byte(bsv20.Ticker))
+			path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+			ek, err := idxHdKey.DeriveChildFromPath(path)
+			if err != nil {
+				log.Panic(err)
+			}
+			pubKey, err := ek.ECPubKey()
+			if err != nil {
+				log.Panic(err)
+			}
+			bsv20.FundPath = path
+			bsv20.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
+		case "mint", "transfer", "burn":
+			if bsv20.Amt == nil {
+				return nil
+			}
+		default:
+			return nil
+		}
+
 		return &lib.IndexData{
-			Data: bsv21,
+			Data: bsv20,
 			Events: []*lib.Event{
 				{
 					Id:    "tick",
-					Value: bsv21.Ticker,
+					Value: bsv20.Ticker,
 				},
 			},
+			PostProcess: true,
 		}
 	}
 }
 
 func ParseBsv20Inscription(ord *File, txo *lib.Txo) (bsv20 *Bsv20) {
-
-	data := map[string]string{}
-	var err error
-	if err := json.Unmarshal(ord.Content, &data); err != nil {
-		return
-	}
-	var protocol string
-	var ok bool
-	if protocol, ok = data["p"]; !ok || protocol != "bsv-20" {
-		return nil
-	}
-	if tick, ok := data["tick"]; ok {
-		if chars := []rune(tick); len(chars) > 4 {
-			return
-		} else {
-			bsv20 = &Bsv20{}
-			bsv20.Ticker = strings.ToUpper(tick)
-		}
-	} else {
-		return nil
-	}
-	if op, ok := data["op"]; ok {
-		bsv20.Op = strings.ToLower(op)
-	} else {
-		return nil
-	}
-
-	if amt, ok := data["amt"]; ok {
-		if amt, err := strconv.ParseUint(amt, 10, 64); err != nil {
-			return nil
-		} else {
-			bsv20.Amt = &amt
-		}
-	}
-
-	if dec, ok := data["dec"]; ok {
-		if val, err := strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
-			return nil
-		} else {
-			bsv20.Decimals = uint8(val)
-		}
-	}
-
-	switch bsv20.Op {
-	case "deploy":
-		if max, ok := data["max"]; ok {
-			if bsv20.Max, err = strconv.ParseUint(max, 10, 64); err != nil {
-				return nil
-			}
-		}
-		if limit, ok := data["lim"]; ok {
-			if bsv20.Limit, err = strconv.ParseUint(limit, 10, 64); err != nil {
-				return nil
-			}
-		}
-		hash := sha256.Sum256([]byte(bsv20.Ticker))
-		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
-		ek, err := idxHdKey.DeriveChildFromPath(path)
-		if err != nil {
-			log.Panic(err)
-		}
-		pubKey, err := ek.ECPubKey()
-		if err != nil {
-			log.Panic(err)
-		}
-		bsv20.FundPath = path
-		bsv20.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
-	case "mint", "transfer", "burn":
-		if bsv20.Amt == nil {
-			return nil
-		}
-	default:
-		return nil
-	}
-
 	return bsv20
 }
-
-// func (b *Bsv20) Save(t *lib.Txo) {
-// 	if b.Op == "deploy" {
-// 		_, err := lib.Db.Exec(ctx, `
-// 			INSERT INTO bsv20(txid, vout, height, idx, tick, max, lim, dec, status, reason, fund_path, fund_pkhash)
-// 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-// 			ON CONFLICT(txid, vout) DO UPDATE SET
-// 				height=EXCLUDED.height,
-// 				idx=EXCLUDED.idx,
-// 				fund_path=EXCLUDED.fund_path,
-// 				fund_pkhash=EXCLUDED.fund_pkhash`,
-// 			t.Outpoint.Txid(),
-// 			t.Outpoint.Vout(),
-// 			t.Height,
-// 			t.Idx,
-// 			b.Ticker,
-// 			strconv.FormatUint(b.Max, 10),
-// 			b.Limit,
-// 			b.Decimals,
-// 			b.Status,
-// 			b.Reason,
-// 			b.FundPath,
-// 			b.FundPKHash,
-// 		)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-// 	}
-// 	if b.Op == "deploy+mint" {
-// 		_, err := lib.Db.Exec(ctx, `
-// 			INSERT INTO bsv20_v2(id, height, idx, sym, icon, amt, dec, fund_path, fund_pkhash)
-// 			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-// 			ON CONFLICT(id) DO UPDATE SET
-// 				height=EXCLUDED.height,
-// 				idx=EXCLUDED.idx,
-// 				sym=EXCLUDED.sym,
-// 				icon=EXCLUDED.icon,
-// 				fund_path=EXCLUDED.fund_path,
-// 				fund_pkhash=EXCLUDED.fund_pkhash`,
-// 			t.Outpoint,
-// 			t.Height,
-// 			t.Idx,
-// 			b.Symbol,
-// 			b.Icon,
-// 			b.Amt,
-// 			b.Decimals,
-// 			b.FundPath,
-// 			b.FundPKHash,
-// 		)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-// 	}
-// 	if slices.Contains([]string{"deploy+mint", "mint", "transfer", "burn"}, b.Op) {
-// 		// log.Println("BSV20 TXO:", b.Ticker, b.Id)
-
-// 		for i := 0; i < 3; i++ {
-// 			// log.Printf("BSV20 TXO: %s %d\n", b.Id, len(t.Script))
-// 			_, err := lib.Db.Exec(ctx, `
-// 			INSERT INTO bsv20_txos(txid, vout, height, idx, id, tick, op, amt, pkhash, price, payout, listing, price_per_token, script, status, spend)
-// 			SELECT txid, vout, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, spend
-// 			FROM txos
-// 			WHERE txid=$1 AND vout=$2
-// 			ON CONFLICT(txid, vout) DO UPDATE SET
-// 				height=EXCLUDED.height,
-// 				idx=EXCLUDED.idx,
-// 				pkhash=EXCLUDED.pkhash,
-// 				status=EXCLUDED.status,
-// 				script=EXCLUDED.script,
-// 				price=EXCLUDED.price,
-// 				payout=EXCLUDED.payout,
-// 				listing=EXCLUDED.listing,
-// 				price_per_token=EXCLUDED.price_per_token`,
-// 				t.Outpoint.Txid(),
-// 				t.Outpoint.Vout(),
-// 				t.Height,
-// 				t.Idx,
-// 				b.Id,
-// 				b.Ticker,
-// 				b.Op,
-// 				b.Amt,
-// 				t.Owner,
-// 				b.Price,
-// 				b.PayOut,
-// 				b.Listing,
-// 				b.PricePerToken,
-// 				t.Script,
-// 				b.Status,
-// 			)
-// 			if err != nil {
-// 				var pgErr *pgconn.PgError
-// 				if errors.As(err, &pgErr) {
-// 					if pgErr.Code == "23505" || pgErr.Code == "23503" {
-// 						time.Sleep(100 * time.Millisecond)
-// 						// log.Printf("Conflict. Retrying SaveSpend %s\n", t.Outpoint)
-// 						continue
-// 					}
-// 				}
-// 				log.Panicln("ins bsv20_txo Err:", err)
-// 			}
-// 			break
-// 		}
-
-// 	}
-// }
-
-// func ValidateBsv20Deploy(height uint32) {
-// 	rows, err := lib.Db.Query(ctx, `
-// 		SELECT txid, vout, height, idx, tick, max, lim, supply
-// 		FROM bsv20
-// 		WHERE status=0 AND height <= $1 AND height IS NOT NULL
-// 		ORDER BY height ASC, idx ASC, vout ASC`,
-// 		height,
-// 	)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		ticker := &Bsv20{}
-// 		err = rows.Scan(&ticker.Txid, &ticker.Vout, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-
-// 		func(bsv20 *Bsv20) {
-// 			rows, err := lib.Db.Query(ctx, `
-// 				SELECT txid, vout
-// 				FROM bsv20
-// 				WHERE tick=$1 AND status=1 AND (
-// 					height < $2 OR
-// 					(height = $2 AND idx < $3) OR
-// 					(height = $2 AND idx = $3 AND vout < $4)
-// 				)
-// 				LIMIT 1`,
-// 				bsv20.Ticker,
-// 				bsv20.Height,
-// 				bsv20.Idx,
-// 				bsv20.Vout,
-// 			)
-// 			if err != nil {
-// 				log.Panic(err)
-// 			}
-// 			defer rows.Close()
-
-// 			if rows.Next() {
-// 				_, err = lib.Db.Exec(ctx, `
-// 					UPDATE bsv20
-// 					SET status = -1, reason='duplicate'
-// 					WHERE txid = $1 AND vout = $2`,
-// 					bsv20.Txid,
-// 					bsv20.Vout,
-// 				)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 				return
-// 			}
-// 			_, err = lib.Db.Exec(ctx, `
-// 				UPDATE bsv20
-// 				SET status = 1
-// 				WHERE txid = $1 AND vout = $2`,
-// 				bsv20.Txid,
-// 				bsv20.Vout,
-// 			)
-// 			if err != nil {
-// 				log.Panic(err)
-// 			}
-// 		}(ticker)
-// 	}
-// }
-
-// func ValidateBsv20Txos(height uint32) {
-// 	rows, err := lib.Db.Query(ctx, `
-// 		SELECT txid, vout, height, idx, tick, id, amt
-// 		FROM bsv20_txos
-// 		WHERE status=0 AND height <= $1 AND height IS NOT NULL
-// 		ORDER BY height ASC, idx ASC, vout ASC`,
-// 		height,
-// 	)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	defer rows.Close()
-
-// 	ticks := map[string]*Bsv20{}
-// 	var prevTxid []byte
-// 	for rows.Next() {
-// 		bsv20 := &Bsv20{}
-// 		err = rows.Scan(&bsv20.Txid, &bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Ticker, &bsv20.Id, &bsv20.Amt)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-
-// 		switch bsv20.Op {
-// 		case "mint":
-// 			var reason string
-// 			ticker, ok := ticks[bsv20.Ticker]
-// 			if !ok {
-// 				ticker = LoadTicker(bsv20.Ticker)
-// 				ticks[bsv20.Ticker] = ticker
-// 			}
-// 			if ticker == nil {
-// 				reason = fmt.Sprintf("invalid ticker %s as of %d %d", bsv20.Ticker, &bsv20.Height, &bsv20.Idx)
-// 			} else if ticker.Supply >= ticker.Max {
-// 				reason = fmt.Sprintf("supply %d >= max %d", ticker.Supply, ticker.Max)
-// 			} else if ticker.Limit > 0 && *bsv20.Amt > ticker.Limit {
-// 				reason = fmt.Sprintf("amt %d > limit %d", *bsv20.Amt, ticker.Limit)
-// 			}
-
-// 			if reason != "" {
-// 				_, err = lib.Db.Exec(ctx, `
-// 				UPDATE bsv20_txos
-// 				SET status=-1, reason=$3
-// 				WHERE txid=$1 AND vout=$2`,
-// 					bsv20.Txid,
-// 					bsv20.Vout,
-// 					reason,
-// 				)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 				continue
-// 			}
-
-// 			t, err := lib.Db.Begin(ctx)
-// 			if err != nil {
-// 				log.Panic(err)
-// 			}
-// 			defer t.Rollback(ctx)
-
-// 			if ticker.Max-ticker.Supply < *bsv20.Amt {
-// 				reason = fmt.Sprintf("supply %d + amt %d > max %d", ticker.Supply, *bsv20.Amt, ticker.Max)
-// 				*bsv20.Amt = ticker.Max - ticker.Supply
-
-// 				_, err := t.Exec(ctx, `
-// 				UPDATE bsv20_txos
-// 				SET status=1, amt=$3, reason=$4
-// 				WHERE txid=$1 AND vout=$2`,
-// 					bsv20.Txid,
-// 					bsv20.Vout,
-// 					*bsv20.Amt,
-// 					reason,
-// 				)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 			} else {
-// 				_, err := t.Exec(ctx, `
-// 				UPDATE bsv20_txos
-// 				SET status=1
-// 				WHERE txid=$1 AND vout=$2`,
-// 					bsv20.Txid,
-// 					bsv20.Vout,
-// 				)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 			}
-
-// 			ticker.Supply += *bsv20.Amt
-// 			_, err = t.Exec(ctx, `
-// 				UPDATE bsv20
-// 				SET supply=$3
-// 				WHERE txid=$1 AND vout=$2`,
-// 				ticker.Txid,
-// 				ticker.Vout,
-// 				ticker.Supply,
-// 			)
-// 			if err != nil {
-// 				log.Panic(err)
-// 			}
-
-// 			err = t.Commit(ctx)
-// 			if err != nil {
-// 				log.Panic(err)
-// 			}
-// 			fmt.Println("Validated Mint:", bsv20.Ticker, ticker.Supply, ticker.Max)
-// 		case "transfer", "burn":
-// 			if bytes.Equal(prevTxid, bsv20.Txid) {
-// 				continue
-// 			}
-// 			prevTxid = bsv20.Txid
-// 			ValidateV1Transfer(bsv20.Txid, bsv20.Ticker, true)
-// 			fmt.Printf("Validated Transfer: %s %x\n", bsv20.Ticker, bsv20.Txid)
-// 		}
-
-// 	}
-// }
-
-// func ValidateV1Transfer(txid []byte, tick string, mined bool) int {
-// 	// log.Printf("Validating %x %s\n", txid, tick)
-
-// 	inRows, err := lib.Db.Query(ctx, `
-// 		SELECT txid, vout, status, amt
-// 		FROM bsv20_txos
-// 		WHERE spend=$1 AND tick=$2 AND op != 'burn'`,
-// 		txid,
-// 		tick,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("%x - %v\n", txid, err)
-// 	}
-// 	defer inRows.Close()
-
-// 	var reason string
-// 	var tokensIn uint64
-// 	var tokenOuts []uint32
-// 	for inRows.Next() {
-// 		var inTxid []byte
-// 		var vout uint32
-// 		var amt uint64
-// 		var inStatus int
-// 		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt)
-// 		if err != nil {
-// 			log.Panicf("%x - %v\n", txid, err)
-// 		}
-
-// 		switch inStatus {
-// 		case -1:
-// 			reason = "invalid input"
-// 		case 0:
-// 			fmt.Printf("inputs pending %s %x\n", tick, txid)
-// 			return 0
-// 		case 1:
-// 			tokensIn += amt
-// 		}
-// 	}
-// 	inRows.Close()
-
-// 	sql := `SELECT vout, status, amt
-// 		FROM bsv20_txos
-// 		WHERE txid=$1 AND tick=$2 AND op IN ('transfer', 'burn')`
-// 	outRows, err := lib.Db.Query(ctx,
-// 		sql,
-// 		txid,
-// 		tick,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("%x - %v\n", txid, err)
-// 	}
-// 	defer outRows.Close()
-
-// 	for outRows.Next() {
-// 		var vout uint32
-// 		var amt uint64
-// 		var status int
-// 		err = outRows.Scan(&vout, &status, &amt)
-// 		if err != nil {
-// 			log.Panicf("%x - %v\n", txid, err)
-// 		}
-// 		tokenOuts = append(tokenOuts, vout)
-// 		if amt > tokensIn {
-// 			if reason == "" {
-// 				reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
-// 			}
-// 			if !mined {
-// 				fmt.Printf("%s %s - %x\n", tick, reason, txid)
-// 				return 0
-// 			}
-// 		} else {
-// 			tokensIn -= amt
-// 		}
-// 	}
-// 	outRows.Close()
-
-// 	if reason != "" {
-// 		log.Printf("Transfer Invalid: %x %s %s\n", txid, tick, reason)
-// 		sql := `UPDATE bsv20_txos
-// 			SET status=-1, reason=$3
-// 			WHERE txid=$1 AND vout=ANY($2)`
-// 		_, err := lib.Db.Exec(ctx, sql,
-// 			txid,
-// 			tokenOuts,
-// 			reason,
-// 		)
-// 		if err != nil {
-// 			log.Panicf("%x %v\n", txid, err)
-// 		}
-// 	} else {
-// 		log.Printf("Transfer Valid: %x %s\n", txid, tick)
-// 		rows, err := lib.Db.Query(ctx, `
-// 			UPDATE bsv20_txos
-// 			SET status=1
-// 			WHERE txid=$1 AND vout=ANY ($2)
-// 			RETURNING vout, height, idx, amt, pkhash, listing, price, price_per_token, script`,
-// 			txid,
-// 			tokenOuts,
-// 		)
-// 		if err != nil {
-// 			log.Panicf("%x %v\n", txid, err)
-// 		}
-// 		defer rows.Close()
-// 		for rows.Next() {
-// 			bsv20 := Bsv20{
-// 				Txid:   txid,
-// 				Ticker: tick,
-// 			}
-// 			err = rows.Scan(&bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Amt, &bsv20.PKHash, &bsv20.Listing, &bsv20.Price, &bsv20.PricePerToken, &bsv20.Script)
-// 			if err != nil {
-// 				log.Panicf("%x %v\n", txid, err)
-// 			}
-
-// 			log.Printf("Validating %s %x %d\n", tick, txid, bsv20.Vout)
-// 			if bsv20.Listing {
-// 				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
-// 				out, err := json.Marshal(bsv20)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 				// log.Println("Publishing", string(out))
-// 				lib.PublishEvent(context.Background(), "bsv20Listing", string(out))
-// 			}
-// 		}
-// 	}
-// 	return len(tokenOuts)
-// }
-
-// func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int) {
-// 	// log.Printf("Validating V2 Transfer %x %s\n", txid, id.String())
-
-// 	inRows, err := lib.Db.Query(ctx, `
-// 		SELECT txid, vout, status, amt, height, idx
-// 		FROM bsv20_txos
-// 		WHERE spend=$1 AND id=$2 AND op != 'burn'`,
-// 		txid,
-// 		id,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("%x - %v\n", txid, err)
-// 	}
-// 	defer inRows.Close()
-
-// 	var reason string
-// 	var tokensIn uint64
-// 	var tokenOuts []uint32
-// 	for inRows.Next() {
-// 		var inTxid []byte
-// 		var vout uint32
-// 		var amt uint64
-// 		var inStatus int
-// 		var height sql.NullInt32
-// 		var idx sql.NullInt64
-// 		err = inRows.Scan(&inTxid, &vout, &inStatus, &amt, &height, &idx)
-// 		if err != nil {
-// 			log.Panicf("%x - %v\n", txid, err)
-// 		}
-
-// 		switch inStatus {
-// 		case -1:
-// 			reason = "invalid input"
-// 		case 0:
-// 			fmt.Printf("inputs pending %s %x\n", id.String(), txid)
-// 			return
-// 		case 1:
-// 			tokensIn += amt
-// 		}
-// 		var score float64
-// 		if height.Int32 == 0 {
-// 			score = 0x1FFFFF + float64(time.Now().Unix())*math.Pow(2, -31)
-// 		} else {
-// 			score = float64(height.Int32) + float64(idx.Int64)*math.Pow(2, -31)
-// 		}
-
-// 		if lib.Rdb.ZAdd(ctx, fmt.Sprintf("dep:%x", txid), redis.Z{
-// 			Member: hex.EncodeToString(txid),
-// 			Score:  score,
-// 		}).Err(); err != nil {
-// 			log.Panic(err)
-// 		}
-// 	}
-// 	inRows.Close()
-
-// 	// fmt.Println("TokensIn:", tokensIn)
-// 	outRows, err := lib.Db.Query(ctx, `
-// 		SELECT vout, status, amt
-// 		FROM bsv20_txos
-// 		WHERE txid=$1 AND id=$2`,
-// 		txid,
-// 		id,
-// 	)
-// 	if err != nil {
-// 		log.Panicf("%x - %v\n", txid, err)
-// 	}
-// 	defer outRows.Close()
-
-// 	for outRows.Next() {
-// 		var vout uint32
-// 		var amt uint64
-// 		var status int
-// 		err = outRows.Scan(&vout, &status, &amt)
-// 		if err != nil {
-// 			log.Panicf("%x - %v\n", txid, err)
-// 		}
-// 		tokenOuts = append(tokenOuts, vout)
-// 		if reason != "" {
-// 			fmt.Println("Failed:", reason)
-// 			continue
-// 		}
-// 		if amt > tokensIn {
-// 			reason = fmt.Sprintf("insufficient balance %d < %d", tokensIn, amt)
-// 			if !mined {
-// 				fmt.Printf("%s %s - %x\n", id.String(), reason, txid)
-// 				return
-// 			}
-// 		} else {
-// 			tokensIn -= amt
-// 		}
-// 	}
-
-// 	// fmt.Println("TokensOut:", len(tokenOuts))
-// 	t, err := lib.Db.Begin(ctx)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	defer t.Rollback(ctx)
-
-// 	if reason != "" {
-// 		log.Printf("Transfer Invalid: %x %s %s\n", txid, id.String(), reason)
-// 		_, err := t.Exec(ctx, `
-// 				UPDATE bsv20_txos
-// 				SET status=-1, reason=$3
-// 				WHERE txid=$1 AND vout=ANY($2)`,
-// 			txid,
-// 			tokenOuts,
-// 			reason,
-// 		)
-// 		if err != nil {
-// 			log.Panicf("%x %v\n", txid, err)
-// 		}
-// 	} else {
-// 		log.Printf("Transfer Valid: %x %s\n", txid, id.String())
-// 		rows, err := t.Query(ctx, `
-// 				UPDATE bsv20_txos
-// 				SET status=1
-// 				WHERE txid=$1 AND vout=ANY ($2)
-// 				RETURNING vout, height, idx, amt, pkhash, listing, price, price_per_token, script`,
-// 			txid,
-// 			tokenOuts,
-// 		)
-// 		if err != nil {
-// 			log.Panicf("%x %v\n", txid, err)
-// 		}
-// 		defer rows.Close()
-// 		for rows.Next() {
-// 			bsv20 := Bsv20{
-// 				Txid: txid,
-// 				Id:   id,
-// 			}
-// 			err = rows.Scan(&bsv20.Vout, &bsv20.Height, &bsv20.Idx, &bsv20.Amt, &bsv20.PKHash, &bsv20.Listing, &bsv20.Price, &bsv20.PricePerToken, &bsv20.Script)
-// 			if err != nil {
-// 				log.Panicf("%x %v\n", txid, err)
-// 			}
-
-// 			log.Printf("Validating %s %x %d\n", id.String(), txid, bsv20.Vout)
-// 			if bsv20.Listing {
-// 				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
-// 				out, err := json.Marshal(bsv20)
-// 				if err != nil {
-// 					log.Panic(err)
-// 				}
-// 				// log.Println("Publishing", string(out))
-// 				lib.PublishEvent(context.Background(), "bsv20Listing", string(out))
-// 			}
-
-// 		}
-// 	}
-
-// 	err = t.Commit(ctx)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	return len(tokenOuts)
-// }
-
-// func LoadTicker(tick string) (ticker *Bsv20) {
-// 	rows, err := lib.Db.Query(ctx, `
-// 		SELECT txid, vout, height, idx, tick, max, lim, supply, fund_balance
-// 		FROM bsv20
-// 		WHERE tick=$1 AND status=1`,
-// 		tick,
-// 	)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	defer rows.Close()
-// 	if rows.Next() {
-// 		ticker = &Bsv20{}
-// 		err = rows.Scan(&ticker.Txid, &ticker.Vout, &ticker.Height, &ticker.Idx, &ticker.Ticker, &ticker.Max, &ticker.Limit, &ticker.Supply, &ticker.FundBalance)
-// 		if err != nil {
-// 			log.Panicln(tick, err)
-// 		}
-// 	}
-// 	return
-// }
-
-// func LoadTokenById(id *lib.Outpoint) (token *Bsv20) {
-// 	rows, err := lib.Db.Query(ctx, `
-// 		SELECT id, height, idx, sym, icon, dec, amt, fund_balance
-// 		FROM bsv20_v2
-// 		WHERE id=$1`,
-// 		id,
-// 	)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-// 	defer rows.Close()
-// 	if rows.Next() {
-// 		token = &Bsv20{}
-// 		err = rows.Scan(&token.Id, &token.Height, &token.Idx, &token.Symbol, &token.Icon, &token.Decimals, &token.Amt, &token.FundBalance)
-// 		if err != nil {
-// 			log.Panicln(id, err)
-// 		}
-// 	}
-// 	return
-// }
-
-// type V1TokenFunds struct {
-// 	Tick       string `json:"tick"`
-// 	Total      int64  `json:"fundTotal"`
-// 	PKHash     []byte `json:"fundPKHash"`
-// 	Used       int64  `json:"fundUsed"`
-// 	PendingOps uint32 `json:"pendingOps"`
-// 	Pending    uint64 `json:"pending"`
-// 	Included   bool   `json:"included"`
-// }
-
-// func (t *V1TokenFunds) Save() {
-// 	if t.Total == 0 {
-// 		return
-// 	}
-// 	_, err := lib.Db.Exec(ctx, `
-// 		UPDATE bsv20
-// 		SET fund_total=$2, fund_used=$3
-// 		WHERE tick=$1`,
-// 		t.Tick,
-// 		t.Total,
-// 		t.Used,
-// 	)
-// 	if err != nil {
-// 		log.Panicln("SAVE", t.Tick, t.Total, t.Used, err)
-// 		panic(err)
-// 	}
-// 	t.Included = t.Total >= BSV20_INCLUDE_FEE
-// 	fundsJson, err := json.Marshal(t)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	log.Println("Updated", string(fundsJson))
-// 	lib.Rdb.HSet(ctx, "v1funds", t.Tick, fundsJson)
-// 	lib.PublishEvent(ctx, "v1funds", string(fundsJson))
-// }
-
-// func (t *V1TokenFunds) Balance() int64 {
-// 	return t.Total - t.Used
-// }
-
-// func (t *V1TokenFunds) UpdateFunding() {
-// 	// log.Println("Updating funding for", t.Tick)
-// 	var total sql.NullInt64
-// 	row := lib.Db.QueryRow(ctx, `
-// 		SELECT SUM(satoshis)
-// 		FROM bsv20 b
-// 		JOIN txos t ON t.pkhash=b.fund_pkhash
-// 		WHERE b.status=1 AND b.fund_pkhash=$1`,
-// 		t.PKHash,
-// 	)
-
-// 	err := row.Scan(&total)
-// 	if err != nil && err != pgx.ErrNoRows {
-// 		log.Panicln(err)
-// 	}
-// 	t.Total = total.Int64
-
-// 	row = lib.Db.QueryRow(ctx, `
-// 		SELECT COUNT(1) * $2
-// 		FROM bsv20_txos
-// 		WHERE tick=$1 AND status IN (-1, 1)`,
-// 		t.Tick,
-// 		BSV20V1_OP_COST,
-// 	)
-// 	err = row.Scan(&t.Used)
-// 	if err != nil && err != pgx.ErrNoRows {
-// 		log.Panicln(err)
-// 	}
-
-// 	row = lib.Db.QueryRow(ctx, `
-// 		SELECT COALESCE(SUM(txouts), 0) as value
-// 		FROM bsv20v1_txns
-// 		WHERE tick=$1 AND processed=false`,
-// 		t.Tick,
-// 	)
-// 	err = row.Scan(&t.PendingOps)
-// 	if err != nil && err != pgx.ErrNoRows {
-// 		log.Panicln(err)
-// 	}
-
-// 	row = lib.Db.QueryRow(ctx, `
-// 		SELECT COALESCE(SUM(amt), 0) as value
-// 		FROM bsv20_txos
-// 		WHERE op='mint' AND tick=$1 AND status=0`,
-// 		t.Tick,
-// 	)
-// 	err = row.Scan(&t.Pending)
-// 	if err != nil {
-// 		log.Panic(err)
-// 	}
-
-// 	t.Save()
-// }
-
-// type V2TokenFunds struct {
-// 	Id         *lib.Outpoint `json:"id"`
-// 	Total      int64         `json:"fundTotal"`
-// 	PKHash     []byte        `json:"fundPKHash"`
-// 	Used       int64         `json:"fundUsed"`
-// 	PendingOps uint32        `json:"pendingOps"`
-// 	Included   bool          `json:"included"`
-// }
-
-// func (t *V2TokenFunds) Save() {
-// 	if t.Total == 0 {
-// 		return
-// 	}
-// 	_, err := lib.Db.Exec(ctx, `
-// 		UPDATE bsv20_v2
-// 		SET fund_total=$2, fund_used=$3
-// 		WHERE id=$1`,
-// 		t.Id,
-// 		t.Total,
-// 		t.Used,
-// 	)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	t.Included = t.Total >= BSV20_INCLUDE_FEE
-// 	fundsJson, err := json.Marshal(t)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	lib.Rdb.HSet(ctx, "v2funds", t.Id.String(), fundsJson)
-// 	lib.PublishEvent(ctx, "v2funds", string(fundsJson))
-// 	log.Println("Updated", string(fundsJson))
-// }
-
-// func (t *V2TokenFunds) Balance() int64 {
-// 	return t.Total - t.Used
-// }
-
-// func (t *V2TokenFunds) UpdateFunding() {
-// 	// log.Println("Updating funding for", t.Id.String())
-// 	var total sql.NullInt64
-// 	row := lib.Db.QueryRow(ctx, `
-// 		SELECT SUM(satoshis)
-// 		FROM bsv20_v2 b
-// 		JOIN txos t ON t.pkhash=b.fund_pkhash
-// 		WHERE b.fund_pkhash=$1`,
-// 		t.PKHash,
-// 	)
-
-// 	err := row.Scan(&total)
-// 	if err != nil && err != pgx.ErrNoRows {
-// 		log.Panicln(err)
-// 	}
-// 	t.Total = total.Int64
-
-// 	rows, err := lib.Db.Query(ctx, `
-// 		SELECT status, COUNT(1)
-// 		FROM bsv20_txos
-// 		WHERE id=$1
-// 		GROUP BY status`,
-// 		t.Id,
-// 	)
-// 	if err != nil {
-// 		log.Panicln(err)
-// 	}
-// 	defer rows.Close()
-// 	t.Used = 0
-// 	t.PendingOps = 0
-
-// 	for rows.Next() {
-// 		var status int
-// 		var count uint32
-// 		err = rows.Scan(&status, &count)
-// 		if err != nil {
-// 			log.Panicln(err)
-// 		}
-// 		switch status {
-// 		case -1, 1:
-// 			t.Used += int64(count) * BSV20V2_OP_COST
-// 		case 0:
-// 			t.PendingOps = count
-// 		}
-// 	}
-
-// 	t.Save()
-// }
-
-// func InitializeV1Funding(concurrency int) map[string]*V1TokenFunds {
-// 	tickFunds := map[string]*V1TokenFunds{}
-// 	limiter := make(chan struct{}, concurrency)
-// 	var wg sync.WaitGroup
-// 	var m sync.Mutex
-// 	rows, err := lib.Db.Query(context.Background(), `
-// 		SELECT DISTINCT tick, fund_pkhash
-// 		FROM bsv20
-// 		WHERE status=1`,
-// 	)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer rows.Close()
-// 	fmt.Println("Processing v1 funding")
-// 	for rows.Next() {
-// 		funds := &V1TokenFunds{}
-// 		err = rows.Scan(&funds.Tick, &funds.PKHash)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		limiter <- struct{}{}
-// 		wg.Add(1)
-// 		go func(funds *V1TokenFunds) {
-// 			defer func() {
-// 				wg.Done()
-// 				<-limiter
-// 			}()
-// 			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
-// 			if err != nil {
-// 				log.Panicln(err)
-// 			}
-// 			RefreshAddress(ctx, add.AddressString)
-
-// 			funds.UpdateFunding()
-// 			m.Lock()
-// 			tickFunds[funds.Tick] = funds
-// 			m.Unlock()
-// 		}(funds)
-// 	}
-// 	wg.Wait()
-// 	return tickFunds
-// }
-
-// func InitializeV2Funding(concurrency int) map[string]*V2TokenFunds {
-// 	idFunds := map[string]*V2TokenFunds{}
-// 	limiter := make(chan struct{}, concurrency)
-// 	var wg sync.WaitGroup
-// 	var m sync.Mutex
-// 	rows, err := lib.Db.Query(context.Background(), `
-// 		SELECT id, fund_pkhash
-// 		FROM bsv20_v2`,
-// 	)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer rows.Close()
-// 	fmt.Println("Processing v2 funding")
-// 	for rows.Next() {
-// 		funds := &V2TokenFunds{}
-// 		err = rows.Scan(&funds.Id, &funds.PKHash)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		limiter <- struct{}{}
-// 		wg.Add(1)
-// 		go func(funds *V2TokenFunds) {
-// 			defer func() {
-// 				wg.Done()
-// 				<-limiter
-// 			}()
-// 			add, err := bscript.NewAddressFromPublicKeyHash(funds.PKHash, true)
-// 			if err != nil {
-// 				log.Panicln(err)
-// 			}
-// 			RefreshAddress(ctx, add.AddressString)
-
-// 			funds.UpdateFunding()
-// 			m.Lock()
-// 			idFunds[funds.Id.String()] = funds
-// 			m.Unlock()
-// 		}(funds)
-// 	}
-// 	wg.Wait()
-// 	return idFunds
-// }

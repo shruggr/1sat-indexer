@@ -24,7 +24,6 @@ import (
 	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/lib"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 var POSTGRES string
@@ -312,6 +311,7 @@ func main() {
 						unspent = append(unspent, outpoint)
 					}
 				}
+				// TODO: Move this to Txo file
 				if msgpacks, err := lib.Rdb.HMGet(c.Context(), lib.TxosKey, unspent...).Result(); err != nil {
 					return err
 				} else {
@@ -319,7 +319,7 @@ func main() {
 					for _, mp := range msgpacks {
 						if mp != nil {
 							var txo lib.Txo
-							if err := msgpack.Unmarshal([]byte(mp.(string)), &txo); err != nil {
+							if err := json.Unmarshal([]byte(mp.(string)), &txo); err != nil {
 								return err
 							}
 							txos = append(txos, &txo)

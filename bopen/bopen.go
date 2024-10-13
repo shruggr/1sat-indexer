@@ -2,13 +2,15 @@ package bopen
 
 import (
 	"bytes"
+	"encoding/json"
 	"regexp"
+	"strings"
 
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const BOPEN = "bopen"
+const BOPEN_TAG = "bopen"
 
 type BOpen map[string]any
 
@@ -37,6 +39,11 @@ func (b *BOpen) addInstance(instance interface{}) {
 
 	case *Inscription:
 		(*b)["insc"] = bo
+		if strings.ToLower(bo.File.Type) == "application/bsv-20" && bo.Json != nil {
+			data := map[string]string{}
+			json.Unmarshal(bo.Json, &data)
+			(*b)[BSV20_TAG] = data
+		}
 	}
 }
 
@@ -45,7 +52,15 @@ type BOpenIndexer struct {
 }
 
 func (i *BOpenIndexer) Tag() string {
-	return BOPEN
+	return BOPEN_TAG
+}
+
+func (i *BOpenIndexer) FromBytes(data []byte) (any, error) {
+	obj := BOpen{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, err
+	}
+	return obj, nil
 }
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
@@ -106,8 +121,8 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 
 func (i *BOpenIndexer) PreSave(idxCtx *lib.IndexContext) {
 	for _, txo := range idxCtx.Txos {
-		if txo.Data[BOPEN] != nil {
-			delete(txo.Data, BOPEN)
+		if txo.Data[BOPEN_TAG] != nil {
+			delete(txo.Data, BOPEN_TAG)
 		}
 	}
 }

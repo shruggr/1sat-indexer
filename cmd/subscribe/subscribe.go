@@ -26,15 +26,20 @@ var jb *junglebus.Client
 var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
+var TAG string
+var MEMOOOL bool
+var BLOCK bool
 
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
-
+	flag.StringVar(&TAG, "tag", "", "Ingest tag")
 	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
 	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
+	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
+	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")
 	flag.Parse()
 
 	if POSTGRES == "" {
@@ -85,23 +90,30 @@ func init() {
 
 func main() {
 	var fromBlock uint64
-	var err error
-	if fromBlock, err = lib.Rdb.HGet(ctx, lib.ProgressKey, TOPIC).Uint64(); err == redis.Nil {
+	progressKey := lib.ProgressQueueKey(TAG)
+	ingestKey := lib.IngestQueueKey(TAG)
+	if progress, err := lib.Rdb.ZScore(ctx, progressKey, TOPIC).Result(); err == redis.Nil {
 		fromBlock = uint64(FROM_BLOCK)
 	} else if err != nil {
 		log.Panic(err)
+	} else {
+		fromBlock = uint64(progress) - 5
 	}
 
 	log.Println("Subscribing to Junglebus from block", fromBlock)
 
 	var sub *junglebus.Subscription
+	lastBlock := uint32(fromBlock)
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
-			if VERBOSE > 0 {
-				log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
-			}
+			// if VERBOSE > 0 {
+			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
+			// }
 			if status.StatusCode == 200 {
-				if err := lib.Rdb.HSet(ctx, lib.ProgressKey, TOPIC, status.Block).Err(); err != nil {
+				if err := lib.Rdb.ZAdd(ctx, progressKey, redis.Z{
+					Score:  float64(status.Block),
+					Member: TOPIC,
+				}).Err(); err != nil {
 					log.Panic(err)
 				}
 			}
@@ -113,33 +125,47 @@ func main() {
 				return
 			}
 		},
-		OnTransaction: func(txn *models.TransactionResponse) {
-			if VERBOSE > 0 {
-				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
-			}
-			if err := lib.Rdb.ZAdd(ctx, lib.IngestKey, redis.Z{
-				Score:  lib.HeightScore(txn.BlockHeight, txn.BlockIndex),
-				Member: txn.Id,
-			}).Err(); err != nil {
-				log.Panic(err)
-			}
-		},
-		OnMempool: func(txn *models.TransactionResponse) {
-			if VERBOSE > 0 {
-				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
-			}
-			if err := lib.Rdb.ZAdd(ctx, lib.IngestKey, redis.Z{
-				Score:  lib.HeightScore(txn.BlockHeight, txn.BlockIndex),
-				Member: txn.Id,
-			}).Err(); err != nil {
-				log.Panic(err)
-			}
-		},
 		OnError: func(err error) {
 			log.Panicf("[ERROR]: %v\n", err)
 		},
 	}
+	if BLOCK {
+		eventHandler.OnTransaction = func(txn *models.TransactionResponse) {
+			if VERBOSE > 0 {
+				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
+			}
+			if err := lib.Rdb.ZAdd(ctx, ingestKey, redis.Z{
+				Score:  lib.HeightScore(txn.BlockHeight, txn.BlockIndex),
+				Member: txn.Id,
+			}).Err(); err != nil {
+				log.Panic(err)
+			}
+			if lastBlock != txn.BlockHeight {
+				lastBlock = txn.BlockHeight
+				if err := lib.Rdb.ZAdd(ctx, lib.ProgressQueueKey(TAG), redis.Z{
+					Score:  float64(lastBlock),
+					Member: TOPIC,
+				}).Err(); err != nil {
+					log.Panic(err)
+				}
+			}
+		}
+	}
+	if MEMOOOL {
+		eventHandler.OnMempool = func(txn *models.TransactionResponse) {
+			if VERBOSE > 0 {
+				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
+			}
+			if err := lib.Rdb.ZAdd(ctx, ingestKey, redis.Z{
+				Score:  lib.HeightScore(uint32(time.Now().Unix()), 0),
+				Member: txn.Id,
+			}).Err(); err != nil {
+				log.Panic(err)
+			}
+		}
+	}
 
+	var err error
 	if sub, err = jb.SubscribeWithQueue(ctx,
 		TOPIC,
 		fromBlock,

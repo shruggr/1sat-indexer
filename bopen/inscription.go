@@ -13,6 +13,8 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
+var INSCRIPTION_TAG = "insc"
+
 type Inscription struct {
 	Json    json.RawMessage `json:"json,omitempty"`
 	Text    string          `json:"text,omitempty"`
@@ -26,13 +28,21 @@ type InscriptionIndexer struct {
 }
 
 func (i *InscriptionIndexer) Tag() string {
-	return "insc"
+	return INSCRIPTION_TAG
+}
+
+func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
+	obj := &Inscription{}
+	if err := json.Unmarshal(data, obj); err != nil {
+		return nil, err
+	}
+	return obj, nil
 }
 
 func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[BOPEN]; ok {
-		if insc, ok := bopen.Data.(BOpen)[i.Tag()].(*Inscription); ok {
+	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+		if insc, ok := bopen.Data.(BOpen)[INSCRIPTION_TAG].(*Inscription); ok {
 			idxData = &lib.IndexData{
 				Data: insc,
 				Events: []*lib.Event{
@@ -49,7 +59,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxDa
 
 func (i *InscriptionIndexer) PreSave(idxCtx *lib.IndexContext) {
 	for _, txo := range idxCtx.Txos {
-		if bopen, ok := txo.Data[BOPEN]; ok {
+		if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 			if insc, ok := bopen.Data.(BOpen)[i.Tag()].(*Inscription); ok {
 				insc.File.Content = nil
 			}
@@ -124,13 +134,11 @@ ordLoop:
 	// var bsv20 *Bsv20
 	if insc.File.Size <= 1024 && utf8.Valid(insc.File.Content) && !bytes.Contains(insc.File.Content, []byte{0}) && !bytes.Contains(insc.File.Content, []byte("\\u0000")) {
 		mime := strings.ToLower(insc.File.Type)
-		if strings.HasPrefix(mime, "application/json") ||
-			strings.HasPrefix(mime, "text") {
+		if strings.HasPrefix(mime, "application") || strings.HasPrefix(mime, "text") {
 			var data json.RawMessage
 			if err := json.Unmarshal(insc.File.Content, &data); err == nil {
 				insType = "json"
 				insc.Json = data
-				// bsv20, _ = ParseBsv20Inscription(insc.File, txo)
 			} else if AsciiRegexp.Match(insc.File.Content) {
 				if insType == "file" {
 					insType = "text"

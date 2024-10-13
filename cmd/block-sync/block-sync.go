@@ -52,7 +52,7 @@ func init() {
 }
 func main() {
 	fromBlock := uint64(1)
-	if lastBlocks, err := lib.Cache.ZRevRangeByScoreWithScores(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
+	if lastBlocks, err := lib.Rdb.ZRevRangeByScoreWithScores(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
 		Max:   "+inf",
 		Min:   "-inf",
 		Count: 1,
@@ -70,10 +70,10 @@ func main() {
 			Bits:       "1d00ffff",
 			Synced:     1,
 		}
-		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			if err := pipe.HSet(ctx, lib.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
 				return err
-			} else if err := lib.Cache.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
+			} else if err := lib.Rdb.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
 				Score:  0,
 				Member: genesis.Hash,
 			}).Err(); err != nil {
@@ -101,7 +101,7 @@ func main() {
 				log.Panic(err)
 			}
 		}
-		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			var chaintip []byte
 			for _, block := range blocks {
 				score := float64(block.Height)
@@ -123,11 +123,10 @@ func main() {
 			}
 			if len(chaintip) > 0 {
 				log.Println("New Chaintip", string(chaintip))
-				if err := lib.Cache.Set(ctx, "chaintip", chaintip, 0).Err(); err != nil {
+				if err := lib.Rdb.Set(ctx, "chaintip", chaintip, 0).Err(); err != nil {
 					return err
 				}
 				lib.Rdb.Publish(ctx, "block", chaintip)
-				chaintip = []byte{}
 			}
 			return nil
 		}); err != nil {
