@@ -141,7 +141,7 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 			log.Panicln(err)
 			return nil, err
 		} else {
-			log.Println("LoadParentTx", parentTxid)
+			// log.Println("LoadParentTx", parentTxid)
 			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, idxCtx.LoadAncestors, idxCtx.SaveAncestors)
 			spendCtx.txoCache = idxCtx.txoCache
 			spendCtx.ParseTxos()

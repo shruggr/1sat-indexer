@@ -103,7 +103,7 @@ func main() {
 	log.Println("Subscribing to Junglebus from block", fromBlock)
 
 	var sub *junglebus.Subscription
-	lastBlock := uint32(fromBlock)
+	// lastBlock := uint32(fromBlock)
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
 			// if VERBOSE > 0 {
@@ -140,15 +140,15 @@ func main() {
 			}).Err(); err != nil {
 				log.Panic(err)
 			}
-			if lastBlock != txn.BlockHeight {
-				lastBlock = txn.BlockHeight
-				if err := lib.Rdb.ZAdd(ctx, lib.ProgressQueueKey(TAG), redis.Z{
-					Score:  float64(lastBlock),
-					Member: TOPIC,
-				}).Err(); err != nil {
-					log.Panic(err)
-				}
-			}
+			// if lastBlock != txn.BlockHeight {
+			// 	lastBlock = txn.BlockHeight
+			// 	if err := lib.Rdb.ZAdd(ctx, lib.ProgressQueueKey(TAG), redis.Z{
+			// 		Score:  float64(lastBlock),
+			// 		Member: TOPIC,
+			// 	}).Err(); err != nil {
+			// 		log.Panic(err)
+			// 	}
+			// }
 		}
 	}
 	if MEMOOOL {

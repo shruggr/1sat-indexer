@@ -11,9 +11,9 @@
             "mode": "debug",
             "program": "${file}",
             // "cwd": "${fileDirname}/../../",
-            "args": [
-                "-p=8084"
-            ]
+            // "args": [
+            //     "-p=8084"
+            // ]
         }
     ]
 }

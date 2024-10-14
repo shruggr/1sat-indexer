@@ -123,7 +123,7 @@ func main() {
 			}
 			if len(chaintip) > 0 {
 				log.Println("New Chaintip", string(chaintip))
-				if err := lib.Rdb.Set(ctx, "chaintip", chaintip, 0).Err(); err != nil {
+				if err := lib.Rdb.Set(ctx, lib.ChaintipKey, chaintip, 0).Err(); err != nil {
 					return err
 				}
 				lib.Rdb.Publish(ctx, "block", chaintip)

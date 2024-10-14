@@ -3,6 +3,7 @@ package bopen
 import (
 	"bytes"
 	"encoding/hex"
+	"log"
 	"math"
 
 	// "github.com/libsv/go-bt"
@@ -75,12 +76,12 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 		}
 		ordLock.Tags = append(ordLock.Tags, "")
 		ordLock.Tags = append(ordLock.Tags, pkhash.Address())
-		if idxData, ok := txo.Data[BSV21_TAG]; ok {
-			bsv21 := idxData.Data.(*Bsv21)
+		if bsv21Data, ok := txo.Data[BSV21_TAG]; ok {
+			bsv21 := bsv21Data.Data.(*Bsv21)
 			ordLock.Tags = append(ordLock.Tags, bsv21.Id)
 			ordLock.PricePer = float64(ordLock.Price) / (float64(bsv21.Amt) / math.Pow(10, float64(bsv21.Decimals)))
-		} else if idxData, ok := txo.Data[BSV20_TAG]; ok {
-			bsv20 := idxData.Data.(*Bsv20)
+		} else if bsv20Data, ok := txo.Data[BSV20_TAG]; ok {
+			bsv20 := bsv20Data.Data.(*Bsv20)
 			ordLock.Tags = append(ordLock.Tags, bsv20.Ticker)
 			ordLock.PricePer = float64(ordLock.Price) / (float64(*bsv20.Amt) / math.Pow(10, float64(bsv20.Decimals)))
 		} else {
@@ -97,7 +98,9 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 			// 	idxCtx.QueueDependency(spend.Outpoint)
 			// 	return nil
 			// }
-
+			if origin == nil || origin.Outpoint == nil {
+				log.Panicf("Missing outpoint for %s", idxCtx.Txid.String())
+			}
 			idxData.Deps = append(idxData.Deps, origin.Outpoint)
 		}
 

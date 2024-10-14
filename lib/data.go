@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -69,7 +70,8 @@ func LoadTx(ctx context.Context, txid string) (tx *transaction.Transaction, err 
 }
 
 func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
-	rawtx, _ = Cache.HGet(ctx, "tx", txid).Bytes()
+	cacheKey := TxKey(txid)
+	rawtx, _ = Cache.Get(ctx, cacheKey).Bytes()
 
 	if len(rawtx) > 100 {
 		return rawtx, nil
@@ -94,14 +96,15 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	}
 
 	if len(rawtx) > 0 {
-		Cache.HSet(ctx, "tx", txid, rawtx).Err()
+		Cache.Set(ctx, cacheKey, rawtx, 0).Err()
 	}
 
 	return
 }
 
 func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath, err error) {
-	prf, _ := Cache.HGet(ctx, "proof", txid).Bytes()
+	cacheKey := ProofKey(txid)
+	prf, _ := Cache.Get(ctx, cacheKey).Bytes()
 	if len(prf) == 0 && JB != nil {
 		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", os.Getenv("JUNGLEBUS"), txid)
 
@@ -112,8 +115,14 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
 			return
+		} else if chaintip, err := Rdb.ZRangeWithScores(ctx, BlockHeightKey, -1, -1).Result(); err != nil {
+			return nil, err
+		} else if proof.BlockHeight < uint32(chaintip[0].Score-5) {
+			Cache.Set(ctx, cacheKey, prf, 0)
+		} else {
+			Cache.Set(ctx, cacheKey, prf, time.Hour)
 		}
-		Cache.HSet(ctx, "proof", txid, prf).Err()
+
 	}
 	return
 }
@@ -136,20 +145,20 @@ func LoadTxOut(outpoint *Outpoint) (txout *transaction.TransactionOutput, err er
 	return
 }
 
-func GetSpend(outpoint *Outpoint) (spend []byte, err error) {
-	resp, err := http.Get(fmt.Sprintf("%s/v1/txo/spend/%s", os.Getenv("JUNGLEBUS"), outpoint.String()))
-	if err != nil {
-		log.Println("JB Spend Request", err)
-		return
-	}
-	defer resp.Body.Close()
+// func GetSpend(outpoint *Outpoint) (spend []byte, err error) {
+// 	resp, err := http.Get(fmt.Sprintf("%s/v1/txo/spend/%s", os.Getenv("JUNGLEBUS"), outpoint.String()))
+// 	if err != nil {
+// 		log.Println("JB Spend Request", err)
+// 		return
+// 	}
+// 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 300 {
-		err = fmt.Errorf("missing-spend-%s", outpoint.String())
-		return
-	}
-	return io.ReadAll(resp.Body)
-}
+// 	if resp.StatusCode >= 300 {
+// 		err = fmt.Errorf("missing-spend-%s", outpoint.String())
+// 		return
+// 	}
+// 	return io.ReadAll(resp.Body)
+// }
 
 func GetChaintip(ctx context.Context) *models.BlockHeader {
 	chaintip := &models.BlockHeader{}

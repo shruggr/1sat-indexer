@@ -13,6 +13,14 @@ const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
 const TxosKey = "txos"
 
+func TxKey(txid string) string {
+	return "tx:" + txid
+}
+
+func ProofKey(txid string) string {
+	return "prf:" + txid
+}
+
 func ProgressQueueKey(tag string) string {
 	return "progress:" + tag
 }

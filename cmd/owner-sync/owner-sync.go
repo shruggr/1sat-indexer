@@ -71,7 +71,7 @@ func main() {
 				}
 				for _, addTxn := range addTxns {
 					score, _ := strconv.ParseFloat(fmt.Sprintf("%07d.%09d", addTxn.Height, addTxn.Idx), 64)
-					if err := lib.Rdb.ZAdd(ctx, lib.IngestKey, redis.Z{
+					if err := lib.Rdb.ZAdd(ctx, lib.IngestQueueKey(""), redis.Z{
 						Score:  score,
 						Member: addTxn.Txid,
 					}).Err(); err != nil {
