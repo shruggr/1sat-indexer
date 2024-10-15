@@ -40,6 +40,9 @@ func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
 }
 
 func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+	if idxCtx.Height < lib.TRIGGER {
+		return
+	}
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 		if insc, ok := bopen.Data.(BOpen)[INSCRIPTION_TAG].(*Inscription); ok {
