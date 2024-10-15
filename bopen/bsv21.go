@@ -171,23 +171,23 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 			}
 		}
 	}
-	if len(ctx.tokens) == 0 || len(idxCtx.Spends) == 0 {
+	if len(ctx.tokens) == 0 {
 		return
 	}
 
-	if len(idxCtx.Spends) == 0 {
-		idxCtx.ParseSpends()
-	}
+	// if len(idxCtx.Spends) == 0 {
+	// 	idxCtx.ParseSpends()
+	// }
 
-	// hasDepQueue := false
+	hasDepQueue := false
 	for _, spend := range idxCtx.Spends {
-		// if spend.Satoshis == nil {
-		// 	hasDepQueue = true
-		// 	idxCtx.QueueDependency(spend.Outpoint)
-		// 	continue
-		// } else if hasDepQueue {
-		// 	continue
-		// }
+		if spend.Satoshis == nil {
+			hasDepQueue = true
+			idxCtx.QueueDependency(spend.Outpoint.TxidHex())
+			continue
+		} else if hasDepQueue {
+			continue
+		}
 		if idxData, ok := spend.Data[BSV21_TAG]; ok {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
 				switch bsv21.Status {
@@ -203,9 +203,9 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 			}
 		}
 	}
-	// if hasDepQueue {
-	// 	return
-	// }
+	if hasDepQueue {
+		return
+	}
 	reasons := map[string]string{}
 	for _, token := range ctx.tokens {
 		for _, idxData := range token.outputs {

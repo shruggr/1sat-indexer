@@ -91,7 +91,7 @@ func init() {
 func main() {
 	var fromBlock uint64
 	progressKey := lib.ProgressQueueKey(TAG)
-	ingestKey := lib.IngestQueueKey(TAG)
+	ingestKey := lib.IngestQueueKey
 	if progress, err := lib.Rdb.ZScore(ctx, progressKey, TOPIC).Result(); err == redis.Nil {
 		fromBlock = uint64(FROM_BLOCK)
 	} else if err != nil {

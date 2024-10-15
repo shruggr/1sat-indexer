@@ -26,7 +26,7 @@ type IndexContext struct {
 	LoadAncestors bool                     `json:"-"`
 	SaveAncestors bool                     `json:"-"`
 	txoCache      map[string]*Txo          `json:"-"`
-	// DepQueue      []*Outpoint              `json:"-"`
+	deps          map[string]struct{}      `json:"-"`
 }
 
 func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, loadAncestors bool, saveAncestors bool) *IndexContext {
@@ -39,6 +39,7 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 		LoadAncestors: loadAncestors,
 		SaveAncestors: saveAncestors,
 		txoCache:      make(map[string]*Txo),
+		deps:          make(map[string]struct{}),
 	}
 
 	if tx.MerklePath != nil {
@@ -58,9 +59,9 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 	return idxCtx
 }
 
-// func (idxCtx *IndexContext) QueueDependency(outpoint *Outpoint) {
-// 	idxCtx.DepQueue = append(idxCtx.DepQueue, outpoint)
-// }
+func (idxCtx *IndexContext) QueueDependency(txid string) {
+	idxCtx.deps[txid] = struct{}{}
+}
 
 func (idxCtx *IndexContext) ParseTxn() {
 	idxCtx.ParseSpends()
@@ -76,7 +77,7 @@ func (idxCtx *IndexContext) ParseTxos() {
 			Outpoint: outpoint,
 			Height:   idxCtx.Height,
 			Idx:      idxCtx.Idx,
-			Satoshis: txout.Satoshis,
+			Satoshis: &txout.Satoshis,
 			OutAcc:   accSats,
 			Data:     make(map[string]*IndexData),
 		}
@@ -104,8 +105,12 @@ func (idxCtx *IndexContext) ParseSpends() {
 		if idxCtx.LoadAncestors {
 			if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
 				log.Panic(err)
-			} else {
+			} else if txo != nil {
 				spend = txo
+			} else {
+				spend = &Txo{
+					Outpoint: outpoint,
+				}
 			}
 		} else {
 			spend = &Txo{
@@ -135,24 +140,24 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 				}
 			}
 		}
-	} else {
-		parentTxid := outpoint.TxidHex()
-		if tx, err := LoadTx(idxCtx.Ctx, parentTxid); err != nil {
-			log.Panicln(err)
-			return nil, err
-		} else {
-			// log.Println("LoadParentTx", parentTxid)
-			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, idxCtx.LoadAncestors, idxCtx.SaveAncestors)
-			spendCtx.txoCache = idxCtx.txoCache
-			spendCtx.ParseTxos()
-			if idxCtx.SaveAncestors {
-				if err := spendCtx.SaveTxos(); err != nil {
-					log.Panic(err)
-					return nil, err
-				}
-			}
-			txo = spendCtx.Txos[outpoint.Vout()]
-		}
+		// } else {
+		// 	parentTxid := outpoint.TxidHex()
+		// 	if tx, err := LoadTx(idxCtx.Ctx, parentTxid); err != nil {
+		// 		log.Panicln(err)
+		// 		return nil, err
+		// 	} else {
+		// 		// log.Println("LoadParentTx", parentTxid)
+		// 		spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, idxCtx.LoadAncestors, idxCtx.SaveAncestors)
+		// 		spendCtx.txoCache = idxCtx.txoCache
+		// 		spendCtx.ParseTxos()
+		// 		if idxCtx.SaveAncestors {
+		// 			if err := spendCtx.SaveTxos(); err != nil {
+		// 				log.Panic(err)
+		// 				return nil, err
+		// 			}
+		// 		}
+		// 		txo = spendCtx.Txos[outpoint.Vout()]
+		// 	}
 	}
 	idxCtx.txoCache[op] = txo
 	return txo, nil
@@ -161,11 +166,30 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 func (idxCtx *IndexContext) Save() error {
 	txid := idxCtx.Txid.String()
 	score := HeightScore(idxCtx.Height, idxCtx.Idx)
-	if err := Rdb.ZAdd(idxCtx.Ctx, TxStatusKey, redis.Z{
-		Score:  -score,
-		Member: txid,
-	}).Err(); err != nil {
-		log.Panicf("%x %v\n", idxCtx.Txid, err)
+	depKey := IngestDepsKey(txid)
+	if len(idxCtx.deps) > 0 {
+		for dep := range idxCtx.deps {
+			log.Println("Queue Dependency", txid, dep)
+			if err := Rdb.ZAdd(idxCtx.Ctx, IngestQueueKey, redis.Z{
+				Member: dep,
+			}).Err(); err != nil {
+				log.Panic(err)
+				return err
+			} else if err := Rdb.SAdd(idxCtx.Ctx, depKey, dep).Err(); err != nil {
+				log.Panic(err)
+				return err
+			}
+		}
+		if err := Rdb.ZAdd(idxCtx.Ctx, IngestQueueKey, redis.Z{
+			Member: txid,
+			Score:  score,
+		}).Err(); err != nil {
+			log.Panic(err)
+			return err
+		}
+		return nil
+	} else if err := Rdb.Del(idxCtx.Ctx, depKey).Err(); err != nil {
+		log.Panic(err)
 		return err
 	} else if err := idxCtx.SaveTxos(); err != nil {
 		log.Panic(err)
@@ -173,25 +197,16 @@ func (idxCtx *IndexContext) Save() error {
 	} else if err := idxCtx.SaveSpends(); err != nil {
 		log.Panic(err)
 		return err
-	} else if children, err := Rdb.SMembers(idxCtx.Ctx, DepQueueKey(txid)).Result(); err != nil {
-		log.Panic(err)
-		return err
-	} else {
-		for _, child := range children {
-			if err := Rdb.SAdd(idxCtx.Ctx, ProgressQueueKey(child), txid).Err(); err != nil {
-				log.Panic(err)
-				return err
-			}
-		}
-	}
-
-	if err := Rdb.ZAdd(idxCtx.Ctx, TxStatusKey, redis.Z{
+	} else if err := Rdb.ZAdd(idxCtx.Ctx, IngestLogKey, redis.Z{
 		Score:  score,
 		Member: txid,
 	}).Err(); err != nil {
-		log.Panicf("%x %v\n", idxCtx.Txid, err)
+		log.Panic(err)
 		return err
+	} else if err := Rdb.ZRem(idxCtx.Ctx, IngestQueueKey, txid).Err(); err != nil {
+		log.Panic(err)
 	}
+	log.Println("Processed", txid)
 	return nil
 }
 

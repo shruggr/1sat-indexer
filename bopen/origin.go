@@ -12,7 +12,8 @@ const ORIGIN_TAG = "origin"
 type Origin struct {
 	Outpoint *lib.Outpoint `json:"outpoint"`
 	Nonce    uint64        `json:"nonce"`
-	MimeType string        `json:"type,omitempty"`
+	// File     *File         `json:"file,omitempty"`
+	// MimeType string        `json:"type,omitempty"`
 	// Inscription *Inscription `json:"insc,omitempty"`
 	// Map Map `json:"map,omitempty"`
 }
@@ -36,44 +37,46 @@ func (i *OriginIndexer) FromBytes(data []byte) (any, error) {
 func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
 	txo := idxCtx.Txos[vout]
 
-	if txo.Satoshis != 1 || idxCtx.Height < lib.TRIGGER {
+	if *txo.Satoshis != 1 || idxCtx.Height < lib.TRIGGER {
 		return nil
 	}
 
-	if len(idxCtx.Spends) == 0 {
-		idxCtx.ParseSpends()
-	}
-	inSats := uint64(0)
+	// if len(idxCtx.Spends) == 0 {
+	// 	idxCtx.ParseSpends()
+	// }
 	idxData := &lib.IndexData{
 		Deps: make([]*lib.Outpoint, 0),
 	}
 	var origin *Origin
+	satsIn := uint64(0)
+	hasQueuedDeps := false
 	for _, spend := range idxCtx.Spends {
-		// if spend.Satoshis == nil {
-		// 	idxCtx.QueueDependency(spend.Outpoint)
-		// 	return
-		// } else if len(idxData.DepQueue) > 0 {
-		// 	continue
-		// } else {
-		idxData.Deps = append(idxData.Deps, spend.Outpoint)
-		// }
-		if inSats < txo.OutAcc {
-			inSats += spend.Satoshis
+		if spend.Satoshis == nil {
+			idxCtx.QueueDependency(spend.Outpoint.TxidHex())
+			hasQueuedDeps = true
+			continue
+		} else if hasQueuedDeps {
 			continue
 		}
-		if inSats == txo.OutAcc && spend.Satoshis == 1 {
+		idxData.Deps = append(idxData.Deps, spend.Outpoint)
+
+		if satsIn < txo.OutAcc {
+			satsIn += *spend.Satoshis
+			continue
+		}
+		if satsIn == txo.OutAcc && *spend.Satoshis == 1 {
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
 				origin = o.Data.(*Origin)
-				// } else {
-				// 	idxData.DepQueue = append(idxData.DepQueue, spend.Outpoint)
-				// 	return idxData
+			} else {
+				idxCtx.QueueDependency(spend.Outpoint.String())
+				return nil
 			}
 		}
 		break
 	}
-	// if len(idxData.DepQueue) > 0 {
-	// 	return idxData
-	// }
+	if hasQueuedDeps {
+		return nil
+	}
 	if origin == nil {
 		origin = &Origin{
 			Outpoint: txo.Outpoint,
@@ -82,12 +85,21 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 	} else {
 		origin.Nonce++
 	}
-	if idxData, ok := txo.Data[INSCRIPTION_TAG]; ok {
-		insc := idxData.Data.(*Inscription)
-		if insc.File != nil && insc.File.Type != "" {
-			origin.MimeType = insc.File.Type
-		}
+	idxData.Data = origin
+	idxData.Events = []*lib.Event{
+		{
+			Id:    "outpoint",
+			Value: origin.Outpoint.String(),
+		},
 	}
+	// if idxData, ok := txo.Data[INSCRIPTION_TAG]; ok {
+	// 	insc := idxData.Data.(*Inscription)
+	// 	if insc.File != nil && insc.File.Type != "" {
+	// 		origin.File = &File{
+	// 			Type: insc.File.Type,
+	// 			Hash: insc.File.Hash,
+	// 	}
+	// }
 	// if idxData, ok := txo.Data[MAP_TAG]; ok {
 	// 	mp := idxData.Data.(Map)
 	// 	if origin.Map == nil {
@@ -99,15 +111,7 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 	// 	}
 	// }
 
-	return &lib.IndexData{
-		Data: origin,
-		Events: []*lib.Event{
-			{
-				Id:    "outpoint",
-				Value: origin.Outpoint.String(),
-			},
-		},
-	}
+	return idxData
 
 	// if origin, err := i.calculateOrigin(idxCtx, uint32(vout), 0); err != nil {
 	// 	log.Panicln(err)

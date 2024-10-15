@@ -7,8 +7,8 @@ import (
 const BlockHeightKey = "blk:height"
 const BlockHeadersKey = "blk:headers"
 const ChaintipKey = "blk:tip"
-
-const TxStatusKey = "tx:stat"
+const IngestQueueKey = "que:ingest"
+const IngestLogKey = "log:ingest"
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
 const TxosKey = "txos"
@@ -25,19 +25,18 @@ func ProgressQueueKey(tag string) string {
 	return "progress:" + tag
 }
 
-func IngestQueueKey(tag string) string {
-	return "ingest:" + tag
+func QueueKey(tag string) string {
+	return "que:" + tag
 }
 
-func DepQueueKey(txid string) string {
-	return "dep:" + txid
+// func DepKey(outpoint *Outpoint) string {
+// 	return "dep:" + txid
+// }
+
+func IngestDepsKey(txid string) string {
+	return "ing:dep:" + txid
 }
 
-func IngestLogKey(tag string) string {
-	return "ing:log:" + tag
-}
-
-// const TxoDataKey = "txo:data"
 const SpendsKey = "spends"
 
 func TxoDataKey(outpoint string) string {

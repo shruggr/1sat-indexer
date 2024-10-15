@@ -61,7 +61,7 @@ func main() {
 		&bopen.OrdLockIndexer{},
 	}
 
-	if tx, err := lib.LoadTx(ctx, hexId); err != nil {
+	if tx, err := lib.LoadTx(ctx, hexId, true); err != nil {
 		log.Panic(err)
 	} else if idxCtx, err := lib.IngestTx(ctx, tx, indexers); err != nil {
 		log.Panic(err)

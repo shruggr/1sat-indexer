@@ -53,7 +53,7 @@ func Initialize(postgres *pgxpool.Pool, rdb *redis.Client, cache *redis.Client) 
 	return
 }
 
-func LoadTx(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
+func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.Transaction, err error) {
 	var rawtx []byte
 	if rawtx, err = LoadRawtx(ctx, txid); err != nil {
 		return
@@ -63,9 +63,12 @@ func LoadTx(ctx context.Context, txid string) (tx *transaction.Transaction, err 
 	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
 		return
 	}
-	if proof, err := LoadProof(ctx, txid); err == nil {
-		tx.MerklePath = proof
+	if withProof {
+		if proof, err := LoadProof(ctx, txid); err == nil {
+			tx.MerklePath = proof
+		}
 	}
+
 	return
 }
 

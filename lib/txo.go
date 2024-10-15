@@ -15,7 +15,7 @@ type Txo struct {
 	Outpoint *Outpoint             `json:"outpoint"`
 	Height   uint32                `json:"height"`
 	Idx      uint64                `json:"idx"`
-	Satoshis uint64                `json:"satoshis"`
+	Satoshis *uint64               `json:"satoshis"`
 	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
 	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`

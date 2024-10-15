@@ -2,13 +2,12 @@ package lib
 
 import (
 	"context"
-	"log"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 )
 
 func IngestTxid(ctx context.Context, txid string, indexers []Indexer) (*IndexContext, error) {
-	if tx, err := LoadTx(ctx, txid); err != nil {
+	if tx, err := LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else {
 		return IngestTx(ctx, tx, indexers)
@@ -19,7 +18,7 @@ func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []Index
 	idxCtx = NewIndexContext(ctx, tx, indexers, true, true)
 	idxCtx.ParseTxn()
 
-	log.Printf("Ingesting %d %d %s", idxCtx.Height, idxCtx.Idx, idxCtx.Txid)
+	// log.Printf("Ingesting %d %d %s", idxCtx.Height, idxCtx.Idx, idxCtx.Txid)
 
 	idxCtx.Save()
 	return
