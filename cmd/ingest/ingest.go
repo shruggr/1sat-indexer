@@ -70,9 +70,12 @@ var indexers = []lib.Indexer{
 var limiter = make(chan struct{}, CONCURRENCY)
 var m sync.Mutex
 
+// var wg sync.WaitGroup
+
 func main() {
 	inflight := make(map[string]struct{}, CONCURRENCY)
 	for {
+		txcount := 0
 		log.Println("Loading transactions to ingest")
 		if txids, err := lib.Rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
 			Key:   lib.IngestQueueKey,
@@ -88,9 +91,12 @@ func main() {
 				if ok {
 					continue
 				}
-				if children, err := lib.Cache.SMembers(ctx, lib.IngestDepsKey(txid)).Result(); err != nil {
+				depsKey := lib.IngestDepsKey(txid)
+
+				if children, err := lib.Rdb.SMembers(ctx, depsKey).Result(); err != nil {
 					log.Panic(err)
 				} else if len(children) > 0 {
+					// log.Println("Deps:", depsKey, len(children))
 					hasDeps := false
 					for _, child := range children {
 						if err := lib.Rdb.ZScore(ctx, lib.IngestLogKey, child).Err(); err == redis.Nil {
@@ -103,10 +109,15 @@ func main() {
 					}
 
 					if hasDeps {
-						return
+						// log.Println("Transaction", txid, "has dependencies")
+						continue
 					}
+				} else {
+					// log.Println("Deps:", depsKey, 0)
 				}
+				txcount++
 				limiter <- struct{}{}
+				// wg.Add(1)
 				m.Lock()
 				inflight[txid] = struct{}{}
 				m.Unlock()
@@ -116,6 +127,7 @@ func main() {
 						delete(inflight, txid)
 						m.Unlock()
 						<-limiter
+						// wg.Done()
 					}()
 
 					if _, err := lib.IngestTxid(ctx, txid, indexers); err != nil {
@@ -123,10 +135,12 @@ func main() {
 					}
 				}(txid)
 			}
-			if len(txids) == 0 {
+			// wg.Wait()
+			if txcount == 0 {
 				log.Println("No transactions to ingest")
 				time.Sleep(time.Second)
 			}
+			// panic("done")
 		}
 	}
 }
