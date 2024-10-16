@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
@@ -94,6 +95,14 @@ func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.T
 	return
 }
 
+type InFlight struct {
+	Result []byte
+	Wg     sync.WaitGroup
+}
+
+var inflightMap = map[string]*InFlight{}
+var inflightM sync.Mutex
+
 func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	cacheKey := TxKey(txid)
 	rawtx, _ = Cache.Get(ctx, cacheKey).Bytes()
@@ -106,12 +115,33 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	}
 
 	if len(rawtx) == 0 && JB != nil {
+		// start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-		start := time.Now()
-		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
-			rawtx, _ = io.ReadAll(resp.Body)
+		inflightM.Lock()
+		inflight, ok := inflightMap[url]
+		if !ok {
+			inflight = &InFlight{}
+			inflight.Wg.Add(1)
+			inflightMap[url] = inflight
 		}
-		log.Println("Requesting rawtx", txid, time.Since(start))
+		inflightM.Unlock()
+		if ok {
+			// log.Println("Waiting for rawtx", txid)
+			inflight.Wg.Wait()
+			rawtx = inflight.Result
+		} else {
+			// log.Println("Requesting rawtx", txid)
+			if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
+				rawtx, _ = io.ReadAll(resp.Body)
+			}
+			inflight.Result = rawtx
+			inflight.Wg.Done()
+
+			inflightM.Lock()
+			delete(inflightMap, url)
+			inflightM.Unlock()
+		}
+		// log.Println("Rawtx", txid, time.Since(start))
 	}
 
 	if len(rawtx) == 0 && bit != nil {
@@ -132,12 +162,34 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	cacheKey := ProofKey(txid)
 	prf, _ := Cache.Get(ctx, cacheKey).Bytes()
 	if len(prf) == 0 && JB != nil {
-		start := time.Now()
+		// start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
-			prf, _ = io.ReadAll(resp.Body)
+		inflightM.Lock()
+		inflight, ok := inflightMap[url]
+		if !ok {
+			inflight = &InFlight{}
+			inflight.Wg.Add(1)
+			inflightMap[url] = inflight
 		}
-		log.Println("Requesting proof", txid, time.Since(start))
+		inflightM.Unlock()
+		if ok {
+			// log.Println("Waiting for proof", txid)
+			inflight.Wg.Wait()
+			prf = inflight.Result
+		} else {
+			// log.Println("Requesting proof", txid)
+			if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
+				prf, _ = io.ReadAll(resp.Body)
+			}
+			inflight.Result = prf
+			inflight.Wg.Done()
+
+			inflightM.Lock()
+			delete(inflightMap, url)
+			inflightM.Unlock()
+		}
+
+		// log.Println("Proof", txid, time.Since(start))
 	}
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
@@ -241,3 +293,16 @@ func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err err
 // 		return nil
 // 	})
 // }
+
+var OwnerAccounts = map[string]string{}
+
+func RefreshOwners() error {
+	if ownerAccts, err := Rdb.HGetAll(context.Background(), OwnerAccountKey).Result(); err != nil {
+		return err
+	} else {
+		for owner, acct := range ownerAccts {
+			OwnerAccounts[owner] = acct
+		}
+	}
+	return nil
+}

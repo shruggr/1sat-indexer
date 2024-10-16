@@ -82,8 +82,10 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 			ordLock.PricePer = float64(ordLock.Price) / (float64(*bsv20.Amt) / math.Pow(10, float64(bsv20.Decimals)))
 		} else if idxData, ok := txo.Data[ORIGIN_TAG]; ok {
 			origin := idxData.Data.(*Origin)
-			ordLock.Tags = append(ordLock.Tags, origin.Outpoint.String())
-			ordLock.PricePer = float64(ordLock.Price)
+			if origin.Outpoint != nil {
+				ordLock.Tags = append(ordLock.Tags, origin.Outpoint.String())
+				ordLock.PricePer = float64(ordLock.Price)
+			}
 		}
 
 		for _, tag := range ordLock.Tags {

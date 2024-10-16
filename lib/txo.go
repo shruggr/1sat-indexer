@@ -19,7 +19,6 @@ type Txo struct {
 	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
 	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
-	// DepQueue []*Outpoint           `json:"-"`
 }
 
 func (t *Txo) AddOwner(owner string) {
@@ -68,20 +67,13 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 	outpoint := txo.Outpoint.String()
 	score := HeightScore(height, idx)
 
-	// TODO: preload all account into memory
 	accts := map[string]struct{}{}
-	if len(txo.Owners) > 0 {
-		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, txo.Owners...).Result(); err != nil {
-			log.Panic(err)
-			return err
-		} else {
-			for _, item := range result {
-				if acct, ok := item.(string); ok && acct != "" {
-					accts[acct] = struct{}{}
-				}
-			}
+	for _, owner := range txo.Owners {
+		if acct, ok := OwnerAccounts[owner]; ok {
+			accts[acct] = struct{}{}
 		}
 	}
+
 	if mp, err := msgpack.Marshal(txo); err != nil {
 		log.Println("Marshal Txo", err)
 		log.Panic(err)
@@ -176,16 +168,9 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 func (spend *Txo) SaveSpend(ctx context.Context, txid string, height uint32, idx uint64) error {
 	score := HeightScore(height, idx)
 	accts := map[string]struct{}{}
-	if len(spend.Owners) > 0 {
-		if result, err := Rdb.HMGet(ctx, OwnerAccountKey, spend.Owners...).Result(); err != nil {
-			log.Panic(err)
-			return err
-		} else {
-			for _, item := range result {
-				if acct, ok := item.(string); ok && acct != "" {
-					accts[acct] = struct{}{}
-				}
-			}
+	for _, owner := range spend.Owners {
+		if acct, ok := OwnerAccounts[owner]; ok {
+			accts[acct] = struct{}{}
 		}
 	}
 	if _, err := Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {

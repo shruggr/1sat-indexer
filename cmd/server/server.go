@@ -66,7 +66,11 @@ func main() {
 	app.Use(logger.New())
 	app.Use(compress.New())
 
-	app.Get("/v1/blocks/tip", func(c *fiber.Ctx) error {
+	app.Get("/yo", func(c *fiber.Ctx) error {
+		return c.SendString("yo")
+	})
+
+	app.Get("/v5/blocks/tip", func(c *fiber.Ctx) error {
 		if tip, err := lib.Cache.Get(ctx, lib.ChaintipKey).Result(); err != nil {
 			return err
 		} else {
@@ -75,7 +79,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/blocks/:hashOrHeight", func(c *fiber.Ctx) error {
+	app.Get("/v5/blocks/:hashOrHeight", func(c *fiber.Ctx) error {
 		hashOrHeight := c.Params("hashOrHeight")
 		if len(hashOrHeight) <= 8 {
 			if blocks, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
@@ -100,7 +104,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/blocks/list/:from", func(c *fiber.Ctx) error {
+	app.Get("/v5/blocks/list/:from", func(c *fiber.Ctx) error {
 		from := c.Params("from")
 		blocks := make([]*models.BlockHeader, 0, 10000)
 		if hashes, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
@@ -125,7 +129,7 @@ func main() {
 		return c.JSON(blocks)
 	})
 
-	app.Get("/v1/tx/:txid", func(c *fiber.Ctx) error {
+	app.Get("/v5/tx/:txid", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
 		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
 			return err
@@ -150,7 +154,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/tx/:txid/raw", func(c *fiber.Ctx) error {
+	app.Get("/v5/tx/:txid/raw", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
 		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
 			return err
@@ -162,7 +166,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/tx/:txid/proof", func(c *fiber.Ctx) error {
+	app.Get("/v5/tx/:txid/proof", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
 		if proof, err := lib.LoadProof(c.Context(), txid); err != nil {
 			return err
@@ -174,7 +178,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/txo/:outpoint", func(c *fiber.Ctx) error {
+	app.Get("/v5/txo/:outpoint", func(c *fiber.Ctx) error {
 		if txo, err := lib.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
 			return err
 		} else if txo == nil {
@@ -184,7 +188,7 @@ func main() {
 		}
 	})
 
-	// app.Get("/v1/address/:address/:from", func(c *fiber.Ctx) (err error) {
+	// app.Get("/v5/address/:address/:from", func(c *fiber.Ctx) (err error) {
 	// 	address := c.Params("address")
 	// 	var start float64
 	// 	if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
@@ -243,7 +247,7 @@ func main() {
 	// 	}
 	// })
 
-	app.Get("/v1/acct/:account/utxos", func(c *fiber.Ctx) (err error) {
+	app.Get("/v5/acct/:account/utxos", func(c *fiber.Ctx) (err error) {
 		account := c.Params("account")
 
 		if scores, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
@@ -289,7 +293,7 @@ func main() {
 		}
 	})
 
-	app.Get("/v1/acct/:account/:from", func(c *fiber.Ctx) (err error) {
+	app.Get("/v5/acct/:account/:from", func(c *fiber.Ctx) (err error) {
 		account := c.Params("account")
 		var start float64
 		if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
@@ -344,7 +348,7 @@ func main() {
 		return c.JSON(results)
 	})
 
-	app.Put("/v1/acct/:account", func(c *fiber.Ctx) error {
+	app.Put("/v5/acct/:account", func(c *fiber.Ctx) error {
 		account := c.Params("account")
 		var owners []string
 		if err := c.BodyParser(&owners); err != nil {
@@ -395,7 +399,7 @@ func main() {
 		return c.SendStatus(204)
 	})
 
-	app.Get("/v1/sse", func(c *fiber.Ctx) error {
+	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")
 		c.Set("Cache-Control", "no-cache")
 		c.Set("Connection", "keep-alive")

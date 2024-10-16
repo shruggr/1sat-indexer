@@ -58,22 +58,22 @@ func main() {
 	}
 
 	log.Println("Subscribing to Junglebus from block", fromBlock)
-	txfetch := make(chan string, 1000000)
-	limiter := make(chan struct{}, 10)
-	go func() {
-		for txid := range txfetch {
-			limiter <- struct{}{}
-			go func(txid string) {
-				defer func() {
-					<-limiter
-				}()
+	// txfetch := make(chan string, 1000000)
+	// limiter := make(chan struct{}, 10)
+	// go func() {
+	// 	for txid := range txfetch {
+	// 		limiter <- struct{}{}
+	// 		go func(txid string) {
+	// 			defer func() {
+	// 				<-limiter
+	// 			}()
 
-				if _, err := lib.LoadTx(ctx, txid, true); err != nil {
-					log.Panic(err)
-				}
-			}(txid)
-		}
-	}()
+	// 			if _, err := lib.LoadTx(ctx, txid, true); err != nil {
+	// 				log.Panic(err)
+	// 			}
+	// 		}(txid)
+	// 	}
+	// }()
 	var sub *junglebus.Subscription
 	// lastBlock := uint32(fromBlock)
 	eventHandler := junglebus.EventHandler{
@@ -112,7 +112,7 @@ func main() {
 			}).Err(); err != nil {
 				log.Panic(err)
 			}
-			txfetch <- txn.Id
+			// txfetch <- txn.Id
 		}
 	}
 	if MEMOOOL {

@@ -49,14 +49,16 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 	}
 	var origin *Origin
 	satsIn := uint64(0)
-	hasQueuedDeps := false
+	// hasQueuedDeps := false
 	for _, spend := range idxCtx.Spends {
 		if spend.Satoshis == nil {
-			idxCtx.QueueDependency(spend.Outpoint.TxidHex())
-			hasQueuedDeps = true
-			continue
-		} else if hasQueuedDeps {
-			continue
+			origin = &Origin{}
+			break
+			// idxCtx.QueueDependency(spend.Outpoint.TxidHex())
+			// hasQueuedDeps = true
+			// continue
+			// } else if hasQueuedDeps {
+			// 	continue
 		}
 		idxData.Deps = append(idxData.Deps, spend.Outpoint)
 
@@ -68,15 +70,12 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
 				origin = o.Data.(*Origin)
 			} else {
-				idxCtx.QueueDependency(spend.Outpoint.TxidHex())
-				return nil
+				origin = &Origin{}
 			}
 		}
 		break
 	}
-	if hasQueuedDeps {
-		return nil
-	}
+
 	if origin == nil {
 		origin = &Origin{
 			Outpoint: txo.Outpoint,
@@ -86,11 +85,13 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 		origin.Nonce++
 	}
 	idxData.Data = origin
-	idxData.Events = []*lib.Event{
-		{
-			Id:    "outpoint",
-			Value: origin.Outpoint.String(),
-		},
+	if origin.Outpoint != nil {
+		idxData.Events = []*lib.Event{
+			{
+				Id:    "outpoint",
+				Value: origin.Outpoint.String(),
+			},
+		}
 	}
 	// if idxData, ok := txo.Data[INSCRIPTION_TAG]; ok {
 	// 	insc := idxData.Data.(*Inscription)

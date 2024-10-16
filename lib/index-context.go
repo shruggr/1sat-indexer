@@ -11,35 +11,39 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 )
 
-type IndexContext struct {
-	// Id            uint64                   `json:"id"`
-	Tx            *transaction.Transaction `json:"-"`
-	Txid          *chainhash.Hash          `json:"txid"`
-	Height        uint32                   `json:"height"`
-	Idx           uint64                   `json:"idx"`
-	Txos          []*Txo                   `json:"txos"`
-	Spends        []*Txo                   `json:"spends"`
-	Indexers      []Indexer                `json:"-"`
-	Ctx           context.Context          `json:"-"`
-	tags          []string                 `json:"-"`
-	LoadAncestors bool                     `json:"-"`
-	SaveAncestors bool                     `json:"-"`
-	// txoCache      map[string]*Txo          `json:"-"`
-	Parents map[string]struct{} `json:"-"`
+type AncestorConfig struct {
+	Load  bool
+	Parse bool
+	Save  bool
 }
 
-func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, loadAncestors bool, saveAncestors bool) *IndexContext {
+type IndexContext struct {
+	// Id            uint64                   `json:"id"`
+	Tx             *transaction.Transaction `json:"-"`
+	Txid           *chainhash.Hash          `json:"txid"`
+	TxidHex        string                   `json:"-"`
+	Height         uint32                   `json:"height"`
+	Idx            uint64                   `json:"idx"`
+	Score          float64                  `json:"score"`
+	Txos           []*Txo                   `json:"txos"`
+	Spends         []*Txo                   `json:"spends"`
+	Indexers       []Indexer                `json:"-"`
+	Ctx            context.Context          `json:"-"`
+	tags           []string                 `json:"-"`
+	ancestorConfig AncestorConfig           `json:"-"`
+	// Parents        map[string]struct{}      `json:"-"`
+}
+
+func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig) *IndexContext {
 	idxCtx := &IndexContext{
-		// Id:            uint64(time.Now().UnixNano()),
-		Tx:            tx,
-		Txid:          tx.TxID(),
-		Indexers:      indexers,
-		Ctx:           ctx,
-		LoadAncestors: loadAncestors,
-		SaveAncestors: saveAncestors,
-		// txoCache:      make(map[string]*Txo),
-		Parents: make(map[string]struct{}),
+		Tx:             tx,
+		Txid:           tx.TxID(),
+		Indexers:       indexers,
+		Ctx:            ctx,
+		ancestorConfig: ancestorConfig,
+		// Parents:        make(map[string]struct{}),
 	}
+	idxCtx.TxidHex = idxCtx.Txid.String()
 
 	if tx.MerklePath != nil {
 		idxCtx.Height = tx.MerklePath.BlockHeight
@@ -52,19 +56,43 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 	} else {
 		idxCtx.Height = uint32(time.Now().Unix())
 	}
+	idxCtx.Score = HeightScore(idxCtx.Height, idxCtx.Idx)
 	for _, indexer := range indexers {
 		idxCtx.tags = append(idxCtx.tags, indexer.Tag())
 	}
 	return idxCtx
 }
 
-func (idxCtx *IndexContext) QueueDependency(txid string) {
-	idxCtx.Parents[txid] = struct{}{}
-}
+// func (idxCtx *IndexContext) QueueDependency(txid string) {
+// 	idxCtx.Parents[txid] = struct{}{}
+// }
 
 func (idxCtx *IndexContext) ParseTxn() {
 	idxCtx.ParseSpends()
 	idxCtx.ParseTxos()
+}
+
+func (idxCtx *IndexContext) ParseSpends() {
+	if idxCtx.Tx.IsCoinbase() {
+		return
+	}
+	for _, txin := range idxCtx.Tx.Inputs {
+		outpoint := NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
+		var spend *Txo
+		if idxCtx.ancestorConfig.Load {
+			if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
+				log.Panic(err)
+			} else {
+				spend = txo
+			}
+		}
+		if spend == nil {
+			spend = &Txo{
+				Outpoint: outpoint,
+			}
+		}
+		idxCtx.Spends = append(idxCtx.Spends, spend)
+	}
 }
 
 func (idxCtx *IndexContext) ParseTxos() {
@@ -94,32 +122,6 @@ func (idxCtx *IndexContext) ParseTxos() {
 	}
 }
 
-func (idxCtx *IndexContext) ParseSpends() {
-	if idxCtx.Tx.IsCoinbase() {
-		return
-	}
-	for _, txin := range idxCtx.Tx.Inputs {
-		outpoint := NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
-		var spend *Txo
-		if idxCtx.LoadAncestors {
-			if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
-				log.Panic(err)
-			} else if txo != nil {
-				spend = txo
-			} else {
-				spend = &Txo{
-					Outpoint: outpoint,
-				}
-			}
-		} else {
-			spend = &Txo{
-				Outpoint: outpoint,
-			}
-		}
-		idxCtx.Spends = append(idxCtx.Spends, spend)
-	}
-}
-
 func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
 	// if txo, ok := idxCtx.txoCache[op]; ok {
@@ -139,40 +141,36 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *Outpoint) (txo *Txo, err error) {
 				}
 			}
 		}
-		// } else {
-		// 	parentTxid := outpoint.TxidHex()
-		// 	if tx, err := LoadTx(idxCtx.Ctx, parentTxid); err != nil {
-		// 		log.Panicln(err)
-		// 		return nil, err
-		// 	} else {
-		// 		// log.Println("LoadParentTx", parentTxid)
-		// 		spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, idxCtx.LoadAncestors, idxCtx.SaveAncestors)
-		// 		spendCtx.txoCache = idxCtx.txoCache
-		// 		spendCtx.ParseTxos()
-		// 		if idxCtx.SaveAncestors {
-		// 			if err := spendCtx.SaveTxos(); err != nil {
-		// 				log.Panic(err)
-		// 				return nil, err
-		// 			}
-		// 		}
-		// 		txo = spendCtx.Txos[outpoint.Vout()]
-		// 	}
+	} else if idxCtx.ancestorConfig.Parse {
+		parentTxid := outpoint.TxidHex()
+		if tx, err := LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
+			log.Panicln(err)
+			return nil, err
+		} else {
+			// log.Println("LoadParentTx", parentTxid)
+			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{})
+			spendCtx.ParseTxos()
+			if idxCtx.ancestorConfig.Save {
+				if err := spendCtx.SaveTxos(); err != nil {
+					log.Panic(err)
+					return nil, err
+				}
+			}
+			txo = spendCtx.Txos[outpoint.Vout()]
+		}
 	}
-	// idxCtx.txoCache[op] = txo
 	return txo, nil
 }
 
 func (idxCtx *IndexContext) Save() error {
-	if len(idxCtx.Parents) > 0 {
-		return nil
-	} else if err := idxCtx.SaveTxos(); err != nil {
+	if err := idxCtx.SaveTxos(); err != nil {
 		log.Panic(err)
 		return err
 	} else if err := idxCtx.SaveSpends(); err != nil {
 		log.Panic(err)
 		return err
 	}
-	// log.Println("Processed", txid)
+
 	return nil
 }
 
@@ -190,7 +188,7 @@ func (idxCtx *IndexContext) SaveTxos() error {
 
 func (idxCtx *IndexContext) SaveSpends() error {
 	for _, spend := range idxCtx.Spends {
-		if err := spend.SaveSpend(idxCtx.Ctx, idxCtx.Txid.String(), idxCtx.Height, idxCtx.Idx); err != nil {
+		if err := spend.SaveSpend(idxCtx.Ctx, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err
 		}
 	}

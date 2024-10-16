@@ -155,6 +155,7 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 		tokens: map[string]*bsv21Token{},
 	}
 
+	isPending := false
 	for _, txo := range idxCtx.Txos {
 		if idxData, ok := txo.Data[BSV21_TAG]; ok {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
@@ -175,52 +176,44 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 		return
 	}
 
-	// if len(idxCtx.Spends) == 0 {
-	// 	idxCtx.ParseSpends()
-	// }
-
-	hasDepQueue := false
 	for _, spend := range idxCtx.Spends {
 		if spend.Satoshis == nil {
-			hasDepQueue = true
-			idxCtx.QueueDependency(spend.Outpoint.TxidHex())
-			continue
-		} else if hasDepQueue {
-			continue
+			isPending = true
+			break
 		}
 		if idxData, ok := spend.Data[BSV21_TAG]; ok {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
-				switch bsv21.Status {
-				case Valid:
+				if bsv21.Status == Pending {
+					isPending = true
+					break
+				} else if bsv21.Status == Valid {
 					if token, ok := ctx.tokens[bsv21.Id]; ok {
 						token.balance += bsv21.Amt
 						token.token = bsv21
 						token.deps = append(token.deps, spend.Outpoint)
 					}
-				case Pending:
-					log.Panicln("Pending BSV21", bsv21.Id)
 				}
 			}
 		}
 	}
-	if hasDepQueue {
-		return
-	}
+
 	reasons := map[string]string{}
-	for _, token := range ctx.tokens {
-		for _, idxData := range token.outputs {
-			if bsv21, ok := idxData.Data.(*Bsv21); ok {
-				if token.token == nil {
-					reason := "missing inputs"
-					token.reason = &reason
-				} else if bsv21.Amt > token.balance {
-					reason := "insufficient funds"
-					token.reason = &reason
-				} else {
-					bsv21.Icon = token.token.Icon
-					bsv21.Symbol = token.token.Symbol
-					bsv21.Decimals = token.token.Decimals
-					token.balance -= bsv21.Amt
+	if !isPending {
+		for _, token := range ctx.tokens {
+			for _, idxData := range token.outputs {
+				if bsv21, ok := idxData.Data.(*Bsv21); ok {
+					if token.token == nil {
+						reason := "missing inputs"
+						token.reason = &reason
+					} else if bsv21.Amt > token.balance {
+						reason := "insufficient funds"
+						token.reason = &reason
+					} else {
+						bsv21.Icon = token.token.Icon
+						bsv21.Symbol = token.token.Symbol
+						bsv21.Decimals = token.token.Decimals
+						token.balance -= bsv21.Amt
+					}
 				}
 			}
 		}
@@ -228,7 +221,12 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 	for tokenId, token := range ctx.tokens {
 		for _, idxData := range token.outputs {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
-				if reason, ok := reasons[tokenId]; ok {
+				if isPending {
+					idxData.Events = append(idxData.Events, &lib.Event{
+						Id:    "pending",
+						Value: tokenId,
+					})
+				} else if reason, ok := reasons[tokenId]; ok {
 					bsv21.Status = Invalid
 					bsv21.Reason = &reason
 					idxData.Events = append(idxData.Events, &lib.Event{

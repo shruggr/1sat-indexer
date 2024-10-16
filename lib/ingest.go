@@ -15,7 +15,11 @@ func IngestTxid(ctx context.Context, txid string, indexers []Indexer) (*IndexCon
 }
 
 func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []Indexer) (idxCtx *IndexContext, err error) {
-	idxCtx = NewIndexContext(ctx, tx, indexers, true, true)
+	idxCtx = NewIndexContext(ctx, tx, indexers, AncestorConfig{
+		Load:  true,
+		Parse: true,
+		Save:  true,
+	})
 	idxCtx.ParseTxn()
 
 	// log.Printf("Ingesting %d %d %s", idxCtx.Height, idxCtx.Idx, idxCtx.Txid)
