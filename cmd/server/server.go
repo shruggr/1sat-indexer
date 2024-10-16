@@ -18,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/bopen"
@@ -39,51 +38,10 @@ func init() {
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
-	if POSTGRES == "" {
-		POSTGRES = os.Getenv("POSTGRES_FULL")
-	}
-
-	log.Println("POSTGRES:", POSTGRES)
 	var err error
-	config, err := pgxpool.ParseConfig(POSTGRES)
-	if err != nil {
+	if err = lib.Initialize(); err != nil {
 		log.Panic(err)
 	}
-	config.MaxConnIdleTime = 15 * time.Second
-
-	db, err := pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISDB"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	cache := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISCACHE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	if err = lib.Initialize(db, rdb, cache); err != nil {
-		log.Panic(err)
-	}
-
-	// JUNGLEBUS := os.Getenv("JUNGLEBUS")
-	// if JUNGLEBUS == "" {
-	// 	JUNGLEBUS = "https://junglebus.gorillapool.io"
-	// }
-
-	// jb, err = junglebus.New(
-	// 	junglebus.WithHTTP(JUNGLEBUS),
-	// )
-	// if err != nil {
-	// 	log.Panicln(err.Error())
-	// }
-
 }
 
 var currentSessions = sse.SessionsLock{
@@ -531,7 +489,7 @@ func main() {
 
 	go func() {
 		sub := redis.NewClient(&redis.Options{
-			Addr:     os.Getenv("REDISDB"),
+			Addr:     os.Getenv("REDISQUEUE"),
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		})

@@ -68,7 +68,7 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
 				origin = o.Data.(*Origin)
 			} else {
-				idxCtx.QueueDependency(spend.Outpoint.String())
+				idxCtx.QueueDependency(spend.Outpoint.TxidHex())
 				return nil
 			}
 		}

@@ -8,6 +8,7 @@ const BlockHeightKey = "blk:height"
 const BlockHeadersKey = "blk:headers"
 const ChaintipKey = "blk:tip"
 const IngestQueueKey = "que:ingest"
+const PendingQueueKey = "que:pending"
 const IngestLogKey = "log:ingest"
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
@@ -27,14 +28,6 @@ func ProgressQueueKey(tag string) string {
 
 func QueueKey(tag string) string {
 	return "que:" + tag
-}
-
-// func DepKey(outpoint *Outpoint) string {
-// 	return "dep:" + txid
-// }
-
-func IngestDepsKey(txid string) string {
-	return "ing:dep:" + txid
 }
 
 const SpendsKey = "spends"

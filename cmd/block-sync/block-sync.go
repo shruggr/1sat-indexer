@@ -5,19 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"time"
 
 	// "github.com/GorillaPool/go-junglebus/models"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const PAGE_SIZE = uint64(10000)
+const PAGE_SIZE = 10000
 
 var JUNGLEBUS string
 var ctx = context.Background()
@@ -28,27 +27,9 @@ func init() {
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
 	var err error
-	db, err := pgxpool.New(ctx, os.Getenv("POSTGRES_FULL"))
-	if err != nil {
+	if err = lib.Initialize(); err != nil {
 		log.Panic(err)
 	}
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISDB"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	cache := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISCACHE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	if err = lib.Initialize(db, rdb, cache); err != nil {
-		log.Panic(err)
-	}
-	JUNGLEBUS = os.Getenv("JUNGLEBUS")
 }
 func main() {
 	fromBlock := uint64(1)
@@ -88,18 +69,11 @@ func main() {
 		fromBlock = uint64(lastBlocks[0].Score) - 5
 	}
 
+	var err error
+	var blocks []*lib.BlockHeader
 	for {
-		var blocks []*lib.BlockHeader
-		url := fmt.Sprintf("%s/v1/block_header/list/%d?limit=%d", JUNGLEBUS, fromBlock, PAGE_SIZE)
-		log.Printf("Requesting %d blocks from height %d\n", PAGE_SIZE, fromBlock)
-		if resp, err := http.Get(url); err != nil || resp.StatusCode != 200 {
-			log.Panicln("Failed to get blocks from junglebus", resp.StatusCode, err)
-		} else {
-			err := json.NewDecoder(resp.Body).Decode(&blocks)
-			resp.Body.Close()
-			if err != nil {
-				log.Panic(err)
-			}
+		if blocks, err = lib.FetchBlockHeaders(fromBlock, PAGE_SIZE); err != nil {
+			log.Panic(err)
 		}
 		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			var chaintip []byte
@@ -126,7 +100,7 @@ func main() {
 				if err := lib.Rdb.Set(ctx, lib.ChaintipKey, chaintip, 0).Err(); err != nil {
 					return err
 				}
-				lib.Rdb.Publish(ctx, "block", chaintip)
+				lib.Queue.Publish(ctx, "block", chaintip)
 			}
 			return nil
 		}); err != nil {

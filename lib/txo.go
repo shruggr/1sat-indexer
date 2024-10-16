@@ -160,14 +160,14 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 		return err
 	}
 	for _, owner := range txo.Owners {
-		Rdb.Publish(ctx, PubOwnerKey(owner), outpoint)
+		Queue.Publish(ctx, PubOwnerKey(owner), outpoint)
 	}
 	for acct := range accts {
-		Rdb.Publish(ctx, PubAccountKey(acct), outpoint)
+		Queue.Publish(ctx, PubAccountKey(acct), outpoint)
 	}
 	for tag, data := range txo.Data {
 		for _, event := range data.Events {
-			Rdb.Publish(ctx, PubEventKey(tag, event), outpoint)
+			Queue.Publish(ctx, PubEventKey(tag, event), outpoint)
 		}
 	}
 	return nil
@@ -220,10 +220,10 @@ func (spend *Txo) SaveSpend(ctx context.Context, txid string, height uint32, idx
 	}
 
 	for _, owner := range spend.Owners {
-		Rdb.Publish(ctx, PubOwnerKey(owner), txid)
+		Queue.Publish(ctx, PubOwnerKey(owner), txid)
 	}
 	for acct := range accts {
-		Rdb.Publish(ctx, PubAccountKey(acct), txid)
+		Queue.Publish(ctx, PubAccountKey(acct), txid)
 	}
 
 	return nil
@@ -275,7 +275,7 @@ func (t *Txo) SaveData(ctx context.Context, tags []string) (err error) {
 	}
 	for _, tag := range tags {
 		for _, event := range t.Data[tag].Events {
-			Rdb.Publish(ctx, PubEventKey(tag, event), outpoint)
+			Queue.Publish(ctx, PubEventKey(tag, event), outpoint)
 		}
 	}
 	return nil

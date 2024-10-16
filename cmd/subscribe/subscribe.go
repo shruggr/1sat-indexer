@@ -12,7 +12,6 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -22,7 +21,6 @@ var POSTGRES string
 var PORT int
 
 var ctx = context.Background()
-var jb *junglebus.Client
 var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
@@ -42,56 +40,15 @@ func init() {
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")
 	flag.Parse()
 
-	if POSTGRES == "" {
-		POSTGRES = os.Getenv("POSTGRES_FULL")
-	}
-
-	log.Println("POSTGRES:", POSTGRES)
 	var err error
-	config, err := pgxpool.ParseConfig(POSTGRES)
-	if err != nil {
+	if err = lib.Initialize(); err != nil {
 		log.Panic(err)
-	}
-	config.MaxConnIdleTime = 15 * time.Second
-
-	db, err := pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISDB"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	cache := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISCACHE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	if err = lib.Initialize(db, rdb, cache); err != nil {
-		log.Panic(err)
-	}
-
-	JUNGLEBUS := os.Getenv("JUNGLEBUS")
-	if JUNGLEBUS == "" {
-		JUNGLEBUS = "https://junglebus.gorillapool.io"
-	}
-
-	jb, err = junglebus.New(
-		junglebus.WithHTTP(JUNGLEBUS),
-	)
-	if err != nil {
-		log.Panicln(err.Error())
 	}
 }
 
 func main() {
 	var fromBlock uint64
 	progressKey := lib.ProgressQueueKey(TAG)
-	ingestKey := lib.IngestQueueKey
 	if progress, err := lib.Rdb.ZScore(ctx, progressKey, TOPIC).Result(); err == redis.Nil {
 		fromBlock = uint64(FROM_BLOCK)
 	} else if err != nil {
@@ -101,7 +58,22 @@ func main() {
 	}
 
 	log.Println("Subscribing to Junglebus from block", fromBlock)
+	txfetch := make(chan string, 1000000)
+	limiter := make(chan struct{}, 10)
+	go func() {
+		for txid := range txfetch {
+			limiter <- struct{}{}
+			go func(txid string) {
+				defer func() {
+					<-limiter
+				}()
 
+				if _, err := lib.LoadTx(ctx, txid, true); err != nil {
+					log.Panic(err)
+				}
+			}(txid)
+		}
+	}()
 	var sub *junglebus.Subscription
 	// lastBlock := uint32(fromBlock)
 	eventHandler := junglebus.EventHandler{
@@ -134,21 +106,13 @@ func main() {
 			if VERBOSE > 0 {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := lib.Rdb.ZAdd(ctx, ingestKey, redis.Z{
+			if err := lib.Queue.ZAdd(ctx, lib.IngestQueueKey, redis.Z{
 				Score:  lib.HeightScore(txn.BlockHeight, txn.BlockIndex),
 				Member: txn.Id,
 			}).Err(); err != nil {
 				log.Panic(err)
 			}
-			// if lastBlock != txn.BlockHeight {
-			// 	lastBlock = txn.BlockHeight
-			// 	if err := lib.Rdb.ZAdd(ctx, lib.ProgressQueueKey(TAG), redis.Z{
-			// 		Score:  float64(lastBlock),
-			// 		Member: TOPIC,
-			// 	}).Err(); err != nil {
-			// 		log.Panic(err)
-			// 	}
-			// }
+			txfetch <- txn.Id
 		}
 	}
 	if MEMOOOL {
@@ -156,7 +120,7 @@ func main() {
 			if VERBOSE > 0 {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := lib.Rdb.ZAdd(ctx, ingestKey, redis.Z{
+			if err := lib.Queue.ZAdd(ctx, lib.IngestQueueKey, redis.Z{
 				Score:  lib.HeightScore(uint32(time.Now().Unix()), 0),
 				Member: txn.Id,
 			}).Err(); err != nil {
@@ -166,7 +130,7 @@ func main() {
 	}
 
 	var err error
-	if sub, err = jb.SubscribeWithQueue(ctx,
+	if sub, err = lib.JB.SubscribeWithQueue(ctx,
 		TOPIC,
 		fromBlock,
 		0,

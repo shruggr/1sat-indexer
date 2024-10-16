@@ -14,33 +14,55 @@ import (
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
 )
 
 var TRIGGER = uint32(783968)
+var JUNGLEBUS string
 
-var Db *pgxpool.Pool
+// var Db *pgxpool.Pool
 var Rdb *redis.Client
 var Cache *redis.Client
+var Queue *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-func Initialize(postgres *pgxpool.Pool, rdb *redis.Client, cache *redis.Client) (err error) {
-	Db = postgres
-	Rdb = rdb
-	Cache = cache
-
-	log.Println("JUNGLEBUS", os.Getenv("JUNGLEBUS"))
-	if os.Getenv("JUNGLEBUS") != "" {
+func Initialize() (err error) {
+	// Db = postgres
+	// Rdb = rdb
+	// Cache = cache
+	JUNGLEBUS = os.Getenv("JUNGLEBUS")
+	log.Println("JUNGLEBUS", JUNGLEBUS)
+	if JUNGLEBUS != "" {
 		JB, err = junglebus.New(
-			junglebus.WithHTTP(os.Getenv("JUNGLEBUS")),
+			junglebus.WithHTTP(JUNGLEBUS),
 		)
 		if err != nil {
 			return
 		}
 	}
+
+	log.Println("REDISDB", os.Getenv("REDISDB"))
+	Rdb = redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISDB"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	log.Println("REDISQUEUE", os.Getenv("REDISQUEUE"))
+	Queue = redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISQUEUE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	log.Println("REDISCACHE", os.Getenv("REDISCACHE"))
+	Cache = redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISCACHE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
 	if os.Getenv("BITCOIN_HOST") != "" {
 		port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)
@@ -58,7 +80,7 @@ func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.T
 	if rawtx, err = LoadRawtx(ctx, txid); err != nil {
 		return
 	} else if len(rawtx) == 0 {
-		fmt.Printf("missing-txn %s", txid)
+		fmt.Printf("missing-txn %s\n", txid)
 		return
 	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
 		return
@@ -85,10 +107,11 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 
 	if len(rawtx) == 0 && JB != nil {
 		url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-
+		start := time.Now()
 		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
 			rawtx, _ = io.ReadAll(resp.Body)
 		}
+		log.Println("Requesting rawtx", txid, time.Since(start))
 	}
 
 	if len(rawtx) == 0 && bit != nil {
@@ -109,11 +132,12 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	cacheKey := ProofKey(txid)
 	prf, _ := Cache.Get(ctx, cacheKey).Bytes()
 	if len(prf) == 0 && JB != nil {
+		start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-
 		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
 			prf, _ = io.ReadAll(resp.Body)
 		}
+		log.Println("Requesting proof", txid, time.Since(start))
 	}
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
@@ -163,6 +187,21 @@ func LoadTxOut(outpoint *Outpoint) (txout *transaction.TransactionOutput, err er
 // 	return io.ReadAll(resp.Body)
 // }
 
+func FetchBlockHeaders(fromBlock uint64, pageSize uint) (blocks []*BlockHeader, err error) {
+	url := fmt.Sprintf("%s/v1/block_header/list/%d?limit=%d", JUNGLEBUS, fromBlock, pageSize)
+	log.Printf("Requesting %d blocks from height %d\n", pageSize, fromBlock)
+	if resp, err := http.Get(url); err != nil || resp.StatusCode != 200 {
+		log.Panicln("Failed to get blocks from junglebus", resp.StatusCode, err)
+	} else {
+		err := json.NewDecoder(resp.Body).Decode(&blocks)
+		resp.Body.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	return
+}
+
 func GetChaintip(ctx context.Context) *models.BlockHeader {
 	chaintip := &models.BlockHeader{}
 	if data, err := Rdb.Get(ctx, "chaintip").Bytes(); err != nil {
@@ -171,6 +210,21 @@ func GetChaintip(ctx context.Context) *models.BlockHeader {
 		log.Panic(err)
 	}
 	return chaintip
+}
+
+func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err error) {
+	url := fmt.Sprintf("%s/v1/address/get/%s/%d", JUNGLEBUS, address, lastHeight)
+	if resp, err := http.Get(url); err != nil {
+		log.Panic(err)
+	} else if resp.StatusCode != 200 {
+		log.Panic("Bad status", resp.StatusCode)
+	} else {
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(&txns); err != nil {
+			log.Panic(err)
+		}
+	}
+	return
 }
 
 // func PublishEvent(ctx context.Context, event string, data string) {
