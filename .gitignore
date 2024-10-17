@@ -6,3 +6,4 @@ block-sync
 ingest
 server
 subscribe
+owner-sync
