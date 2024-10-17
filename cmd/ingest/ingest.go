@@ -10,7 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -39,18 +39,6 @@ func init() {
 	}
 	JUNGLEBUS = os.Getenv("JUNGLEBUS")
 	limiter = make(chan struct{}, CONCURRENCY)
-}
-
-var indexers = []lib.Indexer{
-	&bopen.BOpenIndexer{},
-	&bopen.InscriptionIndexer{},
-	&bopen.MapIndexer{},
-	&bopen.BIndexer{},
-	&bopen.SigmaIndexer{},
-	&bopen.OriginIndexer{},
-	&bopen.Bsv21Indexer{},
-	&bopen.Bsv20Indexer{},
-	&bopen.OrdLockIndexer{},
 }
 
 // var wg sync.WaitGroup
@@ -112,21 +100,7 @@ func main() {
 						<-limiter
 						// log.Println("Processed", txid)
 					}()
-					if idxCtx, err := lib.IngestTxid(ctx, txid, indexers); err != nil {
-						log.Panic(err)
-					} else if _, err := lib.Queue.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-						if err := pipe.ZAdd(idxCtx.Ctx, lib.TxLogKey, redis.Z{
-							Score:  lib.HeightScore(idxCtx.Height, idxCtx.Idx),
-							Member: idxCtx.Txid.String(),
-						}).Err(); err != nil {
-							log.Panic(err)
-							return err
-						} else if err := pipe.ZRem(ctx, lib.IngestQueueKey, txid).Err(); err != nil {
-							return err
-						}
-
-						return nil
-					}); err != nil {
+					if _, err := lib.IngestTxid(ctx, txid, config.Indexers); err != nil {
 						log.Panic(err)
 					}
 				}(txid)

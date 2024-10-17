@@ -2,8 +2,10 @@ package lib
 
 import (
 	"context"
+	"log"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/redis/go-redis/v9"
 )
 
 func IngestTxid(ctx context.Context, txid string, indexers []Indexer) (*IndexContext, error) {
@@ -25,6 +27,22 @@ func IngestTx(ctx context.Context, tx *transaction.Transaction, indexers []Index
 	// log.Printf("Ingesting %d %d %s", idxCtx.Height, idxCtx.Idx, idxCtx.Txid)
 
 	idxCtx.Save()
+	if _, err := Queue.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if err := pipe.ZAdd(idxCtx.Ctx, IngestLogKey, redis.Z{
+			Score:  idxCtx.Score,
+			Member: idxCtx.TxidHex,
+		}).Err(); err != nil {
+			log.Panic(err)
+			return err
+		} else if err := pipe.ZRem(ctx, IngestQueueKey, idxCtx.TxidHex).Err(); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		log.Panic(err)
+		return nil, err
+	}
 	return
 }
 

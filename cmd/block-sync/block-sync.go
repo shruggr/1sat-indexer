@@ -32,8 +32,9 @@ func init() {
 	}
 }
 func main() {
-	fromBlock := uint64(1)
-	if lastBlocks, err := lib.Rdb.ZRevRangeByScoreWithScores(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
+	fromBlock := uint32(1)
+	var lastHash string
+	if lastBlocks, err := lib.Cache.ZRevRangeByScoreWithScores(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
 		Max:   "+inf",
 		Min:   "-inf",
 		Count: 1,
@@ -51,10 +52,10 @@ func main() {
 			Bits:       "1d00ffff",
 			Synced:     1,
 		}
-		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			if err := pipe.HSet(ctx, lib.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
 				return err
-			} else if err := lib.Rdb.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
+			} else if err := lib.Cache.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
 				Score:  0,
 				Member: genesis.Hash,
 			}).Err(); err != nil {
@@ -64,24 +65,27 @@ func main() {
 		}); err != nil {
 			log.Panic(err)
 		}
-
-	} else if lastBlocks[0].Score > 6 {
-		fromBlock = uint64(lastBlocks[0].Score) - 5
+	} else {
+		fromBlock = uint32(lastBlocks[0].Score)
+		lastHash = lastBlocks[0].Member.(string)
 	}
 
 	var err error
 	var blocks []*lib.BlockHeader
 	for {
-		if blocks, err = lib.FetchBlockHeaders(fromBlock, PAGE_SIZE); err != nil {
+		start := uint64(1)
+		if fromBlock > 6 {
+			start = uint64(fromBlock - 6)
+		}
+		if blocks, err = lib.FetchBlockHeaders(start, PAGE_SIZE); err != nil {
 			log.Panic(err)
 		}
-		if _, err := lib.Rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-			var chaintip []byte
+		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			for _, block := range blocks {
 				score := float64(block.Height)
 				if blockJson, err := json.Marshal(block); err != nil {
 					return err
-				} else if isNew, err := pipe.HSetNX(ctx, lib.BlockHeadersKey, block.Hash, blockJson).Result(); err != nil {
+				} else if err := pipe.HSetNX(ctx, lib.BlockHeadersKey, block.Hash, blockJson).Err(); err != nil {
 					return err
 				} else if err := pipe.ZRemRangeByScore(ctx, lib.BlockHeightKey, strconv.Itoa(int(block.Height)), "+inf").Err(); err != nil {
 					log.Panic(err)
@@ -90,22 +94,27 @@ func main() {
 					Member: block.Hash,
 				}).Err(); err != nil {
 					log.Panic(err)
-				} else if isNew {
-					chaintip = blockJson
+					// } else if isNew {
+					// 	chaintip = blockJson
 				}
-				fromBlock = uint64(block.Height) - 5
-			}
-			if len(chaintip) > 0 {
-				log.Println("New Chaintip", string(chaintip))
-				if err := lib.Rdb.Set(ctx, lib.ChaintipKey, chaintip, 0).Err(); err != nil {
-					return err
-				}
-				lib.Queue.Publish(ctx, "block", chaintip)
+				// fromBlock = uint64(block.Height)
 			}
 			return nil
 		}); err != nil {
 			log.Panic(err)
 		}
+		lastBlock := blocks[len(blocks)-1]
+
+		if lastBlock.Hash != lastHash {
+			// if len(chaintip) > 0 {
+			// log.Println("New Chaintip", lastBlock.Height, lastBlock.Hash)
+			if err := lib.Cache.Set(ctx, lib.ChaintipKey, lastBlock, 0).Err(); err != nil {
+				log.Panic(err)
+			}
+			lib.Queue.Publish(ctx, "block", lastBlock)
+		}
+		lastHash = lastBlock.Hash
+		fromBlock = lastBlock.Height
 
 		if len(blocks) < int(PAGE_SIZE) {
 			time.Sleep(15 * time.Second)

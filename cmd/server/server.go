@@ -20,8 +20,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -32,6 +32,11 @@ var PORT int
 var ctx = context.Background()
 
 // var jb *junglebus.Client
+var currentSessions = sse.SessionsLock{
+	Topics: make(map[string][]*sse.Session),
+}
+
+var indexedTags = make([]string, 0, len(config.Indexers))
 
 func init() {
 	wd, _ := os.Getwd()
@@ -42,18 +47,10 @@ func init() {
 	if err = lib.Initialize(); err != nil {
 		log.Panic(err)
 	}
-}
 
-var currentSessions = sse.SessionsLock{
-	Topics: make(map[string][]*sse.Session),
-}
-
-var tags = []string{
-	(&bopen.InscriptionIndexer{}).Tag(),
-	(&bopen.MapIndexer{}).Tag(),
-	(&bopen.BIndexer{}).Tag(),
-	(&bopen.SigmaIndexer{}).Tag(),
-	(&bopen.OriginIndexer{}).Tag(),
+	for _, indexer := range config.Indexers {
+		indexedTags = append(indexedTags, indexer.Tag())
+	}
 }
 
 func main() {
@@ -179,12 +176,29 @@ func main() {
 	})
 
 	app.Get("/v5/txo/:outpoint", func(c *fiber.Ctx) error {
-		if txo, err := lib.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
+		if txo, err := lib.LoadTxo(c.Context(), c.Params("outpoint"), indexedTags); err != nil {
 			return err
 		} else if txo == nil {
 			return c.SendStatus(404)
 		} else {
 			return c.JSON(txo)
+		}
+	})
+
+	app.Get("/v5/address/:address/utxos", func(c *fiber.Ctx) (err error) {
+		address := c.Params("address")
+
+		var tags []string
+		if queryTags, ok := c.Queries()["tags"]; !ok {
+			tags = indexedTags
+		} else {
+			tags = strings.Split(queryTags, ",")
+		}
+
+		if txos, err := lib.AddressUtxos(c.Context(), address, tags); err != nil {
+			return err
+		} else {
+			return c.JSON(txos)
 		}
 	})
 
@@ -247,49 +261,72 @@ func main() {
 	// 	}
 	// })
 
+	app.Put("/v5/acct/:account", func(c *fiber.Ctx) error {
+		account := c.Params("account")
+		var owners []string
+		if err := c.BodyParser(&owners); err != nil {
+			return c.SendStatus(400)
+		} else if len(owners) == 0 {
+			return c.SendStatus(400)
+		}
+		ownerTxoKeys := make([]string, 0, len(owners))
+
+		resync := false
+		accountKey := lib.AccountKey(account)
+		for _, owner := range owners {
+			if owner == "" {
+				return c.SendStatus(400)
+			}
+			ownerTxoKeys = append(ownerTxoKeys, lib.OwnerTxosKey(owner))
+			if err := lib.Queue.ZAddNX(c.Context(), lib.OwnerSyncKey, redis.Z{
+				Score:  0,
+				Member: owner,
+			}).Err(); err != nil {
+				return err
+			} else if exists, err := lib.Queue.SIsMember(c.Context(), accountKey, owner).Result(); err != nil {
+				return err
+			} else if !exists {
+				resync = true
+			}
+		}
+		if resync {
+			if _, err := lib.Queue.Pipelined(c.Context(), func(pipe redis.Pipeliner) error {
+				for _, owner := range owners {
+					if err := pipe.SAdd(c.Context(), accountKey, owner).Err(); err != nil {
+						return err
+					} else if err := pipe.HSet(c.Context(), lib.OwnerAccountKey, owner, account).Err(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}); err != nil {
+				return err
+			} else if err := lib.Rdb.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
+				Keys:      ownerTxoKeys,
+				Aggregate: "MIN",
+			}).Err(); err != nil {
+				return err
+			} else if err := lib.SyncAcct(c.Context(), account, config.Indexers, 64); err != nil {
+				return err
+			}
+		}
+		return c.SendStatus(204)
+	})
+
 	app.Get("/v5/acct/:account/utxos", func(c *fiber.Ctx) (err error) {
 		account := c.Params("account")
 
-		if scores, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
-			Key:   lib.AccountTxosKey(account),
-			Start: 0,
-			Stop:  -1,
-		}).Result(); err != nil {
+		var tags []string
+		if queryTags, ok := c.Queries()["tags"]; !ok {
+			tags = indexedTags
+		} else {
+			tags = strings.Split(queryTags, ",")
+		}
+
+		if txos, err := lib.AccountUtxos(c.Context(), account, tags); err != nil {
 			return err
 		} else {
-			outpoints := make([]string, 0, len(scores))
-			for _, item := range scores {
-				member := item.Member.(string)
-				if len(member) > 64 {
-					outpoints = append(outpoints, member)
-				}
-			}
-			if spends, err := lib.Rdb.HMGet(c.Context(), lib.SpendsKey, outpoints...).Result(); err != nil {
-				return err
-			} else {
-				unspent := make([]string, 0, len(outpoints))
-				for i, outpoint := range outpoints {
-					if spends[i] == nil {
-						unspent = append(unspent, outpoint)
-					}
-				}
-				// TODO: Move this to Txo file
-				if msgpacks, err := lib.Rdb.HMGet(c.Context(), lib.TxosKey, unspent...).Result(); err != nil {
-					return err
-				} else {
-					txos := make([]*lib.Txo, 0, len(msgpacks))
-					for _, mp := range msgpacks {
-						if mp != nil {
-							var txo lib.Txo
-							if err := json.Unmarshal([]byte(mp.(string)), &txo); err != nil {
-								return err
-							}
-							txos = append(txos, &txo)
-						}
-					}
-					return c.JSON(txos)
-				}
-			}
+			return c.JSON(txos)
 		}
 	})
 
@@ -346,57 +383,6 @@ func main() {
 			}
 		}
 		return c.JSON(results)
-	})
-
-	app.Put("/v5/acct/:account", func(c *fiber.Ctx) error {
-		account := c.Params("account")
-		var owners []string
-		if err := c.BodyParser(&owners); err != nil {
-			return c.SendStatus(400)
-		} else if len(owners) == 0 {
-			return c.SendStatus(400)
-		}
-		ownerTxoKeys := make([]string, 0, len(owners))
-
-		resync := false
-		accountKey := lib.AccountKey(account)
-		for _, owner := range owners {
-			if owner == "" {
-				return c.SendStatus(400)
-			}
-			ownerTxoKeys = append(ownerTxoKeys, lib.OwnerTxosKey(owner))
-			if err := lib.Rdb.ZAddNX(c.Context(), lib.OwnerSyncKey, redis.Z{
-				Score:  0,
-				Member: owner,
-			}).Err(); err != nil {
-				return err
-			} else if exists, err := lib.Rdb.SIsMember(c.Context(), accountKey, owner).Result(); err != nil {
-				return err
-			} else if !exists {
-				resync = true
-			}
-		}
-		if resync {
-			if _, err := lib.Rdb.Pipelined(c.Context(), func(pipe redis.Pipeliner) error {
-				for _, owner := range owners {
-					if err := pipe.SAdd(c.Context(), accountKey, owner).Err(); err != nil {
-						return err
-					} else if err := pipe.HSet(c.Context(), lib.OwnerAccountKey, owner, account).Err(); err != nil {
-						return err
-					}
-				}
-				if err := pipe.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
-					Keys:      ownerTxoKeys,
-					Aggregate: "MIN",
-				}).Err(); err != nil {
-					return err
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return c.SendStatus(204)
 	})
 
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
@@ -528,4 +514,5 @@ func main() {
 	// }()
 	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))
+	// <-make(chan struct{})
 }

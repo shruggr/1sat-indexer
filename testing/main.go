@@ -8,7 +8,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -49,21 +48,9 @@ func main() {
 
 	ctx := context.Background()
 
-	indexers := []lib.Indexer{
-		&bopen.BOpenIndexer{},
-		&bopen.InscriptionIndexer{},
-		&bopen.MapIndexer{},
-		&bopen.BIndexer{},
-		&bopen.SigmaIndexer{},
-		&bopen.OriginIndexer{},
-		&bopen.Bsv21Indexer{},
-		&bopen.Bsv20Indexer{},
-		&bopen.OrdLockIndexer{},
-	}
-
 	if tx, err := lib.LoadTx(ctx, hexId, true); err != nil {
 		log.Panic(err)
-	} else if idxCtx, err := lib.IngestTx(ctx, tx, indexers); err != nil {
+	} else if idxCtx, err := lib.IngestTx(ctx, tx); err != nil {
 		log.Panic(err)
 	} else {
 		if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {

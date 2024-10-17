@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
-	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
@@ -254,14 +253,16 @@ func FetchBlockHeaders(fromBlock uint64, pageSize uint) (blocks []*BlockHeader, 
 	return
 }
 
-func GetChaintip(ctx context.Context) *models.BlockHeader {
-	chaintip := &models.BlockHeader{}
-	if data, err := Rdb.Get(ctx, "chaintip").Bytes(); err != nil {
-		log.Panic(err)
+func GetChaintip(ctx context.Context) (*BlockHeader, error) {
+	chaintip := &BlockHeader{}
+	if data, err := Cache.Get(ctx, ChaintipKey).Bytes(); err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
 	} else if err = json.Unmarshal(data, &chaintip); err != nil {
-		log.Panic(err)
+		return nil, err
 	}
-	return chaintip
+	return chaintip, nil
 }
 
 func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err error) {
@@ -297,7 +298,7 @@ func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err err
 var OwnerAccounts = map[string]string{}
 
 func RefreshOwners() error {
-	if ownerAccts, err := Rdb.HGetAll(context.Background(), OwnerAccountKey).Result(); err != nil {
+	if ownerAccts, err := Queue.HGetAll(context.Background(), OwnerAccountKey).Result(); err != nil {
 		return err
 	} else {
 		for owner, acct := range ownerAccts {
