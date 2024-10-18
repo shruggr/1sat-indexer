@@ -48,7 +48,7 @@ func (i *SigmaIndexer) Tag() string {
 func (i *SigmaIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
-		if sigs, ok := bopen.Data.(BOpen)[i.Tag()].(*Sigmas); ok {
+		if sigs, ok := bopen.Data.(OneSat)[i.Tag()].(*Sigmas); ok {
 			idxData = &lib.IndexData{
 				Data: sigs,
 			}

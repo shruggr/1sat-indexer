@@ -25,12 +25,8 @@ func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
-
-	var err error
-	if err = lib.Initialize(); err != nil {
-		log.Panic(err)
-	}
 }
+
 func main() {
 	fromBlock := uint32(1)
 	var lastHash string

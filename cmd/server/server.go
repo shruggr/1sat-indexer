@@ -18,8 +18,9 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	acct "github.com/shruggr/1sat-indexer/account"
+	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -39,18 +40,14 @@ var currentSessions = sse.SessionsLock{
 var indexedTags = make([]string, 0, len(config.Indexers))
 
 func init() {
-	wd, _ := os.Getwd()
-	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
-
-	var err error
-	if err = lib.Initialize(); err != nil {
-		log.Panic(err)
-	}
-
 	for _, indexer := range config.Indexers {
 		indexedTags = append(indexedTags, indexer.Tag())
 	}
+}
+
+var ing = &ingest.Ingest{
+	Indexers:    config.Indexers,
+	Concurrency: 8,
 }
 
 func main() {
@@ -195,10 +192,41 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := lib.AddressUtxos(c.Context(), address, tags); err != nil {
+		if txos, err := acct.AddressUtxos(c.Context(), address, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
+		}
+	})
+
+	app.Get("/v5/address/:address/outpoints", func(c *fiber.Ctx) (err error) {
+		address := c.Params("address")
+		key := lib.OwnerTxosKey(address)
+		if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
+			Key:   key,
+			Start: 0,
+			Stop:  -1,
+		}).Result(); err != nil {
+			return err
+		} else {
+			outpoints := make([]string, 0, len(scores))
+			for _, item := range scores {
+				member := item.Member.(string)
+				if len(member) > 64 {
+					outpoints = append(outpoints, member)
+				}
+			}
+			if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
+				return err
+			} else {
+				unspent := make([]string, 0, len(outpoints))
+				for i, outpoint := range outpoints {
+					if spends[i] == nil {
+						unspent = append(unspent, outpoint)
+					}
+				}
+				return c.JSON(unspent)
+			}
 		}
 	})
 
@@ -208,7 +236,6 @@ func main() {
 	// 	if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
 	// 		return err
 	// 	}
-
 	// 	scores := make([]float64, 0, 1000)
 	// 	txMap := make(map[float64]*lib.TxResult)
 	// 	if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
@@ -244,7 +271,6 @@ func main() {
 	// 					Outputs: lib.NewOutputMap(),
 	// 					Score:   item.Score,
 	// 				}
-
 	// 				txMap[item.Score] = result
 	// 				scores = append(scores, item.Score)
 	// 			}
@@ -301,12 +327,14 @@ func main() {
 				return nil
 			}); err != nil {
 				return err
+			} else if err := lib.Queue.Publish(c.Context(), "account", account).Err(); err != nil {
+				return err
 			} else if err := lib.Rdb.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
 				Keys:      ownerTxoKeys,
 				Aggregate: "MIN",
 			}).Err(); err != nil {
 				return err
-			} else if err := lib.SyncAcct(c.Context(), account, config.Indexers, 64); err != nil {
+			} else if err := acct.SyncAcct(c.Context(), account, ing); err != nil {
 				return err
 			}
 		}
@@ -323,10 +351,41 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := lib.AccountUtxos(c.Context(), account, tags); err != nil {
+		if txos, err := acct.AccountUtxos(c.Context(), account, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
+		}
+	})
+
+	app.Get("/v5/acct/:account/outpoints", func(c *fiber.Ctx) (err error) {
+		account := c.Params("account")
+		key := lib.AccountTxosKey(account)
+		if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
+			Key:   key,
+			Start: 0,
+			Stop:  -1,
+		}).Result(); err != nil {
+			return err
+		} else {
+			outpoints := make([]string, 0, len(scores))
+			for _, item := range scores {
+				member := item.Member.(string)
+				if len(member) > 64 {
+					outpoints = append(outpoints, member)
+				}
+			}
+			if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
+				return err
+			} else {
+				unspent := make([]string, 0, len(outpoints))
+				for i, outpoint := range outpoints {
+					if spends[i] == nil {
+						unspent = append(unspent, outpoint)
+					}
+				}
+				return c.JSON(unspent)
+			}
 		}
 	})
 

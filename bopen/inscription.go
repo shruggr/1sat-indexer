@@ -45,7 +45,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxDa
 	}
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
-		if insc, ok := bopen.Data.(BOpen)[INSCRIPTION_TAG].(*Inscription); ok {
+		if insc, ok := bopen.Data.(OneSat)[INSCRIPTION_TAG].(*Inscription); ok {
 			idxData = &lib.IndexData{
 				Data: insc,
 				Events: []*lib.Event{
@@ -63,14 +63,14 @@ func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxDa
 func (i *InscriptionIndexer) PreSave(idxCtx *lib.IndexContext) {
 	for _, txo := range idxCtx.Txos {
 		if bopen, ok := txo.Data[BOPEN_TAG]; ok {
-			if insc, ok := bopen.Data.(BOpen)[i.Tag()].(*Inscription); ok {
+			if insc, ok := bopen.Data.(OneSat)[i.Tag()].(*Inscription); ok {
 				insc.File.Content = nil
 			}
 		}
 	}
 }
 
-func ParseInscription(txo *lib.Txo, scr *script.Script, fromPos *int, bopen BOpen) *Inscription {
+func ParseInscription(txo *lib.Txo, scr *script.Script, fromPos *int, bopen OneSat) *Inscription {
 	insc := &Inscription{
 		File: &File{},
 	}
@@ -137,7 +137,7 @@ ordLoop:
 	// var bsv20 *Bsv20
 	if insc.File.Size <= 1024 && utf8.Valid(insc.File.Content) && !bytes.Contains(insc.File.Content, []byte{0}) && !bytes.Contains(insc.File.Content, []byte("\\u0000")) {
 		mime := strings.ToLower(insc.File.Type)
-		if strings.HasPrefix(mime, "application") || strings.HasPrefix(mime, "text") {
+		if strings.HasPrefix(mime, "application/json") || strings.HasPrefix(mime, "text") {
 			var data json.RawMessage
 			if err := json.Unmarshal(insc.File.Content, &data); err == nil {
 				insType = "json"

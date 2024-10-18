@@ -4,53 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os"
 
-	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-// var hexId = "d3c588a17edce9cb213bc3d99afbbb93f11854909afc76037d46b5e98cbbc4ca"
-
-var hexId = "faf4ad68d1f349dd5e3801fb18a36b550404ec6c7da71a4a7ec5233ac277d0b3"
+var hexId = "40993922b7d7384379b401530e1ce3c4ccfdcedd322e5ad471de795d9d4280a9"
 
 func main() {
-	// var err error
-	err := godotenv.Load("../.env")
-	if err != nil {
-		log.Panic(err)
-	}
-	log.Println("POSTGRES_FULL:", os.Getenv("POSTGRES_FULL"))
-
-	// db, err := pgxpool.New(context.Background(), os.Getenv("POSTGRES_FULL"))
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// defer lib.Db.Close()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISDB"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	cache := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISCACHE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	err = lib.Initialize(nil, rdb, cache)
-	if err != nil {
-		log.Panic(err)
-	}
-
 	ctx := context.Background()
 
+	ing := &ingest.Ingest{
+		Indexers:    config.Indexers,
+		Concurrency: 1,
+	}
 	if tx, err := lib.LoadTx(ctx, hexId, true); err != nil {
 		log.Panic(err)
-	} else if idxCtx, err := lib.IngestTx(ctx, tx); err != nil {
+	} else if idxCtx, err := ing.IngestTx(ctx, tx); err != nil {
 		log.Panic(err)
 	} else {
 		if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {

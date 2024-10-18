@@ -18,7 +18,6 @@ type AncestorConfig struct {
 }
 
 type IndexContext struct {
-	// Id            uint64                   `json:"id"`
 	Tx             *transaction.Transaction `json:"-"`
 	Txid           *chainhash.Hash          `json:"txid"`
 	TxidHex        string                   `json:"-"`
@@ -31,7 +30,6 @@ type IndexContext struct {
 	Ctx            context.Context          `json:"-"`
 	tags           []string                 `json:"-"`
 	ancestorConfig AncestorConfig           `json:"-"`
-	// Parents        map[string]struct{}      `json:"-"`
 }
 
 func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig) *IndexContext {
@@ -62,10 +60,6 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 	}
 	return idxCtx
 }
-
-// func (idxCtx *IndexContext) QueueDependency(txid string) {
-// 	idxCtx.Parents[txid] = struct{}{}
-// }
 
 func (idxCtx *IndexContext) ParseTxn() {
 	idxCtx.ParseSpends()

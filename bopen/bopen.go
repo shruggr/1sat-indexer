@@ -12,9 +12,9 @@ import (
 
 const BOPEN_TAG = "bopen"
 
-type BOpen map[string]any
+type OneSat map[string]any
 
-func (b *BOpen) addInstance(instance interface{}) {
+func (b *OneSat) addInstance(instance interface{}) {
 	switch bo := instance.(type) {
 	case *Sigma:
 		var sigmas Sigmas
@@ -41,7 +41,7 @@ func (b *BOpen) addInstance(instance interface{}) {
 		(*b)["insc"] = bo
 		if strings.ToLower(bo.File.Type) == "application/bsv-20" && bo.Json != nil {
 			data := map[string]string{}
-			json.Unmarshal(bo.Json, &data)
+			json.Unmarshal(bo.File.Content, &data)
 			(*b)[BSV20_TAG] = data
 		}
 	}
@@ -56,7 +56,7 @@ func (i *BOpenIndexer) Tag() string {
 }
 
 func (i *BOpenIndexer) FromBytes(data []byte) (any, error) {
-	obj := BOpen{}
+	obj := OneSat{}
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 	txo := idxCtx.Txos[vout]
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
 
-	bopen := make(BOpen)
+	bopen := make(OneSat)
 
 	start := 0
 	if len(*scr) >= 25 && script.NewFromBytes((*scr)[:25]).IsP2PKH() {

@@ -7,11 +7,27 @@ import (
 const BlockHeightKey = "blk:height"
 const BlockHeadersKey = "blk:headers"
 const ChaintipKey = "blk:tip"
-const IngestQueueKey = "que:ingest"
-const PendingQueueKey = "que:pending"
+
+const IngestQueueKey = "que:ing"
+
+// const PendingQueueKey = "que:pending"
 const IngestLogKey = "log:tx"
+
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
+
+func OwnerTxosKey(owner string) string {
+	return "own:txo:" + owner
+}
+
+func AccountTxosKey(account string) string {
+	return "acct:txo:" + account
+}
+
+func AccountKey(account string) string {
+	return "acct:" + account
+}
+
 const TxosKey = "txos"
 
 func TxKey(txid string) string {
@@ -22,33 +38,24 @@ func ProofKey(txid string) string {
 	return "prf:" + txid
 }
 
-func ProgressQueueKey(tag string) string {
-	return "progress:" + tag
-}
+const ProgressKey = "progress"
 
-func QueueKey(tag string) string {
-	return "que:" + tag
-}
+// func ProgressQueueKey(tag string) string {
+// 	return "prog:" + tag
+// }
+
+// func QueueKey(tag string) string {
+// 	return "que:" + tag
+// }
 
 const SpendsKey = "spends"
 
 func TxoDataKey(outpoint string) string {
 	return "txo:data:" + outpoint
 }
-func OwnerTxosKey(owner string) string {
-	return "own:txo:" + owner
-}
-
-func AccountTxosKey(account string) string {
-	return "acct:txo:" + account
-}
 
 func PostProcessingKey(tag string) string {
 	return "post:" + tag
-}
-
-func AccountKey(account string) string {
-	return "acct:" + account
 }
 
 func TagKey(tag string) string {

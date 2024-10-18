@@ -14,6 +14,7 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/joho/godotenv"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
 )
@@ -21,25 +22,25 @@ import (
 var TRIGGER = uint32(783968)
 var JUNGLEBUS string
 
-// var Db *pgxpool.Pool
 var Rdb *redis.Client
 var Cache *redis.Client
 var Queue *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-func Initialize() (err error) {
-	// Db = postgres
-	// Rdb = rdb
-	// Cache = cache
+func init() {
+	wd, _ := os.Getwd()
+	log.Println("CWD:", wd)
+	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+	var err error
 	JUNGLEBUS = os.Getenv("JUNGLEBUS")
-	log.Println("JUNGLEBUS", JUNGLEBUS)
 	if JUNGLEBUS != "" {
+		log.Println("JUNGLEBUS", JUNGLEBUS)
 		JB, err = junglebus.New(
 			junglebus.WithHTTP(JUNGLEBUS),
 		)
 		if err != nil {
-			return
+			log.Panic(err)
 		}
 	}
 
@@ -295,15 +296,44 @@ func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err err
 // 	})
 // }
 
+var sub *redis.Client
+
+func StartAcctSub(ctx context.Context) {
+	if sub != nil {
+		return
+	}
+	RefreshOwners()
+	sub = redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDISQUEUE"),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	pubSub := sub.Subscribe(context.Background(), "account")
+	ch := pubSub.Channel()
+	go func() {
+		for range ch {
+			if err := RefreshOwners(); err != nil {
+				log.Println("Failed to refresh owners", err)
+			}
+		}
+	}()
+	<-ctx.Done()
+	sub.Close()
+}
+
 var OwnerAccounts = map[string]string{}
 
 func RefreshOwners() error {
+	start := time.Now()
 	if ownerAccts, err := Queue.HGetAll(context.Background(), OwnerAccountKey).Result(); err != nil {
 		return err
 	} else {
+		var tmp = map[string]string{}
 		for owner, acct := range ownerAccts {
-			OwnerAccounts[owner] = acct
+			tmp[owner] = acct
 		}
+		OwnerAccounts = tmp
 	}
+	log.Printf("Refreshed owners: %d %vs\n", len(OwnerAccounts), time.Since(start))
 	return nil
 }

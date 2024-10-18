@@ -1,6 +1,8 @@
 package lib
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type Event struct {
 	Id    string `json:"id"`

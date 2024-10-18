@@ -1,4 +1,4 @@
-package lib
+package acct
 
 import (
 	"context"
@@ -6,14 +6,16 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
+	"github.com/shruggr/1sat-indexer/lib"
 )
 
-func SyncAcct(ctx context.Context, acct string, indexers []Indexer, concurrency uint8) error {
-	if owners, err := Queue.SMembers(ctx, AccountKey(acct)).Result(); err != nil {
+func SyncAcct(ctx context.Context, acct string, ing *ingest.Ingest) error {
+	if owners, err := lib.Queue.SMembers(ctx, lib.AccountKey(acct)).Result(); err != nil {
 		return err
 	} else {
 		for _, owner := range owners {
-			if err := SyncOwner(ctx, owner, indexers, concurrency); err != nil {
+			if err := SyncOwner(ctx, owner, ing); err != nil {
 				return err
 			}
 		}
@@ -21,29 +23,29 @@ func SyncAcct(ctx context.Context, acct string, indexers []Indexer, concurrency 
 	return nil
 }
 
-func SyncOwner(ctx context.Context, add string, indexers []Indexer, concurrency uint8) error {
+func SyncOwner(ctx context.Context, add string, ing *ingest.Ingest) error {
 	log.Println("Syncing:", add)
-	if lastHeight, err := Queue.ZScore(ctx, OwnerSyncKey, add).Result(); err != nil && err != redis.Nil {
+	if lastHeight, err := lib.Queue.ZScore(ctx, lib.OwnerSyncKey, add).Result(); err != nil && err != redis.Nil {
 		return err
-	} else if addTxns, err := FetchOwnerTxns(add, int(lastHeight)); err != nil {
+	} else if addTxns, err := lib.FetchOwnerTxns(add, int(lastHeight)); err != nil {
 		log.Panic(err)
 	} else {
-		limiter := make(chan struct{}, concurrency)
+		limiter := make(chan struct{}, ing.Concurrency)
 		var wg sync.WaitGroup
 		for _, addTxn := range addTxns {
-			// if err := Queue.ZScore(ctx, IngestLogKey, addTxn.Txid).Err(); err != nil && err != redis.Nil {
-			// 	return err
-			// } else if err != redis.Nil {
-			// 	continue
-			// }
+			if err := lib.Queue.ZScore(ctx, lib.IngestLogKey, addTxn.Txid).Err(); err != nil && err != redis.Nil {
+				return err
+			} else if err != redis.Nil {
+				continue
+			}
 			wg.Add(1)
 			limiter <- struct{}{}
-			go func(addTxn *AddressTxn) {
+			go func(addTxn *lib.AddressTxn) {
 				defer func() {
 					<-limiter
 					wg.Done()
 				}()
-				if _, err := IngestTxid(ctx, addTxn.Txid, indexers); err != nil {
+				if _, err := ing.IngestTxid(ctx, addTxn.Txid); err != nil {
 					log.Panic(err)
 				}
 				log.Println("Ingested", addTxn.Txid)
@@ -54,7 +56,7 @@ func SyncOwner(ctx context.Context, add string, indexers []Indexer, concurrency 
 			}
 		}
 		wg.Wait()
-		if err := Queue.ZAdd(ctx, OwnerSyncKey, redis.Z{
+		if err := lib.Queue.ZAdd(ctx, lib.OwnerSyncKey, redis.Z{
 			Score:  float64(lastHeight),
 			Member: add,
 		}).Err(); err != nil {
@@ -65,9 +67,9 @@ func SyncOwner(ctx context.Context, add string, indexers []Indexer, concurrency 
 	return nil
 }
 
-func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, error) {
-	if scores, err := Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-		Key:   AccountTxosKey(acct),
+func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*lib.Txo, error) {
+	if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
+		Key:   lib.AccountTxosKey(acct),
 		Start: 0,
 		Stop:  -1,
 	}).Result(); err != nil {
@@ -80,7 +82,7 @@ func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, erro
 				outpoints = append(outpoints, member)
 			}
 		}
-		if spends, err := Rdb.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+		if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
 			return nil, err
 		} else {
 			unspent := make([]string, 0, len(outpoints))
@@ -90,7 +92,7 @@ func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, erro
 				}
 			}
 
-			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
+			if txos, err := lib.LoadTxos(ctx, unspent, tags); err != nil {
 				return nil, err
 			} else {
 				return txos, err
@@ -99,9 +101,9 @@ func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, erro
 	}
 }
 
-func AddressUtxos(ctx context.Context, address string, tags []string) ([]*Txo, error) {
-	if scores, err := Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-		Key:   OwnerTxosKey(address),
+func AddressUtxos(ctx context.Context, address string, tags []string) ([]*lib.Txo, error) {
+	if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
+		Key:   lib.OwnerTxosKey(address),
 		Start: 0,
 		Stop:  -1,
 	}).Result(); err != nil {
@@ -114,7 +116,7 @@ func AddressUtxos(ctx context.Context, address string, tags []string) ([]*Txo, e
 				outpoints = append(outpoints, member)
 			}
 		}
-		if spends, err := Rdb.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+		if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
 			return nil, err
 		} else {
 			unspent := make([]string, 0, len(outpoints))
@@ -124,7 +126,7 @@ func AddressUtxos(ctx context.Context, address string, tags []string) ([]*Txo, e
 				}
 			}
 
-			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
+			if txos, err := lib.LoadTxos(ctx, unspent, tags); err != nil {
 				return nil, err
 			} else {
 				return txos, err
