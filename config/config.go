@@ -2,11 +2,11 @@ package config
 
 import (
 	"github.com/shruggr/1sat-indexer/bopen"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lock"
 )
 
-var Indexers = []lib.Indexer{
+var Indexers = []idx.Indexer{
 	&lock.LockIndexer{},
 	&bopen.BOpenIndexer{},
 	&bopen.InscriptionIndexer{},

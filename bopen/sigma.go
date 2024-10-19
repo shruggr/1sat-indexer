@@ -12,7 +12,8 @@ import (
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/bitcoinschema/go-bitcoin"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 )
 
 type Sigmas []*Sigma
@@ -38,22 +39,22 @@ type Sigma struct {
 }
 
 type SigmaIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *SigmaIndexer) Tag() string {
 	return "sigma"
 }
 
-func (i *SigmaIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 		if sigs, ok := bopen.Data.(OneSat)[i.Tag()].(*Sigmas); ok {
-			idxData = &lib.IndexData{
+			idxData = &idx.IndexData{
 				Data: sigs,
 			}
 			for _, sig := range *sigs {
-				idxData.Events = append(idxData.Events, &lib.Event{
+				idxData.Events = append(idxData.Events, &evt.Event{
 					Id:    "address",
 					Value: sig.Address,
 				})

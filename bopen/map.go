@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/idx"
 )
 
 const MAP_TAG = "map"
@@ -15,7 +15,7 @@ const MAP_TAG = "map"
 type Map map[string]interface{}
 
 type MapIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *MapIndexer) Tag() string {
@@ -30,11 +30,11 @@ func (i *MapIndexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (i *MapIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+func (i *MapIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 		if m, ok := bopen.Data.(OneSat)[MAP_TAG].(Map); ok {
-			idxData = &lib.IndexData{
+			idxData = &idx.IndexData{
 				Data: m,
 			}
 		}

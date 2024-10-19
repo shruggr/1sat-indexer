@@ -4,22 +4,22 @@ import (
 	"crypto/sha256"
 
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/idx"
 )
 
 type BIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *BIndexer) Tag() string {
 	return "b"
 }
 
-func (i *BIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
+func (i *BIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 		if b, ok := bopen.Data.(OneSat)[i.Tag()].(*File); ok {
-			idxData = &lib.IndexData{
+			idxData = &idx.IndexData{
 				Data: b,
 			}
 		}

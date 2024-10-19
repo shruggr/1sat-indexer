@@ -9,6 +9,8 @@ import (
 	// "github.com/libsv/go-bt/bscript"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -31,14 +33,14 @@ type OrdLock struct {
 }
 
 type OrdLockIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *OrdLockIndexer) Tag() string {
 	return ORDLOCK_TAG
 }
 
-func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 	if *txo.Satoshis != 1 {
 		return nil
@@ -65,7 +67,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 			State:  OrdLockPending,
 			Tags:   make([]string, 0, 5),
 		}
-		idxData := &lib.IndexData{
+		idxData := &idx.IndexData{
 			Data: ordLock,
 		}
 		ordLock.Tags = append(ordLock.Tags, "")
@@ -89,7 +91,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 		}
 
 		for _, tag := range ordLock.Tags {
-			idxData.Events = append(idxData.Events, &lib.Event{
+			idxData.Events = append(idxData.Events, &evt.Event{
 				Id:    "list",
 				Value: tag,
 			})
@@ -99,7 +101,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.Index
 	}
 }
 
-func (i *OrdLockIndexer) PreSave(idxCtx *lib.IndexContext) {
+func (i *OrdLockIndexer) PreSave(idxCtx *idx.IndexContext) {
 	if len(idxCtx.Spends) == 0 {
 		return
 	}
@@ -107,13 +109,13 @@ func (i *OrdLockIndexer) PreSave(idxCtx *lib.IndexContext) {
 	if spendData, ok := spend.Data[ORDLOCK_TAG]; ok {
 		if ordLock, ok := spendData.Data.(*OrdLock); ok {
 			txo := idxCtx.Txos[0]
-			idxData := &lib.IndexData{
+			idxData := &idx.IndexData{
 				Data: ordLock,
 			}
 			if bytes.Contains(*idxCtx.Tx.Inputs[0].UnlockingScript, OrdLockSuffix) {
 				ordLock.State = OrdLockSale
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &lib.Event{
+					idxData.Events = append(idxData.Events, &evt.Event{
 						Id:    "sale",
 						Value: tag,
 					})
@@ -121,7 +123,7 @@ func (i *OrdLockIndexer) PreSave(idxCtx *lib.IndexContext) {
 			} else {
 				ordLock.State = OrdLockCancel
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &lib.Event{
+					idxData.Events = append(idxData.Events, &evt.Event{
 						Id:    "cancel",
 						Value: tag,
 					})

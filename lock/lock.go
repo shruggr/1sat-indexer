@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -18,7 +19,7 @@ type Lock struct {
 }
 
 type LockIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *LockIndexer) Tag() string {
@@ -33,7 +34,7 @@ func (i *LockIndexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (i *LockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 	scr := idxCtx.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 	lockPrefixIndex := bytes.Index(*scr, LockPrefix)
@@ -55,7 +56,7 @@ func (i *LockIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDat
 			until := make([]byte, 4)
 			copy(until, op.Data)
 			lock.Until = binary.LittleEndian.Uint32(until)
-			return &lib.IndexData{
+			return &idx.IndexData{
 				Data: lock,
 			}
 		}

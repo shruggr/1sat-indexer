@@ -14,7 +14,7 @@ package opns
 
 // var GENESIS, _ = lib.NewOutpointFromString("58b7558ea379f24266c7e2f5fe321992ad9a724fd7a87423ba412677179ccb25_0")
 
-// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
+// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *ingest.IndexContext) {
 // 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 // 	if err != nil {
 // 		log.Panicln(err)
@@ -26,7 +26,7 @@ package opns
 // 	return
 // }
 
-// func ParseOpNS(ctx *lib.IndexContext) {
+// func ParseOpNS(ctx *ingest.IndexContext) {
 // 	for _, txo := range ctx.Txos {
 // 		if txo.Owner != nil && len(*txo.Owner) != 0 {
 // 			continue
@@ -65,7 +65,7 @@ package opns
 // 	}
 // }
 
-// func loadSrcMine(ctx *lib.IndexContext) (srcMine *OpNS) {
+// func loadSrcMine(ctx *ingest.IndexContext) (srcMine *OpNS) {
 // 	var source *lib.Outpoint
 // 	for _, input := range ctx.Tx.Inputs {
 // 		if bytes.Contains(*input.UnlockingScript, OpNSPrefix) {
@@ -99,7 +99,7 @@ package opns
 // 	return srcMine
 // }
 
-// func ParseScript(txo *lib.Txo) (opNS *OpNS) {
+// func ParseScript(txo *ingest.Txo) (opNS *OpNS) {
 // 	script := *txo.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 // 	opNSPrefixIndex := bytes.Index(script, OpNSPrefix)
 // 	if opNSPrefixIndex > -1 {

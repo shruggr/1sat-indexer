@@ -2,7 +2,7 @@ package bopen
 
 // var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
 
-// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *lib.IndexContext) {
+// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64) (ctx *ingest.IndexContext) {
 // 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 // 	if err != nil {
 // 		log.Panicln(err)
@@ -12,7 +12,7 @@ package bopen
 // 	return
 // }
 
-// func IndexInscriptions(ctx *lib.IndexContext) {
+// func IndexInscriptions(ctx *ingest.IndexContext) {
 // 	CalculateOrigins(ctx)
 // 	ParseInscriptions(ctx)
 // 	ctx.SaveSpends()
@@ -26,7 +26,7 @@ package bopen
 // 	)
 // }
 
-// func CalculateOrigins(ctx *lib.IndexContext) {
+// func CalculateOrigins(ctx *ingest.IndexContext) {
 // 	for _, txo := range ctx.Txos {
 // 		if txo.Satoshis != 1 {
 // 			continue
@@ -35,7 +35,7 @@ package bopen
 // 	}
 // }
 
-// func ParseInscriptions(ctx *lib.IndexContext) {
+// func ParseInscriptions(ctx *ingest.IndexContext) {
 // 	for _, txo := range ctx.Txos {
 // 		if txo.Owner != nil && len(*txo.Owner) != 0 && txo.Satoshis != 1 {
 // 			continue
@@ -44,7 +44,7 @@ package bopen
 // 	}
 // }
 
-// func ParseScript(txo *lib.Txo) {
+// func ParseScript(txo *ingest.Txo) {
 // 	vout := txo.Outpoint.Vout()
 // 	script := *txo.Tx.Outputs[vout].LockingScript
 
@@ -89,7 +89,7 @@ package bopen
 // 	}
 // }
 
-// func ParseInscription(txo *lib.Txo, script []byte, fromPos *int) {
+// func ParseInscription(txo *ingest.Txo, script []byte, fromPos *int) {
 // 	pos := *fromPos
 // 	ins := &Inscription{
 // 		File: &lib.File{},
@@ -238,7 +238,7 @@ package bopen
 // 	}
 // }
 
-// func addBitcom(txo *lib.Txo, bitcom interface{}) {
+// func addBitcom(txo *ingest.Txo, bitcom interface{}) {
 // 	if bitcom == nil {
 // 		return
 // 	}

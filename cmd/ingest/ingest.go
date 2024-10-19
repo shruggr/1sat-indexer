@@ -4,8 +4,8 @@ import (
 	"context"
 	"flag"
 
-	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
 	"github.com/shruggr/1sat-indexer/config"
+	"github.com/shruggr/1sat-indexer/idx"
 )
 
 var CONCURRENCY uint
@@ -21,7 +21,7 @@ func init() {
 
 func main() {
 	ctx := context.Background()
-	if err := (&ingest.Ingest{
+	if err := (&idx.Ingest{
 		Tag:         TAG,
 		Indexers:    config.Indexers,
 		Concurrency: CONCURRENCY,

@@ -3,6 +3,8 @@ package bopen
 import (
 	"encoding/json"
 
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -15,7 +17,7 @@ type Origin struct {
 }
 
 type OriginIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *OriginIndexer) Tag() string {
@@ -30,10 +32,10 @@ func (i *OriginIndexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
-	if *txo.Satoshis != 1 || idxCtx.Height < lib.TRIGGER {
+	if *txo.Satoshis != 1 || idxCtx.Height < TRIGGER {
 		return nil
 	}
 
@@ -69,15 +71,15 @@ func (i *OriginIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexD
 		origin.Nonce++
 	}
 
-	outpointEvent := &lib.Event{
+	outpointEvent := &evt.Event{
 		Id: "outpoint",
 	}
 	if origin.Outpoint != nil {
 		outpointEvent.Value = origin.Outpoint.String()
 	}
-	return &lib.IndexData{
+	return &idx.IndexData{
 		Data:   origin,
 		Deps:   deps,
-		Events: []*lib.Event{outpointEvent},
+		Events: []*evt.Event{outpointEvent},
 	}
 }

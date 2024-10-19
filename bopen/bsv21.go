@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/libsv/go-bk/crypto"
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -35,7 +37,7 @@ type Bsv21 struct {
 }
 
 type Bsv21Indexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 	WhitelistFn *func(tokenId string) bool
 	BlacklistFn *func(tokenId string) bool
 }
@@ -52,7 +54,7 @@ func (i *Bsv21Indexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (i *Bsv21Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
 	var err error
@@ -127,9 +129,9 @@ func (i *Bsv21Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 			return nil
 		}
 
-		return &lib.IndexData{
+		return &idx.IndexData{
 			Data: bsv21,
-			Events: []*lib.Event{
+			Events: []*evt.Event{
 				{
 					Id:    "id",
 					Value: bsv21.Id,
@@ -143,14 +145,14 @@ type bsv21Token struct {
 	balance uint64
 	reason  *string
 	token   *Bsv21
-	outputs []*lib.IndexData
+	outputs []*idx.IndexData
 	deps    []*lib.Outpoint
 }
 type bsv21Ctx struct {
 	tokens map[string]*bsv21Token
 }
 
-func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
+func (i *Bsv21Indexer) PreSave(idxCtx *idx.IndexContext) {
 	ctx := bsv21Ctx{
 		tokens: map[string]*bsv21Token{},
 	}
@@ -161,7 +163,7 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
 				if token, ok := ctx.tokens[bsv21.Id]; !ok {
 					token = &bsv21Token{
-						outputs: []*lib.IndexData{
+						outputs: []*idx.IndexData{
 							idxData,
 						},
 					}
@@ -222,21 +224,21 @@ func (i *Bsv21Indexer) PreSave(idxCtx *lib.IndexContext) {
 		for _, idxData := range token.outputs {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
 				if isPending {
-					idxData.Events = append(idxData.Events, &lib.Event{
+					idxData.Events = append(idxData.Events, &evt.Event{
 						Id:    "pending",
 						Value: tokenId,
 					})
 				} else if reason, ok := reasons[tokenId]; ok {
 					bsv21.Status = Invalid
 					bsv21.Reason = &reason
-					idxData.Events = append(idxData.Events, &lib.Event{
+					idxData.Events = append(idxData.Events, &evt.Event{
 						Id:    "invalid",
 						Value: tokenId,
 					})
 					idxData.Deps = append(idxData.Deps, token.deps...)
 				} else {
 					bsv21.Status = Valid
-					idxData.Events = append(idxData.Events, &lib.Event{
+					idxData.Events = append(idxData.Events, &evt.Event{
 						Id:    "valid",
 						Value: tokenId,
 					})

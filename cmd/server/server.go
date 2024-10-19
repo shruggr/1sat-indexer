@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -12,17 +11,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/redis/go-redis/v9"
-	acct "github.com/shruggr/1sat-indexer/account"
-	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
+	"github.com/shruggr/1sat-indexer/blk"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/config"
+	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/jb"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -30,28 +29,40 @@ var POSTGRES string
 var CONCURRENCY int
 var PORT int
 
-var ctx = context.Background()
-
-// var jb *junglebus.Client
 var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
 }
 
 var indexedTags = make([]string, 0, len(config.Indexers))
 
-func init() {
-	for _, indexer := range config.Indexers {
-		indexedTags = append(indexedTags, indexer.Tag())
-	}
-}
-
-var ing = &ingest.Ingest{
+var ingest = &idx.Ingest{
 	Indexers:    config.Indexers,
 	Concurrency: 8,
 }
 
+var chaintip *blk.BlockHeader
+
+func init() {
+	for _, indexer := range config.Indexers {
+		indexedTags = append(indexedTags, indexer.Tag())
+	}
+	go func() {
+		if header, c, err := blk.StartChaintipSub(context.Background()); err != nil {
+			log.Panic(err)
+		} else if header == nil {
+			log.Panic("No Chaintip")
+		} else {
+			log.Println("Chaintip", header.Height, header.Hash)
+			chaintip = header
+			for header := range c {
+				log.Println("Chaintip", header.Height, header.Hash)
+				chaintip = header
+			}
+		}
+	}()
+}
+
 func main() {
-	// flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
 	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 	flag.Parse()
 
@@ -65,67 +76,55 @@ func main() {
 	})
 
 	app.Get("/v5/blocks/tip", func(c *fiber.Ctx) error {
-		if tip, err := lib.Cache.Get(ctx, lib.ChaintipKey).Result(); err != nil {
+		if tip, err := blk.Chaintip(c.Context()); err != nil {
 			return err
 		} else {
-			c.Set("Content-Type", "application/json")
-			return c.SendString(tip)
+			c.Set("Cache-Control", "no-cache,no-store")
+			return c.JSON(tip)
 		}
 	})
 
-	app.Get("/v5/blocks/:hashOrHeight", func(c *fiber.Ctx) error {
-		hashOrHeight := c.Params("hashOrHeight")
-		if len(hashOrHeight) <= 8 {
-			if blocks, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
-				Min:   hashOrHeight,
-				Max:   hashOrHeight,
-				Count: 1,
-			}).Result(); err != nil {
-				return err
-			} else if len(blocks) == 0 {
-				return c.SendStatus(404)
-			} else {
-				hashOrHeight = blocks[0]
-			}
-		} else if len(hashOrHeight) != 64 {
+	app.Get("/v5/blocks/height/:height", func(c *fiber.Ctx) error {
+		if height, err := strconv.ParseUint(c.Params("height"), 10, 32); err != nil {
 			return c.SendStatus(400)
-		}
-		if block, err := lib.Cache.HGet(ctx, lib.BlockHeadersKey, hashOrHeight).Result(); err != nil {
+		} else if block, err := blk.BlockByHeight(c.Context(), height); err != nil {
+			return err
+		} else if block == nil {
 			return c.SendStatus(404)
 		} else {
-			c.Set("Content-Type", "application/json")
-			return c.SendString(block)
+			if block.Height < chaintip.Height-5 {
+				c.Set("Cache-Control", "public,max-age=31536000,immutable")
+			} else {
+				c.Set("Cache-Control", "public,max-age=60")
+			}
+			return c.JSON(block)
+		}
+	})
+
+	app.Get("/v5/blocks/hash/:hash", func(c *fiber.Ctx) (err error) {
+		if block, err := blk.BlockByHash(c.Context(), c.Params("hashOrHeight")); err != nil {
+			return err
+		} else if block == nil {
+			return c.SendStatus(404)
+		} else {
+			c.Set("Cache-Control", "public,max-age=31536000,immutable")
+			return c.JSON(block)
 		}
 	})
 
 	app.Get("/v5/blocks/list/:from", func(c *fiber.Ctx) error {
-		from := c.Params("from")
-		blocks := make([]*models.BlockHeader, 0, 10000)
-		if hashes, err := lib.Cache.ZRangeByScore(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
-			Min:   from,
-			Max:   "+inf",
-			Count: 10000,
-		}).Result(); err != nil {
+		if fromHeight, err := strconv.ParseUint(c.Params("from"), 10, 32); err != nil {
+			return c.SendStatus(400)
+		} else if headers, err := blk.Blocks(c.Context(), fromHeight, 10000); err != nil {
 			return err
-		} else if len(hashes) > 0 {
-			if blockJsons, err := lib.Cache.HMGet(c.Context(), lib.BlockHeadersKey, hashes...).Result(); err != nil {
-				return err
-			} else {
-				for _, blockJson := range blockJsons {
-					var block models.BlockHeader
-					if err := json.Unmarshal([]byte(blockJson.(string)), &block); err != nil {
-						return err
-					}
-					blocks = append(blocks, &block)
-				}
-			}
+		} else {
+			return c.JSON(headers)
 		}
-		return c.JSON(blocks)
 	})
 
 	app.Get("/v5/tx/:txid", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
-		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
+		if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
 			return err
 		} else if len(rawtx) == 0 {
 			return c.SendStatus(404)
@@ -134,27 +133,35 @@ func main() {
 			buf := bytes.NewBuffer([]byte{})
 			buf.Write(transaction.VarInt(uint64(len(rawtx))).Bytes())
 			buf.Write(rawtx)
-			if proof, err := lib.LoadProof(c.Context(), txid); err != nil {
+			if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
 				return err
-			} else if proof == nil {
-				buf.Write(transaction.VarInt(0).Bytes())
 			} else {
-				bin := proof.Bytes()
-				buf.Write(transaction.VarInt(uint64(len(bin))).Bytes())
-				buf.Write(bin)
+				if proof == nil {
+					buf.Write(transaction.VarInt(0).Bytes())
+					c.Set("Cache-Control", "public,max-age=60")
+				} else {
+					if proof.BlockHeight < chaintip.Height-5 {
+						c.Set("Cache-Control", "public,max-age=31536000,immutable")
+					} else {
+						c.Set("Cache-Control", "public,max-age=60")
+					}
+					bin := proof.Bytes()
+					buf.Write(transaction.VarInt(uint64(len(bin))).Bytes())
+					buf.Write(bin)
+				}
 			}
-
 			return c.Send(buf.Bytes())
 		}
 	})
 
 	app.Get("/v5/tx/:txid/raw", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
-		if rawtx, err := lib.LoadRawtx(c.Context(), txid); err != nil {
+		if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
 			return err
 		} else if rawtx == nil {
 			return c.SendStatus(404)
 		} else {
+			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 			c.Set("Content-Type", "application/octet-stream")
 			return c.Send(rawtx)
 		}
@@ -162,22 +169,28 @@ func main() {
 
 	app.Get("/v5/tx/:txid/proof", func(c *fiber.Ctx) error {
 		txid := c.Params("txid")
-		if proof, err := lib.LoadProof(c.Context(), txid); err != nil {
+		if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
 			return err
 		} else if proof == nil {
 			return c.SendStatus(404)
 		} else {
 			c.Set("Content-Type", "application/octet-stream")
+			if proof.BlockHeight < chaintip.Height-5 {
+				c.Set("Cache-Control", "public,max-age=31536000,immutable")
+			} else {
+				c.Set("Cache-Control", "public,max-age=60")
+			}
 			return c.Send(proof.Bytes())
 		}
 	})
 
 	app.Get("/v5/txo/:outpoint", func(c *fiber.Ctx) error {
-		if txo, err := lib.LoadTxo(c.Context(), c.Params("outpoint"), indexedTags); err != nil {
+		if txo, err := idx.LoadTxo(c.Context(), c.Params("outpoint"), indexedTags); err != nil {
 			return err
 		} else if txo == nil {
 			return c.SendStatus(404)
 		} else {
+			c.Set("Cache-Control", "public,max-age=60")
 			return c.JSON(txo)
 		}
 	})
@@ -192,41 +205,10 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := acct.AddressUtxos(c.Context(), address, tags); err != nil {
+		if txos, err := idx.AddressUtxos(c.Context(), address, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
-		}
-	})
-
-	app.Get("/v5/address/:address/outpoints", func(c *fiber.Ctx) (err error) {
-		address := c.Params("address")
-		key := lib.OwnerTxosKey(address)
-		if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-			Key:   key,
-			Start: 0,
-			Stop:  -1,
-		}).Result(); err != nil {
-			return err
-		} else {
-			outpoints := make([]string, 0, len(scores))
-			for _, item := range scores {
-				member := item.Member.(string)
-				if len(member) > 64 {
-					outpoints = append(outpoints, member)
-				}
-			}
-			if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
-				return err
-			} else {
-				unspent := make([]string, 0, len(outpoints))
-				for i, outpoint := range outpoints {
-					if spends[i] == nil {
-						unspent = append(unspent, outpoint)
-					}
-				}
-				return c.JSON(unspent)
-			}
 		}
 	})
 
@@ -238,7 +220,7 @@ func main() {
 	// 	}
 	// 	scores := make([]float64, 0, 1000)
 	// 	txMap := make(map[float64]*lib.TxResult)
-	// 	if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
+	// 	if outpoints, err := data.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
 	// 		Key:     lib.OwnerTxosKey(address),
 	// 		ByScore: true,
 	// 		Start:   start,
@@ -295,49 +277,13 @@ func main() {
 		} else if len(owners) == 0 {
 			return c.SendStatus(400)
 		}
-		ownerTxoKeys := make([]string, 0, len(owners))
 
-		resync := false
-		accountKey := lib.AccountKey(account)
-		for _, owner := range owners {
-			if owner == "" {
-				return c.SendStatus(400)
-			}
-			ownerTxoKeys = append(ownerTxoKeys, lib.OwnerTxosKey(owner))
-			if err := lib.Queue.ZAddNX(c.Context(), lib.OwnerSyncKey, redis.Z{
-				Score:  0,
-				Member: owner,
-			}).Err(); err != nil {
-				return err
-			} else if exists, err := lib.Queue.SIsMember(c.Context(), accountKey, owner).Result(); err != nil {
-				return err
-			} else if !exists {
-				resync = true
-			}
+		if _, err := idx.UpdateAccount(c.Context(), account, owners); err != nil {
+			return err
+		} else if err := idx.SyncAcct(c.Context(), account, ingest); err != nil {
+			return err
 		}
-		if resync {
-			if _, err := lib.Queue.Pipelined(c.Context(), func(pipe redis.Pipeliner) error {
-				for _, owner := range owners {
-					if err := pipe.SAdd(c.Context(), accountKey, owner).Err(); err != nil {
-						return err
-					} else if err := pipe.HSet(c.Context(), lib.OwnerAccountKey, owner, account).Err(); err != nil {
-						return err
-					}
-				}
-				return nil
-			}); err != nil {
-				return err
-			} else if err := lib.Queue.Publish(c.Context(), "account", account).Err(); err != nil {
-				return err
-			} else if err := lib.Rdb.ZUnionStore(c.Context(), lib.AccountTxosKey(account), &redis.ZStore{
-				Keys:      ownerTxoKeys,
-				Aggregate: "MIN",
-			}).Err(); err != nil {
-				return err
-			} else if err := acct.SyncAcct(c.Context(), account, ing); err != nil {
-				return err
-			}
-		}
+
 		return c.SendStatus(204)
 	})
 
@@ -351,41 +297,10 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := acct.AccountUtxos(c.Context(), account, tags); err != nil {
+		if txos, err := idx.AccountUtxos(c.Context(), account, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
-		}
-	})
-
-	app.Get("/v5/acct/:account/outpoints", func(c *fiber.Ctx) (err error) {
-		account := c.Params("account")
-		key := lib.AccountTxosKey(account)
-		if scores, err := lib.Rdb.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-			Key:   key,
-			Start: 0,
-			Stop:  -1,
-		}).Result(); err != nil {
-			return err
-		} else {
-			outpoints := make([]string, 0, len(scores))
-			for _, item := range scores {
-				member := item.Member.(string)
-				if len(member) > 64 {
-					outpoints = append(outpoints, member)
-				}
-			}
-			if spends, err := lib.Rdb.HMGet(ctx, lib.SpendsKey, outpoints...).Result(); err != nil {
-				return err
-			} else {
-				unspent := make([]string, 0, len(outpoints))
-				for i, outpoint := range outpoints {
-					if spends[i] == nil {
-						unspent = append(unspent, outpoint)
-					}
-				}
-				return c.JSON(unspent)
-			}
 		}
 	})
 
@@ -398,8 +313,8 @@ func main() {
 
 		results := make([]*lib.TxResult, 0, 1000)
 		txMap := make(map[float64]*lib.TxResult)
-		if outpoints, err := lib.Rdb.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
-			Key:     lib.AccountTxosKey(account),
+		if outpoints, err := idx.TxoDB.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
+			Key:     idx.AccountTxosKey(account),
 			ByScore: true,
 			Start:   fmt.Sprintf("(%f", start),
 			Stop:    "+inf",

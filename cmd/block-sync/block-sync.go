@@ -13,7 +13,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/blk"
+	"github.com/shruggr/1sat-indexer/evt"
 )
 
 const PAGE_SIZE = 10000
@@ -30,14 +31,14 @@ func init() {
 func main() {
 	fromBlock := uint32(1)
 	var lastHash string
-	if lastBlocks, err := lib.Cache.ZRevRangeByScoreWithScores(ctx, lib.BlockHeightKey, &redis.ZRangeBy{
+	if lastBlocks, err := blk.DB.ZRevRangeByScoreWithScores(ctx, blk.BlockHeightKey, &redis.ZRangeBy{
 		Max:   "+inf",
 		Min:   "-inf",
 		Count: 1,
 	}).Result(); err != nil {
 		log.Panic(err)
 	} else if len(lastBlocks) == 0 {
-		genesis := lib.BlockHeader{
+		genesis := blk.BlockHeader{
 			Hash:       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
 			Coin:       1,
 			Height:     0,
@@ -48,10 +49,10 @@ func main() {
 			Bits:       "1d00ffff",
 			Synced:     1,
 		}
-		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-			if err := pipe.HSet(ctx, lib.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
+		if _, err := blk.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+			if err := pipe.HSet(ctx, blk.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
 				return err
-			} else if err := lib.Cache.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
+			} else if err := blk.DB.ZAdd(ctx, blk.BlockHeightKey, redis.Z{
 				Score:  0,
 				Member: genesis.Hash,
 			}).Err(); err != nil {
@@ -67,33 +68,31 @@ func main() {
 	}
 
 	var err error
-	var blocks []*lib.BlockHeader
+	var blocks []*blk.BlockHeader
 	for {
 		start := uint64(1)
 		if fromBlock > 6 {
 			start = uint64(fromBlock - 6)
 		}
-		if blocks, err = lib.FetchBlockHeaders(start, PAGE_SIZE); err != nil {
+		if blocks, err = blk.FetchBlockHeaders(start, PAGE_SIZE); err != nil {
 			log.Panic(err)
 		}
-		if _, err := lib.Cache.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		var blockJson []byte
+		if _, err := blk.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			for _, block := range blocks {
 				score := float64(block.Height)
-				if blockJson, err := json.Marshal(block); err != nil {
+				if blockJson, err = json.Marshal(block); err != nil {
 					return err
-				} else if err := pipe.HSetNX(ctx, lib.BlockHeadersKey, block.Hash, blockJson).Err(); err != nil {
+				} else if err := pipe.HSetNX(ctx, blk.BlockHeadersKey, block.Hash, blockJson).Err(); err != nil {
 					return err
-				} else if err := pipe.ZRemRangeByScore(ctx, lib.BlockHeightKey, strconv.Itoa(int(block.Height)), "+inf").Err(); err != nil {
+				} else if err := pipe.ZRemRangeByScore(ctx, blk.BlockHeightKey, strconv.Itoa(int(block.Height)), "+inf").Err(); err != nil {
 					log.Panic(err)
-				} else if err := pipe.ZAdd(ctx, lib.BlockHeightKey, redis.Z{
+				} else if err := pipe.ZAdd(ctx, blk.BlockHeightKey, redis.Z{
 					Score:  score,
 					Member: block.Hash,
 				}).Err(); err != nil {
 					log.Panic(err)
-					// } else if isNew {
-					// 	chaintip = blockJson
 				}
-				// fromBlock = uint64(block.Height)
 			}
 			return nil
 		}); err != nil {
@@ -102,12 +101,10 @@ func main() {
 		lastBlock := blocks[len(blocks)-1]
 
 		if lastBlock.Hash != lastHash {
-			// if len(chaintip) > 0 {
-			// log.Println("New Chaintip", lastBlock.Height, lastBlock.Hash)
-			if err := lib.Cache.Set(ctx, lib.ChaintipKey, lastBlock, 0).Err(); err != nil {
+			if err := blk.DB.Set(ctx, blk.ChaintipKey, lastBlock, 0).Err(); err != nil {
 				log.Panic(err)
 			}
-			lib.Queue.Publish(ctx, "block", lastBlock)
+			evt.Publish(ctx, blk.ChaintipKey, string(blockJson))
 		}
 		lastHash = lastBlock.Hash
 		fromBlock = lastBlock.Height

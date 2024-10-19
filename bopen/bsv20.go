@@ -10,6 +10,8 @@ import (
 
 	"github.com/libsv/go-bk/bip32"
 	"github.com/libsv/go-bk/crypto"
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -53,7 +55,7 @@ type Bsv20 struct {
 const BSV20_TAG = "bsv20"
 
 type Bsv20Indexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 	WhitelistFn *func(tick string) bool
 	BlacklistFn *func(tick string) bool
 }
@@ -62,7 +64,7 @@ func (i *Bsv20Indexer) Tag() string {
 	return BSV20_TAG
 }
 
-func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
 	if idxData, ok := txo.Data[BOPEN_TAG]; !ok {
@@ -142,9 +144,9 @@ func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 			return nil
 		}
 
-		return &lib.IndexData{
+		return &idx.IndexData{
 			Data: bsv20,
-			Events: []*lib.Event{
+			Events: []*evt.Event{
 				{
 					Id:    "tick",
 					Value: bsv20.Ticker,
@@ -155,6 +157,6 @@ func (i *Bsv20Indexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 	}
 }
 
-func ParseBsv20Inscription(ord *File, txo *lib.Txo) (bsv20 *Bsv20) {
+func ParseBsv20Inscription(ord *File, txo *idx.Txo) (bsv20 *Bsv20) {
 	return bsv20
 }

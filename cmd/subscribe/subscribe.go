@@ -5,8 +5,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/cmd/subscribe/sub"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/sub"
 )
 
 var POSTGRES string
@@ -23,7 +23,7 @@ var BLOCK bool
 func init() {
 	flag.StringVar(&TAG, "tag", "", "Ingest tag")
 	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
-	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
+	flag.UintVar(&FROM_BLOCK, "s", uint(bopen.TRIGGER), "Start from block")
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")

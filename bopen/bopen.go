@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bitcoin-sv/go-sdk/script"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
@@ -48,7 +49,7 @@ func (b *OneSat) addInstance(instance interface{}) {
 }
 
 type BOpenIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *BOpenIndexer) Tag() string {
@@ -65,7 +66,7 @@ func (i *BOpenIndexer) FromBytes(data []byte) (any, error) {
 
 var AsciiRegexp = regexp.MustCompile(`^[[:ascii:]]*$`)
 
-func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexData {
+func (i *BOpenIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
 
@@ -81,11 +82,11 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 	var opReturn int
 	for i := start; i < len(*scr); {
 		startI := i
-		op, err := lib.ReadOp(*scr, &i)
+		op, err := scr.ReadOp(&i)
 		if err != nil {
 			break
 		}
-		switch op.OpCode {
+		switch op.Op {
 		case script.OpRETURN:
 			if opReturn == 0 {
 				opReturn = startI
@@ -112,14 +113,14 @@ func (i *BOpenIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) *lib.IndexDa
 		}
 	}
 	if len(bopen) > 0 {
-		return &lib.IndexData{
+		return &idx.IndexData{
 			Data: bopen,
 		}
 	}
 	return nil
 }
 
-func (i *BOpenIndexer) PreSave(idxCtx *lib.IndexContext) {
+func (i *BOpenIndexer) PreSave(idxCtx *idx.IndexContext) {
 	for _, txo := range idxCtx.Txos {
 		if txo.Data[BOPEN_TAG] != nil {
 			delete(txo.Data, BOPEN_TAG)

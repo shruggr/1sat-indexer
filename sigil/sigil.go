@@ -1,6 +1,6 @@
 package sigil
 
-// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *lib.IndexContext) {
+// func IndexTxn(rawtx []byte, blockId string, height uint32, idx uint64, dryRun bool) (ctx *ingest.IndexContext) {
 // 	ctx, err := lib.ParseTxn(rawtx, blockId, height, idx)
 // 	if err != nil {
 // 		log.Panicln(err)
@@ -12,7 +12,7 @@ package sigil
 // 	return
 // }
 
-// func ParseSigil(ctx *lib.IndexContext) {
+// func ParseSigil(ctx *ingest.IndexContext) {
 // 	for _, txo := range ctx.Txos {
 // 		if txo.Owner != nil && len(*txo.Owner) != 0 {
 // 			continue
@@ -24,7 +24,7 @@ package sigil
 // 	}
 // }
 
-// func ParseScript(txo *lib.Txo) (sigil *json.RawMessage) {
+// func ParseScript(txo *ingest.Txo) (sigil *json.RawMessage) {
 // 	script := *txo.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
 
 // 	if len(script) > 49 &&

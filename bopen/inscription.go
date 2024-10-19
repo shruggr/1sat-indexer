@@ -10,8 +10,12 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/libsv/go-bt/bscript"
+	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
 )
+
+var TRIGGER = uint32(783968)
 
 var INSCRIPTION_TAG = "insc"
 
@@ -24,7 +28,7 @@ type Inscription struct {
 }
 
 type InscriptionIndexer struct {
-	lib.BaseIndexer
+	idx.BaseIndexer
 }
 
 func (i *InscriptionIndexer) Tag() string {
@@ -39,16 +43,16 @@ func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxData *lib.IndexData) {
-	if idxCtx.Height < lib.TRIGGER {
+func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
+	if idxCtx.Height < TRIGGER {
 		return
 	}
 	txo := idxCtx.Txos[vout]
 	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 		if insc, ok := bopen.Data.(OneSat)[INSCRIPTION_TAG].(*Inscription); ok {
-			idxData = &lib.IndexData{
+			idxData = &idx.IndexData{
 				Data: insc,
-				Events: []*lib.Event{
+				Events: []*evt.Event{
 					{
 						Id:    "type",
 						Value: insc.File.Type,
@@ -60,7 +64,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *lib.IndexContext, vout uint32) (idxDa
 	return
 }
 
-func (i *InscriptionIndexer) PreSave(idxCtx *lib.IndexContext) {
+func (i *InscriptionIndexer) PreSave(idxCtx *idx.IndexContext) {
 	for _, txo := range idxCtx.Txos {
 		if bopen, ok := txo.Data[BOPEN_TAG]; ok {
 			if insc, ok := bopen.Data.(OneSat)[i.Tag()].(*Inscription); ok {
@@ -70,7 +74,7 @@ func (i *InscriptionIndexer) PreSave(idxCtx *lib.IndexContext) {
 	}
 }
 
-func ParseInscription(txo *lib.Txo, scr *script.Script, fromPos *int, bopen OneSat) *Inscription {
+func ParseInscription(txo *idx.Txo, scr *script.Script, fromPos *int, bopen OneSat) *Inscription {
 	insc := &Inscription{
 		File: &File{},
 	}
@@ -124,8 +128,8 @@ ordLoop:
 		}
 
 	}
-	op, err := lib.ReadOp(*scr, &pos)
-	if err != nil || op.OpCode != script.OpENDIF {
+	op, err := scr.ReadOp(&pos)
+	if err != nil || op.Op != script.OpENDIF {
 		return insc
 	}
 	*fromPos = pos
