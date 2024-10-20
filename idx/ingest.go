@@ -20,7 +20,9 @@ type Ingest struct {
 func (cfg *Ingest) Exec(ctx context.Context) (err error) {
 	limiter := make(chan struct{}, cfg.Concurrency)
 	errors := make(chan error)
-	done := make(chan *string)
+	// process := make(chan string, 1000)
+	done := make(chan string)
+	inflight := make(map[string]struct{})
 	ticker := time.NewTicker(15 * time.Second)
 	txcount := 0
 	queueKey := IngestQueueKey
@@ -29,8 +31,8 @@ func (cfg *Ingest) Exec(ctx context.Context) (err error) {
 		case <-ticker.C:
 			log.Println("Transactions - Ingested", txcount, txcount/15, "tx/s")
 			txcount = 0
-		case <-done:
-			// log.Println("Processed", txid)
+		case txid := <-done:
+			delete(inflight, txid)
 			txcount++
 		case err := <-errors:
 			log.Println("Error", err)
@@ -47,21 +49,22 @@ func (cfg *Ingest) Exec(ctx context.Context) (err error) {
 				log.Panic(err)
 			} else {
 				for _, txid := range txids {
-					// TODO: Add inflight check
-					limiter <- struct{}{}
-					go func(txid string) {
-						defer func() {
-							<-limiter
-							done <- &txid
-
-						}()
-						if _, err := cfg.IngestTxid(ctx, txid); err != nil {
-							errors <- err
-						}
-					}(txid)
+					if _, ok := inflight[txid]; !ok {
+						inflight[txid] = struct{}{}
+						limiter <- struct{}{}
+						go func(txid string) {
+							defer func() {
+								<-limiter
+								done <- txid
+							}()
+							if _, err := cfg.IngestTxid(ctx, txid); err != nil {
+								errors <- err
+							}
+						}(txid)
+					}
 				}
 				if len(txids) == 0 {
-					log.Println("No transactions to ingest")
+					// log.Println("No transactions to ingest")
 					time.Sleep(time.Second)
 				}
 			}

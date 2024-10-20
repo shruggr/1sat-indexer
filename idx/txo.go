@@ -193,7 +193,7 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 	}
 	for tag, data := range txo.Data {
 		for _, event := range data.Events {
-			evt.Publish(ctx, evt.PubEventKey(tag, event), outpoint)
+			evt.Publish(ctx, evt.EventKey(tag, event), outpoint)
 		}
 	}
 	return nil

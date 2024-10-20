@@ -3,7 +3,7 @@ app.yaml
 .gcloudignore
 
 block-sync
-# ingest
+ingest
 server
 subscribe
 owner-sync
