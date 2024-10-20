@@ -18,10 +18,6 @@ func EventKey(tag string, event *Event) string {
 	return fmt.Sprintf("evt:%s:%s:%s", tag, event.Id, event.Value)
 }
 
-func PubEventKey(tag string, event *Event) string {
-	return fmt.Sprintf("evt:%s:%s:%s", tag, event.Id, event.Value)
-}
-
 type Event struct {
 	Id    string `json:"id"`
 	Value string `json:"value"`

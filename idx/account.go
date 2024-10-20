@@ -119,6 +119,8 @@ func UpdateAccount(ctx context.Context, account string, owners []string) (bool, 
 			Member: owner,
 		}).Err(); err != nil {
 			return false, err
+		} else if err := AcctDB.HSet(ctx, OwnerAccountKey, owner, account).Err(); err != nil {
+			return false, err
 		}
 		ownerTxoKeys = append(ownerTxoKeys, OwnerTxosKey(owner))
 		iowners = append(iowners, owner)

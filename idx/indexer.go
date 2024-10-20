@@ -9,7 +9,7 @@ type Indexer interface {
 	Parse(idxCtx *IndexContext, vout uint32) *IndexData
 	PreSave(idxCtx *IndexContext)
 	FromBytes(data []byte) (obj any, err error)
-	Bytes(obj any) ([]byte, error)
+	// Bytes(obj any) ([]byte, error)
 	// PostProcess(ctx context.Context, outpoint *Outpoint) error
 }
 
@@ -33,9 +33,9 @@ func (b BaseIndexer) FromBytes(data []byte) (any, error) {
 	return obj, nil
 }
 
-func (b BaseIndexer) Bytes(obj any) ([]byte, error) {
-	return json.Marshal(obj)
-}
+// func (b BaseIndexer) Bytes(obj any) ([]byte, error) {
+// 	return json.Marshal(obj)
+// }
 
 // func (b BaseIndexer) PostProcess(ctx context.Context, outpoint *Outpoint) error {
 // 	return nil
