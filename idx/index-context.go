@@ -42,7 +42,6 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 		Indexers:       indexers,
 		Ctx:            ctx,
 		ancestorConfig: ancestorConfig,
-		// Parents:        make(map[string]struct{}),
 	}
 	idxCtx.TxidHex = idxCtx.Txid.String()
 
@@ -76,16 +75,16 @@ func (idxCtx *IndexContext) ParseSpends() {
 	for _, txin := range idxCtx.Tx.Inputs {
 		outpoint := lib.NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
 		var spend *Txo
-		if idxCtx.ancestorConfig.Load {
-			if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
-				log.Panic(err)
-			} else {
-				spend = txo
-			}
+
+		if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
+			log.Panic(err)
+		} else {
+			spend = txo
 		}
 		if spend == nil {
 			spend = &Txo{
 				Outpoint: outpoint,
+				Data:     make(map[string]*IndexData),
 			}
 		}
 		idxCtx.Spends = append(idxCtx.Spends, spend)
@@ -93,7 +92,6 @@ func (idxCtx *IndexContext) ParseSpends() {
 }
 
 func (idxCtx *IndexContext) ParseTxos() {
-	// log.Println("ParseTxos", idxCtx.Txid.String())
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
 		outpoint := lib.NewOutpointFromHash(idxCtx.Txid, uint32(vout))
@@ -121,10 +119,6 @@ func (idxCtx *IndexContext) ParseTxos() {
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
-	// if txo, ok := idxCtx.txoCache[op]; ok {
-	// 	return txo, nil
-	// }
-	// log.Println("LoadTxo", op)
 	if txo, err = LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
 		log.Panic(err)
 		return nil, err
@@ -144,7 +138,6 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 			log.Panicln(err)
 			return nil, err
 		} else {
-			// log.Println("LoadParentTx", parentTxid)
 			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{})
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]

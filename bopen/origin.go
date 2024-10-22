@@ -8,7 +8,6 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const MAX_DEPTH = 256
 const ORIGIN_TAG = "origin"
 
 type Origin struct {
@@ -57,6 +56,9 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 				origin = o.Data.(*Origin)
 			} else {
 				origin = &Origin{}
+				if spend.Height < TRIGGER {
+					origin.Outpoint = txo.Outpoint
+				}
 			}
 		}
 		break

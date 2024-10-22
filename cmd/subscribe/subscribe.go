@@ -17,17 +17,26 @@ var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE uint
 var TAG string
+var QUEUE string
 var MEMOOOL bool
 var BLOCK bool
 
 func init() {
-	flag.StringVar(&TAG, "tag", "", "Ingest tag")
-	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
+	flag.StringVar(&TAG, "tag", "", "(REQUIRED) Subscription Tag")
+	flag.StringVar(&QUEUE, "q", "ingest", "Queue")
+	flag.StringVar(&TOPIC, "t", "", "(REQUIRED) Junglebus SubscriptionID")
 	flag.UintVar(&FROM_BLOCK, "s", uint(bopen.TRIGGER), "Start from block")
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")
 	flag.Parse()
+
+	if TAG == "" {
+		log.Panic("Tag is required")
+	}
+	if TOPIC == "" {
+		log.Panic("Topic is required")
+	}
 }
 
 func main() {

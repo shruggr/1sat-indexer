@@ -14,11 +14,12 @@ import (
 
 var ctx = context.Background()
 var CONCURRENCY int
+var TAG string
 
 func init() {
+	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
 	flag.IntVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
-
 }
 
 // func main() {
@@ -47,13 +48,13 @@ func main() {
 				log.Panic(err)
 			} else {
 				for _, addTxn := range addTxns {
-					if exists, err := idx.TxIngested(ctx, addTxn.Txid); err != nil && err != redis.Nil {
+					if score, err := idx.LogScore(ctx, TAG, addTxn.Txid); err != nil && err != redis.Nil {
 						log.Panic(err)
-					} else if exists {
+					} else if score > 0 {
 						continue
 					}
 					score := idx.HeightScore(addTxn.Height, addTxn.Idx)
-					if err := idx.QueneTx(ctx, addTxn.Txid, score); err != nil {
+					if err := idx.Enqueue(ctx, TAG, addTxn.Txid, score); err != nil {
 						log.Panic(err)
 					}
 					log.Println("Ingesting", addTxn.Txid, score)

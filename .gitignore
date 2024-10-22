@@ -7,3 +7,6 @@ ingest
 server
 subscribe
 owner-sync
+origin
+
+!cmd

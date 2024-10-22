@@ -26,7 +26,9 @@ import (
 )
 
 var POSTGRES string
-var CONCURRENCY int
+var CONCURRENCY uint
+var VERBOSE int
+var TAG string
 var PORT int
 
 var currentSessions = sse.SessionsLock{
@@ -35,14 +37,19 @@ var currentSessions = sse.SessionsLock{
 
 var indexedTags = make([]string, 0, len(config.Indexers))
 
-var ingest = &idx.Ingest{
+var ingest = &idx.IngestCtx{
 	Indexers:    config.Indexers,
-	Concurrency: 8,
+	Concurrency: CONCURRENCY,
 }
 
 var chaintip *blk.BlockHeader
 
 func init() {
+	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
+	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
+	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
+	flag.Parse()
+
 	for _, indexer := range config.Indexers {
 		indexedTags = append(indexedTags, indexer.Tag())
 	}
@@ -280,7 +287,7 @@ func main() {
 
 		if _, err := idx.UpdateAccount(c.Context(), account, owners); err != nil {
 			return err
-		} else if err := idx.SyncAcct(c.Context(), account, ingest); err != nil {
+		} else if err := idx.SyncAcct(c.Context(), TAG, account, ingest); err != nil {
 			return err
 		}
 

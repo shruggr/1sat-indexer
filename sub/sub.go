@@ -11,7 +11,6 @@ import (
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/jb"
 )
@@ -20,6 +19,7 @@ const ProgressKey = "progress"
 
 type Sub struct {
 	Tag          string
+	Queue        string
 	IndexBlocks  bool
 	IndexMempool bool
 	Topic        string
@@ -40,7 +40,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
 			// }
 			if status.StatusCode == 200 {
-				if err := evt.DB.ZAdd(ctx, progressKey, redis.Z{
+				if err := idx.QueueDB.ZAdd(ctx, progressKey, redis.Z{
 					Score:  float64(status.Block),
 					Member: cfg.Tag,
 				}).Err(); err != nil {
@@ -64,7 +64,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := idx.QueneTx(ctx, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
+			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
 				errors <- err
 			}
 		}
@@ -74,13 +74,13 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := idx.QueneTx(ctx, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
 				errors <- err
 			}
 		}
 	}
 
-	if progress, err := evt.DB.ZScore(ctx, progressKey, cfg.Tag).Result(); err != nil && err != redis.Nil {
+	if progress, err := idx.QueueDB.ZScore(ctx, progressKey, cfg.Tag).Result(); err != nil && err != redis.Nil {
 		log.Panic(err)
 	} else if progress > 6 {
 		cfg.FromBlock = uint(progress) - 5

@@ -23,7 +23,7 @@ type Event struct {
 	Value string `json:"value"`
 }
 
-var DB *redis.Client
+var db *redis.Client
 
 func init() {
 	wd, _ := os.Getwd()
@@ -31,7 +31,7 @@ func init() {
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
 	log.Println("REDISEVT", os.Getenv("REDISEVT"))
-	DB = redis.NewClient(&redis.Options{
+	db = redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDISEVT"),
 		Password: "", // no password set
 		DB:       0,  // use default DB
@@ -39,5 +39,5 @@ func init() {
 }
 
 func Publish(ctx context.Context, event string, data string) error {
-	return DB.Publish(ctx, event, data).Err()
+	return db.Publish(ctx, event, data).Err()
 }

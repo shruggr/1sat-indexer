@@ -50,12 +50,12 @@ func AcctsByOwners(ctx context.Context, owners []string) ([]string, error) {
 	return accts, nil
 }
 
-func SyncAcct(ctx context.Context, acct string, ing *Ingest) error {
+func SyncAcct(ctx context.Context, tag string, acct string, ing *IngestCtx) error {
 	if owners, err := AcctDB.SMembers(ctx, AccountKey(acct)).Result(); err != nil {
 		return err
 	} else {
 		for _, owner := range owners {
-			if err := SyncOwner(ctx, owner, ing); err != nil {
+			if err := SyncOwner(ctx, tag, owner, ing); err != nil {
 				return err
 			}
 		}
@@ -63,7 +63,7 @@ func SyncAcct(ctx context.Context, acct string, ing *Ingest) error {
 	return nil
 }
 
-func SyncOwner(ctx context.Context, add string, ing *Ingest) error {
+func SyncOwner(ctx context.Context, tag string, add string, ing *IngestCtx) error {
 	log.Println("Syncing:", add)
 	if lastHeight, err := AcctDB.ZScore(ctx, OwnerSyncKey, add).Result(); err != nil && err != redis.Nil {
 		return err
@@ -73,7 +73,7 @@ func SyncOwner(ctx context.Context, add string, ing *Ingest) error {
 		limiter := make(chan struct{}, ing.Concurrency)
 		var wg sync.WaitGroup
 		for _, addTxn := range addTxns {
-			if err := AcctDB.ZScore(ctx, IngestLogKey, addTxn.Txid).Err(); err != nil && err != redis.Nil {
+			if err := AcctDB.ZScore(ctx, LogKey(tag), addTxn.Txid).Err(); err != nil && err != redis.Nil {
 				return err
 			} else if err != redis.Nil {
 				continue
@@ -85,7 +85,11 @@ func SyncOwner(ctx context.Context, add string, ing *Ingest) error {
 					<-limiter
 					wg.Done()
 				}()
-				if _, err := ing.IngestTxid(ctx, addTxn.Txid); err != nil {
+				if _, err := ing.IngestTxid(ctx, addTxn.Txid, AncestorConfig{
+					Load:  true,
+					Parse: true,
+					Save:  true,
+				}); err != nil {
 					log.Panic(err)
 				}
 			}(addTxn)

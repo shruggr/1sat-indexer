@@ -56,10 +56,18 @@ func init() {
 	})
 }
 
-const IngestLogKey = "log:tx"
-const IngestQueueKey = "que:ing"
+// const IngestLogKey = "log:tx"
+// const IngestQueueKey = "que:ing"
 const TxosKey = "txos"
 const SpendsKey = "spends"
+
+func QueueKey(tag string) string {
+	return "que:" + tag
+}
+
+func LogKey(tag string) string {
+	return "log:" + tag
+}
 
 func HeightScore(height uint32, idx uint64) float64 {
 	return float64(uint64(height)*1000000000 + idx)
@@ -71,18 +79,17 @@ func TxoDataKey(outpoint string) string {
 
 const PAGE_SIZE = 1000
 
-func TxIngested(ctx context.Context, txid string) (bool, error) {
-	if err := QueueDB.ZScore(ctx, IngestLogKey, txid).Err(); err != nil && err != redis.Nil {
-		return false, err
-	} else {
-		return err != redis.Nil, nil
+func LogScore(ctx context.Context, tag string, id string) (score float64, err error) {
+	if score, err = QueueDB.ZScore(ctx, LogKey(tag), id).Result(); err == redis.Nil {
+		err = nil
 	}
+	return
 }
 
-func QueneTx(ctx context.Context, txid string, score float64) error {
-	if err := QueueDB.ZAdd(ctx, IngestQueueKey, redis.Z{
+func Enqueue(ctx context.Context, tag string, id string, score float64) error {
+	if err := QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
 		Score:  score,
-		Member: txid,
+		Member: id,
 	}).Err(); err != nil {
 		return err
 	}

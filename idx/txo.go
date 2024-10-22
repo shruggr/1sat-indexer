@@ -144,58 +144,23 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 				return err
 			}
 		}
-		if len(txo.Data) > 0 {
-			datas := make(map[string]any, len(txo.Data))
-			for tag, data := range txo.Data {
-				tagKey := evt.TagKey(tag)
-				if err := pipe.ZAdd(ctx, tagKey, redis.Z{
-					Score:  score,
-					Member: outpoint,
-				}).Err(); err != nil {
-					log.Println("ZADD Tag", tagKey, err)
-					log.Panic(err)
-					return err
-				}
-				for _, event := range data.Events {
-					eventKey := evt.EventKey(tag, event)
-					if err := pipe.ZAdd(ctx, eventKey, redis.Z{
-						Score:  score,
-						Member: outpoint,
-					}).Err(); err != nil {
-						log.Panic(err)
-						log.Println("ZADD Event", eventKey, err)
-						return err
-					}
-				}
-				if datas[tag], err = data.MarshalJSON(); err != nil {
-					log.Panic(err)
-					return err
-				}
-			}
-			if len(datas) > 0 {
-				if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
-					log.Panic(err)
-					log.Println("HSET TxoData", err)
-					return err
-				}
-			}
-		}
+
 		return nil
 	}); err != nil {
 		log.Panic(err)
 		return err
+	} else if txo.SaveData(ctx); err != nil {
+		log.Panic(err)
+		return err
 	}
+
 	for _, owner := range txo.Owners {
 		evt.Publish(ctx, OwnerKey(owner), outpoint)
 	}
 	for _, account := range accounts {
 		evt.Publish(ctx, AccountKey(account), outpoint)
 	}
-	for tag, data := range txo.Data {
-		for _, event := range data.Events {
-			evt.Publish(ctx, evt.EventKey(tag, event), outpoint)
-		}
-	}
+
 	return nil
 }
 
@@ -250,52 +215,55 @@ func (spend *Txo) SaveSpend(ctx context.Context, txid string, height uint32, idx
 	return nil
 }
 
-func (t *Txo) SaveData(ctx context.Context, tags []string) (err error) {
-	if len(tags) == 0 {
+func (txo *Txo) SaveData(ctx context.Context) (err error) {
+	if len(txo.Data) == 0 {
 		return nil
 	}
 
-	outpoint := t.Outpoint.String()
-	score := HeightScore(t.Height, t.Idx)
-	datas := make(map[string]any, len(tags))
+	outpoint := txo.Outpoint.String()
+	score := HeightScore(txo.Height, txo.Idx)
+	datas := make(map[string]any, len(txo.Data))
 	if _, err := TxoDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		for _, tag := range tags {
-			if data, ok := t.Data[tag]; ok {
-				tagKey := evt.TagKey(tag)
-				if err := pipe.ZAdd(ctx, tagKey, redis.Z{
+		for tag, data := range txo.Data {
+			tagKey := evt.TagKey(tag)
+			if err := pipe.ZAdd(ctx, tagKey, redis.Z{
+				Score:  score,
+				Member: outpoint,
+			}).Err(); err != nil {
+				log.Println("ZADD Tag", tagKey, err)
+				log.Panic(err)
+				return err
+			}
+			for _, event := range data.Events {
+				eventKey := evt.EventKey(tag, event)
+				if err := pipe.ZAdd(ctx, eventKey, redis.Z{
 					Score:  score,
 					Member: outpoint,
 				}).Err(); err != nil {
-					log.Println("ZADD Tag", tagKey, err)
-					return err
-				}
-				for _, event := range data.Events {
-					eventKey := evt.EventKey(tag, event)
-					if err := pipe.ZAdd(ctx, eventKey, redis.Z{
-						Score:  score,
-						Member: outpoint,
-					}).Err(); err != nil {
-						return err
-					}
-				}
-				// if datas[tag], err = msgpack.Marshal(data); err != nil {
-				if datas[tag], err = data.MarshalJSON(); err != nil {
 					log.Panic(err)
+					log.Println("ZADD Event", eventKey, err)
 					return err
 				}
 			}
+			if datas[tag], err = data.MarshalJSON(); err != nil {
+				log.Panic(err)
+				return err
+			}
 		}
-		if err := pipe.HMSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
-			log.Println("HMSET TxoData", err)
-			return err
+		if len(datas) > 0 {
+			if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
+				log.Panic(err)
+				log.Println("HSET TxoData", err)
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
 		log.Panic(err)
 		return err
 	}
-	for _, tag := range tags {
-		for _, event := range t.Data[tag].Events {
+	for tag, data := range txo.Data {
+		for _, event := range data.Events {
 			evt.Publish(ctx, evt.EventKey(tag, event), outpoint)
 		}
 	}
@@ -310,6 +278,9 @@ func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, erro
 	}).Result(); err != nil {
 		return nil, err
 	} else {
+		if len(scores) == 0 {
+			return nil, nil
+		}
 		outpoints := make([]string, 0, len(scores))
 		for _, item := range scores {
 			member := item.Member.(string)

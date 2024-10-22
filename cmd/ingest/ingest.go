@@ -13,7 +13,7 @@ var VERBOSE int
 var TAG string
 
 func init() {
-	flag.StringVar(&TAG, "tag", "", "Ingest tag")
+	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
@@ -21,7 +21,7 @@ func init() {
 
 func main() {
 	ctx := context.Background()
-	if err := (&idx.Ingest{
+	if err := (&idx.IngestCtx{
 		Tag:         TAG,
 		Indexers:    config.Indexers,
 		Concurrency: CONCURRENCY,

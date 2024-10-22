@@ -10,22 +10,22 @@ import (
 	"github.com/shruggr/1sat-indexer/jb"
 )
 
-type Ingest struct {
+type IngestCtx struct {
 	Tag         string
 	Indexers    []Indexer
 	Concurrency uint
 	Verbose     bool
+	limiter     chan struct{}
 }
 
-func (cfg *Ingest) Exec(ctx context.Context) (err error) {
-	limiter := make(chan struct{}, cfg.Concurrency)
+func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
+	cfg.limiter = make(chan struct{}, cfg.Concurrency)
 	errors := make(chan error)
-	// process := make(chan string, 1000)
 	done := make(chan string)
 	inflight := make(map[string]struct{})
 	ticker := time.NewTicker(15 * time.Second)
 	txcount := 0
-	queueKey := IngestQueueKey
+	queueKey := QueueKey(cfg.Tag)
 	for {
 		select {
 		case <-ticker.C:
@@ -51,13 +51,17 @@ func (cfg *Ingest) Exec(ctx context.Context) (err error) {
 				for _, txid := range txids {
 					if _, ok := inflight[txid]; !ok {
 						inflight[txid] = struct{}{}
-						limiter <- struct{}{}
+						cfg.limiter <- struct{}{}
 						go func(txid string) {
 							defer func() {
-								<-limiter
+								<-cfg.limiter
 								done <- txid
 							}()
-							if _, err := cfg.IngestTxid(ctx, txid); err != nil {
+							if _, err := cfg.IngestTxid(ctx, txid, AncestorConfig{
+								Load:  true,
+								Parse: true,
+								Save:  true,
+							}); err != nil {
 								errors <- err
 							}
 						}(txid)
@@ -72,31 +76,44 @@ func (cfg *Ingest) Exec(ctx context.Context) (err error) {
 	}
 }
 
-func (cfg *Ingest) IngestTxid(ctx context.Context, txid string) (*IndexContext, error) {
+func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
 	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else {
-		return cfg.IngestTx(ctx, tx)
+		return cfg.ParseTx(ctx, tx, ancestorCfg)
 	}
 }
 
-func (cfg *Ingest) IngestTx(ctx context.Context, tx *transaction.Transaction) (idxCtx *IndexContext, err error) {
-	start := time.Now()
-	idxCtx = NewIndexContext(ctx, tx, cfg.Indexers, AncestorConfig{
-		Load:  true,
-		Parse: true,
-		Save:  true,
-	})
+func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
+	idxCtx = NewIndexContext(ctx, tx, cfg.Indexers, ancestorCfg)
 	idxCtx.ParseTxn()
+	return
+}
+
+func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
+	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
+		return nil, err
+	} else {
+		return cfg.IngestTx(ctx, tx, ancestorCfg)
+	}
+}
+
+func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
+	start := time.Now()
+	if idxCtx, err = cfg.ParseTx(ctx, tx, ancestorCfg); err != nil {
+		return nil, err
+	}
 	idxCtx.Save()
+	queueKey := QueueKey(cfg.Tag)
+	logKey := LogKey(cfg.Tag)
 	if _, err := QueueDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		if err := pipe.ZAdd(idxCtx.Ctx, IngestLogKey, redis.Z{
+		if err := pipe.ZAdd(idxCtx.Ctx, logKey, redis.Z{
 			Score:  idxCtx.Score,
 			Member: idxCtx.TxidHex,
 		}).Err(); err != nil {
 			log.Panic(err)
 			return err
-		} else if err := pipe.ZRem(ctx, IngestQueueKey, idxCtx.TxidHex).Err(); err != nil {
+		} else if err := pipe.ZRem(ctx, queueKey, idxCtx.TxidHex).Err(); err != nil {
 			return err
 		}
 
