@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -133,12 +134,11 @@ func main() {
 	app.Post("/v5/tx", func(c *fiber.Ctx) error {
 		if tx, err := transaction.NewTransactionFromBytes(c.Body()); err != nil {
 			return c.SendStatus(400)
-		} else if txid, err := broadcast.Broadcast(c.Context(), tx); err != nil {
-			return err
 		} else {
-			return c.SendString(txid)
+			response := broadcast.Broadcast(c.Context(), tx)
+			c.Status(int(response.Status))
+			return c.JSON(response)
 		}
-
 	})
 
 	app.Get("/v5/tx/:txid", func(c *fiber.Ctx) error {
@@ -183,6 +183,19 @@ func main() {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 			c.Set("Content-Type", "application/octet-stream")
 			return c.Send(rawtx)
+		}
+	})
+
+	app.Get("/v5/tx/:txid/raw/hex", func(c *fiber.Ctx) error {
+		txid := c.Params("txid")
+		if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
+			return err
+		} else if rawtx == nil {
+			return c.SendStatus(404)
+		} else {
+			c.Set("Cache-Control", "public,max-age=31536000,immutable")
+			c.Set("Content-Type", "text/plain")
+			return c.SendString(hex.EncodeToString(rawtx))
 		}
 	})
 
