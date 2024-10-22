@@ -93,7 +93,7 @@ func main() {
 					log.Panic(err)
 				} else if err := pipe.ZAdd(ctx, blk.BlockHeightKey, redis.Z{
 					Score:  score,
-					Member: block.Hash,
+					Member: block.Hash.String(),
 				}).Err(); err != nil {
 					log.Panic(err)
 				}
@@ -105,7 +105,7 @@ func main() {
 		lastBlock := blocks[len(blocks)-1]
 
 		if !lastBlock.Hash.Equal(*lastHash) {
-			if err := blk.DB.Set(ctx, blk.ChaintipKey, lastBlock, 0).Err(); err != nil {
+			if err := blk.DB.Set(ctx, blk.ChaintipKey, string(blockJson), 0).Err(); err != nil {
 				log.Panic(err)
 			}
 			evt.Publish(ctx, blk.ChaintipKey, string(blockJson))
