@@ -3,15 +3,14 @@ package bopen
 import (
 	"crypto/sha256"
 	"database/sql/driver"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"strconv"
 
+	bsm "github.com/bitcoin-sv/go-sdk/compat/bsm"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/bitcoinschema/go-bitcoin"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 )
@@ -104,10 +103,8 @@ func ParseSigma(tx *transaction.Transaction, vout uint32, idx *int) (sigma *Sigm
 	}
 	outputHash := sha256.Sum256(scriptBuf)
 	msgHash := sha256.Sum256(append(inputHash[:], outputHash[:]...))
-	if err := bitcoin.VerifyMessage(sigma.Address,
-		base64.StdEncoding.EncodeToString(sigma.Signature),
-		string(msgHash[:]),
-	); err != nil {
+
+	if err := bsm.VerifyMessage(sigma.Address, sigma.Signature, msgHash[:]); err != nil {
 		sigma.Valid = false
 	} else {
 		sigma.Valid = true

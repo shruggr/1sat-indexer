@@ -6,10 +6,20 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/bitcoin-sv/go-sdk/chainhash"
 )
 
-type BlockHeader models.BlockHeader
+type BlockHeader struct {
+	Hash       *chainhash.Hash `json:"hash"`
+	Coin       uint32          `json:"coin"`
+	Height     uint32          `json:"height"`
+	Time       uint32          `json:"time"`
+	Nonce      uint32          `json:"nonce"`
+	Version    uint32          `json:"version"`
+	MerkleRoot *chainhash.Hash `json:"merkleroot"`
+	Bits       string          `json:"bits"`
+	Synced     uint64          `json:"synced"`
+}
 
 func (b BlockHeader) MarshalBinary() (data []byte, err error) {
 	return json.Marshal(b)

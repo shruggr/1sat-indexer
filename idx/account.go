@@ -3,7 +3,6 @@ package idx
 import (
 	"context"
 	"log"
-	"slices"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -111,39 +110,30 @@ func SyncOwner(ctx context.Context, tag string, add string, ing *IngestCtx) erro
 }
 
 func UpdateAccount(ctx context.Context, account string, owners []string) (bool, error) {
-	ownerTxoKeys := make([]string, 0, len(owners))
 	accountKey := AccountKey(account)
-	iowners := make([]interface{}, 0, len(owners))
 	for _, owner := range owners {
 		if owner == "" {
 			continue
 		}
-		if err := AcctDB.ZAddNX(ctx, OwnerSyncKey, redis.Z{
+		if added, err := AcctDB.ZAddNX(ctx, OwnerSyncKey, redis.Z{
 			Score:  0,
 			Member: owner,
-		}).Err(); err != nil {
+		}).Result(); err != nil {
 			return false, err
+		} else if added == 0 {
+			continue
 		} else if err := AcctDB.HSet(ctx, OwnerAccountKey, owner, account).Err(); err != nil {
 			return false, err
-		}
-		ownerTxoKeys = append(ownerTxoKeys, OwnerTxosKey(owner))
-		iowners = append(iowners, owner)
-	}
-	if members, err := AcctDB.SMembers(ctx, accountKey).Result(); err != nil {
-		return false, err
-	} else {
-		slices.Sort(members)
-		slices.Sort(owners)
-		if slices.Equal(members, owners) {
-			return false, nil
-		} else if AcctDB.SAdd(ctx, accountKey, iowners...).Err() != nil {
+		} else if AcctDB.SAdd(ctx, accountKey, owner).Err() != nil {
 			return false, err
-		} else if err = TxoDB.ZUnionStore(ctx, AccountTxosKey(account), &redis.ZStore{
-			Keys:      ownerTxoKeys,
-			Aggregate: "MIN",
+		} else if err = TxoDB.ZRangeStore(ctx, AccountTxosKey(account), redis.ZRangeArgs{
+			Key:   OwnerTxosKey(owner),
+			Start: "-inf",
+			Stop:  "+inf",
 		}).Err(); err != nil {
 			return false, err
 		}
 	}
+
 	return true, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	// "github.com/GorillaPool/go-junglebus/models"
 
+	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/blk"
@@ -30,7 +31,7 @@ func init() {
 
 func main() {
 	fromBlock := uint32(1)
-	var lastHash string
+	var lastHash *chainhash.Hash
 	if lastBlocks, err := blk.DB.ZRevRangeByScoreWithScores(ctx, blk.BlockHeightKey, &redis.ZRangeBy{
 		Max:   "+inf",
 		Min:   "-inf",
@@ -39,16 +40,17 @@ func main() {
 		log.Panic(err)
 	} else if len(lastBlocks) == 0 {
 		genesis := blk.BlockHeader{
-			Hash:       "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-			Coin:       1,
-			Height:     0,
-			Time:       1231006505,
-			Nonce:      2083236893,
-			Version:    1,
-			MerkleRoot: "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-			Bits:       "1d00ffff",
-			Synced:     1,
+			Coin:    1,
+			Height:  0,
+			Time:    1231006505,
+			Nonce:   2083236893,
+			Version: 1,
+			Bits:    "1d00ffff",
+			Synced:  1,
 		}
+		genesis.Hash, _ = chainhash.NewHashFromHex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
+		genesis.MerkleRoot, _ = chainhash.NewHashFromHex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")
+
 		if _, err := blk.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 			if err := pipe.HSet(ctx, blk.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
 				return err
@@ -64,7 +66,9 @@ func main() {
 		}
 	} else {
 		fromBlock = uint32(lastBlocks[0].Score)
-		lastHash = lastBlocks[0].Member.(string)
+		if lastHash, err = chainhash.NewHashFromHex(lastBlocks[0].Member.(string)); err != nil {
+			log.Panic(err)
+		}
 	}
 
 	var err error
@@ -83,13 +87,13 @@ func main() {
 				score := float64(block.Height)
 				if blockJson, err = json.Marshal(block); err != nil {
 					return err
-				} else if err := pipe.HSetNX(ctx, blk.BlockHeadersKey, block.Hash, blockJson).Err(); err != nil {
+				} else if err := pipe.HSetNX(ctx, blk.BlockHeadersKey, block.Hash.String(), blockJson).Err(); err != nil {
 					return err
 				} else if err := pipe.ZRemRangeByScore(ctx, blk.BlockHeightKey, strconv.Itoa(int(block.Height)), "+inf").Err(); err != nil {
 					log.Panic(err)
 				} else if err := pipe.ZAdd(ctx, blk.BlockHeightKey, redis.Z{
 					Score:  score,
-					Member: block.Hash,
+					Member: block.Hash.String(),
 				}).Err(); err != nil {
 					log.Panic(err)
 				}
@@ -100,8 +104,8 @@ func main() {
 		}
 		lastBlock := blocks[len(blocks)-1]
 
-		if lastBlock.Hash != lastHash {
-			if err := blk.DB.Set(ctx, blk.ChaintipKey, lastBlock, 0).Err(); err != nil {
+		if !lastBlock.Hash.Equal(*lastHash) {
+			if err := blk.DB.Set(ctx, blk.ChaintipKey, string(blockJson), 0).Err(); err != nil {
 				log.Panic(err)
 			}
 			evt.Publish(ctx, blk.ChaintipKey, string(blockJson))

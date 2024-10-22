@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/libsv/go-bk/crypto"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -123,7 +122,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				log.Panic(err)
 			}
 			bsv21.FundPath = path
-			bsv21.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
+			bsv21.FundPKHash = pubKey.Hash()
 		case "transfer", "burn":
 		default:
 			return nil

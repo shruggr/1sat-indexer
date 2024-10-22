@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/cmd/ingest/ingest"
 	"github.com/shruggr/1sat-indexer/config"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/jb"
 )
 
 var hexId = "40993922b7d7384379b401530e1ce3c4ccfdcedd322e5ad471de795d9d4280a9"
@@ -15,13 +15,14 @@ var hexId = "40993922b7d7384379b401530e1ce3c4ccfdcedd322e5ad471de795d9d4280a9"
 func main() {
 	ctx := context.Background()
 
-	ing := &ingest.Ingest{
+	ing := &idx.IngestCtx{
+		Tag:         "tester",
 		Indexers:    config.Indexers,
 		Concurrency: 1,
 	}
-	if tx, err := lib.LoadTx(ctx, hexId, true); err != nil {
+	if tx, err := jb.LoadTx(ctx, hexId, true); err != nil {
 		log.Panic(err)
-	} else if idxCtx, err := ing.IngestTx(ctx, tx); err != nil {
+	} else if idxCtx, err := ing.IngestTx(ctx, tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
 		log.Panic(err)
 	} else {
 		if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {

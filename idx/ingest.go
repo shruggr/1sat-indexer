@@ -2,6 +2,7 @@ package idx
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -93,6 +94,8 @@ func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, 
 func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
 	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
 		return nil, err
+	} else if tx == nil {
+		return nil, fmt.Errorf("missing-txn %s", txid)
 	} else {
 		return cfg.IngestTx(ctx, tx, ancestorCfg)
 	}
@@ -104,24 +107,17 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 		return nil, err
 	}
 	idxCtx.Save()
-	queueKey := QueueKey(cfg.Tag)
-	logKey := LogKey(cfg.Tag)
-	if _, err := QueueDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		if err := pipe.ZAdd(idxCtx.Ctx, logKey, redis.Z{
-			Score:  idxCtx.Score,
-			Member: idxCtx.TxidHex,
-		}).Err(); err != nil {
-			log.Panic(err)
-			return err
-		} else if err := pipe.ZRem(ctx, queueKey, idxCtx.TxidHex).Err(); err != nil {
-			return err
-		}
-
-		log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))
-		return nil
-	}); err != nil {
+	if err = Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
-		return nil, err
+		return
+	} else if err = Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+		log.Panic(err)
+		return
+	} else if err = Dequeue(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
+		log.Panic(err)
+		return
 	}
+
+	log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))
 	return
 }

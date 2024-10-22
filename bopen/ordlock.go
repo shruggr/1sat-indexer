@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"math"
 
-	// "github.com/libsv/go-bt"
-	// "github.com/libsv/go-bt/bscript"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/evt"

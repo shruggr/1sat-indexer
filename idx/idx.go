@@ -60,6 +60,7 @@ func init() {
 // const IngestQueueKey = "que:ing"
 const TxosKey = "txos"
 const SpendsKey = "spends"
+const TxLogTag = "tx"
 
 func QueueKey(tag string) string {
 	return "que:" + tag
@@ -79,6 +80,17 @@ func TxoDataKey(outpoint string) string {
 
 const PAGE_SIZE = 1000
 
+func Delog(ctx context.Context, tag string, id string) error {
+	return QueueDB.ZRem(ctx, LogKey(tag), id).Err()
+}
+
+func Log(ctx context.Context, tag string, id string, score float64) (err error) {
+	return QueueDB.ZAdd(ctx, LogKey(tag), redis.Z{
+		Score:  score,
+		Member: id,
+	}).Err()
+}
+
 func LogScore(ctx context.Context, tag string, id string) (score float64, err error) {
 	if score, err = QueueDB.ZScore(ctx, LogKey(tag), id).Result(); err == redis.Nil {
 		err = nil
@@ -87,11 +99,12 @@ func LogScore(ctx context.Context, tag string, id string) (score float64, err er
 }
 
 func Enqueue(ctx context.Context, tag string, id string, score float64) error {
-	if err := QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
+	return QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
 		Score:  score,
 		Member: id,
-	}).Err(); err != nil {
-		return err
-	}
-	return nil
+	}).Err()
+}
+
+func Dequeue(ctx context.Context, tag string, id string) error {
+	return QueueDB.ZRem(ctx, QueueKey(tag), id).Err()
 }
