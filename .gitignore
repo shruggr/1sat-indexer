@@ -8,5 +8,4 @@ server
 subscribe
 owner-sync
 origin
-
-!cmd
+config/config.go
