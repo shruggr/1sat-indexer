@@ -79,6 +79,13 @@ func TxoDataKey(outpoint string) string {
 
 const PAGE_SIZE = 1000
 
+func Log(ctx context.Context, tag string, id string, score float64) (err error) {
+	return QueueDB.ZAdd(ctx, LogKey(tag), redis.Z{
+		Score:  score,
+		Member: id,
+	}).Err()
+}
+
 func LogScore(ctx context.Context, tag string, id string) (score float64, err error) {
 	if score, err = QueueDB.ZScore(ctx, LogKey(tag), id).Result(); err == redis.Nil {
 		err = nil
@@ -87,11 +94,8 @@ func LogScore(ctx context.Context, tag string, id string) (score float64, err er
 }
 
 func Enqueue(ctx context.Context, tag string, id string, score float64) error {
-	if err := QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
+	return QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
 		Score:  score,
 		Member: id,
-	}).Err(); err != nil {
-		return err
-	}
-	return nil
+	}).Err()
 }

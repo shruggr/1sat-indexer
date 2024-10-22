@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/libsv/go-bt/bscript"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -169,11 +168,11 @@ ordLoop:
 		}
 	}
 
-	if len(*scr) >= pos+25 && bscript.NewFromBytes((*scr)[pos:pos+25]).IsP2PKH() {
+	if len(*scr) >= pos+25 && script.NewFromBytes((*scr)[pos:pos+25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+3 : pos+23])
 		txo.AddOwner(pkhash.Address())
 	} else if len(*scr) >= pos+26 &&
-		(*scr)[pos] == bscript.OpCODESEPARATOR &&
+		(*scr)[pos] == script.OpCODESEPARATOR &&
 		script.NewFromBytes((*scr)[pos+1:pos+26]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+4 : pos+24])
 		txo.AddOwner(pkhash.Address())

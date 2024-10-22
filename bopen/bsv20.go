@@ -8,8 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/libsv/go-bk/bip32"
-	"github.com/libsv/go-bk/crypto"
+	bip32 "github.com/bitcoin-sv/go-sdk/compat/bip32"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -17,7 +16,7 @@ import (
 
 type Bsv20Status int
 
-var idxHdKey, _ = bip32.NewKeyFromString("xpub661MyMwAqRbcF221R74MPqdipLsgUevAAX4hZP2rywyEeShpbe3v2r9ciAvSGT6FB22TEmFLdUyeEDJL4ekG8s9H5WXbzDQPr6eW1zEYYy9")
+var idxHdKey, _ = bip32.GenerateHDKeyFromString("xpub661MyMwAqRbcF221R74MPqdipLsgUevAAX4hZP2rywyEeShpbe3v2r9ciAvSGT6FB22TEmFLdUyeEDJL4ekG8s9H5WXbzDQPr6eW1zEYYy9")
 
 const (
 	Invalid Bsv20Status = -1
@@ -135,7 +134,7 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				log.Panic(err)
 			}
 			bsv20.FundPath = path
-			bsv20.FundPKHash = crypto.Hash160(pubKey.SerialiseCompressed())
+			bsv20.FundPKHash = pubKey.Hash()
 		case "mint", "transfer", "burn":
 			if bsv20.Amt == nil {
 				return nil

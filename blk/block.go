@@ -91,8 +91,8 @@ func Chaintip(ctx context.Context) (*BlockHeader, error) {
 	return header, nil
 }
 
-func BlockByHeight(ctx context.Context, height uint64) (*BlockHeader, error) {
-	score := strconv.FormatUint(height, 10)
+func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
+	score := strconv.FormatUint(uint64(height), 10)
 	if blocks, err := DB.ZRangeByScore(ctx, BlockHeightKey, &redis.ZRangeBy{
 		Min:   score,
 		Max:   score,

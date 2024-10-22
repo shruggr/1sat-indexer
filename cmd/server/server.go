@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/blk"
+	"github.com/shruggr/1sat-indexer/broadcast"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/idx"
@@ -94,7 +95,7 @@ func main() {
 	app.Get("/v5/blocks/height/:height", func(c *fiber.Ctx) error {
 		if height, err := strconv.ParseUint(c.Params("height"), 10, 32); err != nil {
 			return c.SendStatus(400)
-		} else if block, err := blk.BlockByHeight(c.Context(), height); err != nil {
+		} else if block, err := blk.BlockByHeight(c.Context(), uint32(height)); err != nil {
 			return err
 		} else if block == nil {
 			return c.SendStatus(404)
@@ -127,6 +128,17 @@ func main() {
 		} else {
 			return c.JSON(headers)
 		}
+	})
+
+	app.Post("/v5/tx", func(c *fiber.Ctx) error {
+		if tx, err := transaction.NewTransactionFromBytes(c.Body()); err != nil {
+			return c.SendStatus(400)
+		} else if txid, err := broadcast.Broadcast(c.Context(), tx); err != nil {
+			return err
+		} else {
+			return c.SendString(txid)
+		}
+
 	})
 
 	app.Get("/v5/tx/:txid", func(c *fiber.Ctx) error {
