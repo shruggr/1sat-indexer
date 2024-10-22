@@ -45,6 +45,7 @@ var ingest = &idx.IngestCtx{
 var chaintip *blk.BlockHeader
 
 func init() {
+	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
@@ -70,9 +71,6 @@ func init() {
 }
 
 func main() {
-	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
-	flag.Parse()
-
 	app := fiber.New()
 	app.Use(recover.New())
 	app.Use(logger.New())
