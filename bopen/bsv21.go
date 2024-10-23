@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -16,6 +17,14 @@ import (
 
 const BSV21_INDEX_FEE = 1000
 const BSV21_TAG = "bsv21"
+
+var (
+	IssueEvent   string = "iss"
+	IdEvent      string = "id"
+	ValidEvent   string = "val"
+	InvalidEvent string = "inv"
+	PendingEvent string = "pen"
+)
 
 type Bsv21 struct {
 	Id            string      `json:"id,omitempty"`
@@ -30,8 +39,7 @@ type Bsv21 struct {
 	PayOut        []byte      `json:"payout,omitempty"`
 	Listing       bool        `json:"listing"`
 	PricePerToken float64     `json:"pricePer,omitempty"`
-	FundPath      string      `json:"-"`
-	FundPKHash    []byte      `json:"fundAddress,omitempty"`
+	FundAddress   string      `json:"fundAddress,omitempty"`
 	FundBalance   int         `json:"-"`
 }
 
@@ -57,9 +65,9 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 	txo := idxCtx.Txos[vout]
 
 	var err error
-	if idxData, ok := txo.Data[BOPEN_TAG]; !ok {
+	if bsv21Data, ok := txo.Data[ONESAT_LABEL]; !ok {
 		return nil
-	} else if bopen, ok := idxData.Data.(OneSat); !ok {
+	} else if bopen, ok := bsv21Data.Data.(OneSat); !ok {
 		return nil
 	} else if data, ok := bopen[BSV20_TAG].(map[string]string); !ok {
 		return nil
@@ -70,14 +78,22 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 	} else if _, err = lib.NewOutpointFromString(id); err != nil {
 		return nil
 	} else {
+		// if i.WhitelistFn != nil {
+		// 	whitelisted := (*i.WhitelistFn)(id)
+		// 	if !whitelisted {
+		// 		return nil
+		// 	}
+
+		// }
+		// if i.BlacklistFn != nil {
+		// 	blacklisted := (*i.BlacklistFn)(id)
+		// 	if blacklisted {
+		// 		return nil
+		// 	}
+		// }
 		bsv21 := &Bsv21{
 			Id: id,
 		}
-		// if i.WhitelistFn != nil && !(*i.WhitelistFn)(bsv21.Id) {
-		// 	return nil
-		// } else if i.BlacklistFn != nil || (*i.BlacklistFn)(bsv21.Id) {
-		// 	return nil
-		// } else
 		if op, ok := data["op"]; ok {
 			bsv21.Op = strings.ToLower(op)
 		} else {
@@ -97,6 +113,8 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			}
 			bsv21.Decimals = uint8(val)
 		}
+
+		events := []*evt.Event{}
 
 		switch bsv21.Op {
 		case "deploy+mint":
@@ -121,21 +139,26 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			if err != nil {
 				log.Panic(err)
 			}
-			bsv21.FundPath = path
-			bsv21.FundPKHash = pubKey.Hash()
+			if add, err := script.NewAddressFromPublicKey(pubKey, idxCtx.Network == lib.Mainnet); err == nil {
+				bsv21.FundAddress = add.AddressString
+			}
+
+			events = append(events, &evt.Event{
+				Id:    IssueEvent,
+				Value: "",
+			})
 		case "transfer", "burn":
 		default:
 			return nil
 		}
 
+		events = append(events, &evt.Event{
+			Id:    IdEvent,
+			Value: bsv21.Id,
+		})
 		return &idx.IndexData{
-			Data: bsv21,
-			Events: []*evt.Event{
-				{
-					Id:    "id",
-					Value: bsv21.Id,
-				},
-			},
+			Data:   bsv21,
+			Events: events,
 		}
 	}
 }
@@ -213,6 +236,7 @@ func (i *Bsv21Indexer) PreSave(idxCtx *idx.IndexContext) {
 						bsv21.Icon = token.token.Icon
 						bsv21.Symbol = token.token.Symbol
 						bsv21.Decimals = token.token.Decimals
+						bsv21.FundAddress = token.token.FundAddress
 						token.balance -= bsv21.Amt
 					}
 				}
@@ -224,21 +248,21 @@ func (i *Bsv21Indexer) PreSave(idxCtx *idx.IndexContext) {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
 				if isPending {
 					idxData.Events = append(idxData.Events, &evt.Event{
-						Id:    "pending",
+						Id:    PendingEvent,
 						Value: tokenId,
 					})
 				} else if reason, ok := reasons[tokenId]; ok {
 					bsv21.Status = Invalid
 					bsv21.Reason = &reason
 					idxData.Events = append(idxData.Events, &evt.Event{
-						Id:    "invalid",
+						Id:    InvalidEvent,
 						Value: tokenId,
 					})
 					idxData.Deps = append(idxData.Deps, token.deps...)
 				} else {
 					bsv21.Status = Valid
 					idxData.Events = append(idxData.Events, &evt.Event{
-						Id:    "valid",
+						Id:    ValidEvent,
 						Value: tokenId,
 					})
 					idxData.Deps = append(idxData.Deps, token.deps...)
