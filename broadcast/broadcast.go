@@ -16,10 +16,10 @@ import (
 )
 
 type BroadcaseResponse struct {
-	Success bool
-	Status  uint32
-	Txid    string
-	Error   string
+	Success bool   `json:"success"`
+	Status  uint32 `json:"status"`
+	Txid    string `json:"txid"`
+	Error   string `json:"error"`
 }
 
 func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *BroadcaseResponse) {

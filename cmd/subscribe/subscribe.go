@@ -42,6 +42,7 @@ func init() {
 func main() {
 	if err := (&sub.Sub{
 		Tag:          TAG,
+		Queue:        QUEUE,
 		Topic:        TOPIC,
 		FromBlock:    FROM_BLOCK,
 		IndexBlocks:  BLOCK,

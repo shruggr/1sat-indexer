@@ -30,8 +30,6 @@ type Sub struct {
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	errors := make(chan error)
 
-	progressKey := ProgressKey
-
 	var sub *junglebus.Subscription
 
 	eventHandler := junglebus.EventHandler{
@@ -40,7 +38,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
 			// }
 			if status.StatusCode == 200 {
-				if err := idx.QueueDB.ZAdd(ctx, progressKey, redis.Z{
+				if err := idx.QueueDB.ZAdd(ctx, ProgressKey, redis.Z{
 					Score:  float64(status.Block),
 					Member: cfg.Tag,
 				}).Err(); err != nil {
@@ -80,7 +78,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		}
 	}
 
-	if progress, err := idx.QueueDB.ZScore(ctx, progressKey, cfg.Tag).Result(); err != nil && err != redis.Nil {
+	if progress, err := idx.QueueDB.ZScore(ctx, ProgressKey, cfg.Tag).Result(); err != nil && err != redis.Nil {
 		log.Panic(err)
 	} else if progress > 6 {
 		cfg.FromBlock = uint(progress) - 5
