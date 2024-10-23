@@ -3,37 +3,28 @@ package idx
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 type SearchCfg struct {
-	Tag     string
-	Event   *evt.Event
+	Key     string
 	From    *float64
-	Limit   *uint64
+	Limit   uint32
 	Reverse bool
 }
 
 type SearchResult struct {
-	Outpoint *lib.Outpoint
+	Outpoint string
 	Score    float64
 }
 
-func Search(ctx context.Context, cfg *SearchCfg) (results []*SearchResult, err error) {
-	query := redis.ZRangeBy{}
-	if cfg.Limit != nil {
-		query.Count = int64(*cfg.Limit)
-	}
-	var key string
-	if cfg.Event == nil {
-		key = evt.TagKey(cfg.Tag)
-	} else {
-		key = evt.EventKey(cfg.Tag, cfg.Event)
-	}
-	var items []redis.Z
+func BuildQuery(cfg *SearchCfg) *redis.ZRangeBy {
+	query := &redis.ZRangeBy{}
+	query.Count = int64(cfg.Limit)
+
 	if cfg.Reverse {
 		if cfg.From != nil {
 			query.Max = fmt.Sprintf("(%f", *cfg.From)
@@ -41,9 +32,6 @@ func Search(ctx context.Context, cfg *SearchCfg) (results []*SearchResult, err e
 			query.Max = "+inf"
 		}
 		query.Min = "-inf"
-		if items, err = TxoDB.ZRevRangeByScoreWithScores(ctx, key, &query).Result(); err != nil {
-			return nil, err
-		}
 	} else {
 		if cfg.From != nil {
 			query.Min = fmt.Sprintf("(%f", *cfg.From)
@@ -51,20 +39,80 @@ func Search(ctx context.Context, cfg *SearchCfg) (results []*SearchResult, err e
 			query.Min = "-inf"
 		}
 		query.Max = "+inf"
-		if items, err = TxoDB.ZRevRangeByScoreWithScores(ctx, key, &query).Result(); err != nil {
-			return nil, err
-		}
 	}
+	return query
+}
 
-	out := make([]*SearchResult, 0, len(results))
-	for _, item := range items {
-		result := &SearchResult{
-			Score: item.Score,
-		}
-		if result.Outpoint, err = lib.NewOutpointFromString(item.Member.(string)); err != nil {
-			return nil, err
-		}
-		out = append(out, result)
+func Search(ctx context.Context, cfg *SearchCfg) (results []string, err error) {
+	query := BuildQuery(cfg)
+	var items []redis.Z
+	if cfg.Reverse {
+		items, err = TxoDB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
+	} else {
+		items, err = TxoDB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
 	}
-	return out, nil
+	if err != nil {
+		return nil, err
+	}
+	outpoints := make([]string, 0, len(items))
+	for _, item := range items {
+		outpoints = append(outpoints, item.Member.(string))
+	}
+	return outpoints, nil
+}
+
+func FilterSpent(ctx context.Context, outpoints []string) ([]string, error) {
+	if len(outpoints) == 0 {
+		return outpoints, nil
+	}
+	if spends, err := TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+		return nil, err
+	} else {
+		unspent := make([]string, 0, len(outpoints))
+		for i, outpoint := range outpoints {
+			if spends[i] == nil {
+				unspent = append(unspent, outpoint)
+			}
+		}
+		return unspent, nil
+	}
+}
+
+func SearchUtxos(ctx context.Context, cfg *SearchCfg) ([]string, error) {
+	if results, err := Search(ctx, cfg); err != nil {
+		return nil, err
+	} else if results, err = FilterSpent(ctx, results); err != nil {
+		return nil, err
+	} else {
+		return results, nil
+	}
+}
+
+func Balance(ctx context.Context, key string) (balance uint64, err error) {
+	var outpoints []string
+	balanceKey := BalanceKey(key)
+	if balance, err = AcctDB.Get(ctx, balanceKey).Uint64(); err != nil && err != redis.Nil {
+		return 0, err
+	} else if err != redis.Nil {
+		return balance, nil
+	} else if outpoints, err = Search(ctx, &SearchCfg{Key: key}); err != nil {
+		return 0, err
+	}
+	var msgpacks []interface{}
+	if msgpacks, err = TxoDB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
+		return
+	}
+	for _, mp := range msgpacks {
+		if mp != nil {
+			var txo Txo
+			if err = msgpack.Unmarshal([]byte(mp.(string)), &txo); err != nil {
+				return
+			}
+			if txo.Satoshis != nil {
+				balance += *txo.Satoshis
+			}
+		}
+	}
+	err = AcctDB.Set(ctx, balanceKey, balance, 60*time.Second).Err()
+	return
 }

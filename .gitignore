@@ -8,4 +8,5 @@ server
 subscribe
 owner-sync
 origin
+bsv21
 config/config.go

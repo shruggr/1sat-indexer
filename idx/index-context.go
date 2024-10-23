@@ -31,6 +31,7 @@ type IndexContext struct {
 	Spends         []*Txo                   `json:"spends"`
 	Indexers       []Indexer                `json:"-"`
 	Ctx            context.Context          `json:"-"`
+	Network        lib.Network              `json:"-"`
 	tags           []string                 `json:"-"`
 	ancestorConfig AncestorConfig           `json:"-"`
 }

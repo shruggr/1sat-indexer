@@ -12,6 +12,9 @@ import (
 const OwnerSyncKey = "own:sync"
 const OwnerAccountKey = "own:acct"
 
+// var OwnerTag = "own"
+// var AccountTag = "acct"
+
 func AccountKey(account string) string {
 	return "acct:" + account
 }

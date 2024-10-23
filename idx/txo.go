@@ -270,73 +270,71 @@ func (txo *Txo) SaveData(ctx context.Context) (err error) {
 	return nil
 }
 
-func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, error) {
-	if scores, err := TxoDB.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-		Key:   AccountTxosKey(acct),
-		Start: 0,
-		Stop:  -1,
-	}).Result(); err != nil {
-		return nil, err
-	} else {
-		if len(scores) == 0 {
-			return nil, nil
-		}
-		outpoints := make([]string, 0, len(scores))
-		for _, item := range scores {
-			member := item.Member.(string)
-			if len(member) > 64 {
-				outpoints = append(outpoints, member)
-			}
-		}
-		if spends, err := TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
-			return nil, err
-		} else {
-			unspent := make([]string, 0, len(outpoints))
-			for i, outpoint := range outpoints {
-				if spends[i] == nil {
-					unspent = append(unspent, outpoint)
-				}
-			}
+// func AccountUtxos(ctx context.Context, acct string, tags []string) ([]*Txo, error) {
+// 	if results, err := Search(ctx, &SearchCfg{
+// 		Key: AccountTxosKey(acct),
+// 	}); err != nil {
+// 		return nil, err
+// 	} else results, err = FilterSpent(ctx, results); err != nil {
+// 		if len(scores) == 0 {
+// 			return nil, nil
+// 		}
+// 		outpoints := make([]string, 0, len(scores))
+// 		for _, item := range scores {
+// 			member := item.Member.(string)
+// 			if len(member) > 64 {
+// 				outpoints = append(outpoints, member)
+// 			}
+// 		}
+// 		if spends, err := TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+// 			return nil, err
+// 		} else {
+// 			unspent := make([]string, 0, len(outpoints))
+// 			for i, outpoint := range outpoints {
+// 				if spends[i] == nil {
+// 					unspent = append(unspent, outpoint)
+// 				}
+// 			}
 
-			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
-				return nil, err
-			} else {
-				return txos, err
-			}
-		}
-	}
-}
+// 			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
+// 				return nil, err
+// 			} else {
+// 				return txos, err
+// 			}
+// 		}
+// 	}
+// }
 
-func AddressUtxos(ctx context.Context, address string, tags []string) ([]*Txo, error) {
-	if scores, err := TxoDB.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
-		Key:   OwnerTxosKey(address),
-		Start: 0,
-		Stop:  -1,
-	}).Result(); err != nil {
-		return nil, err
-	} else {
-		outpoints := make([]string, 0, len(scores))
-		for _, item := range scores {
-			member := item.Member.(string)
-			if len(member) > 64 {
-				outpoints = append(outpoints, member)
-			}
-		}
-		if spends, err := TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
-			return nil, err
-		} else {
-			unspent := make([]string, 0, len(outpoints))
-			for i, outpoint := range outpoints {
-				if spends[i] == nil {
-					unspent = append(unspent, outpoint)
-				}
-			}
+// func AddressUtxos(ctx context.Context, address string, tags []string) ([]*Txo, error) {
+// 	if scores, err := TxoDB.ZRangeArgsWithScores(ctx, redis.ZRangeArgs{
+// 		Key:   OwnerTxosKey(address),
+// 		Start: 0,
+// 		Stop:  -1,
+// 	}).Result(); err != nil {
+// 		return nil, err
+// 	} else {
+// 		outpoints := make([]string, 0, len(scores))
+// 		for _, item := range scores {
+// 			member := item.Member.(string)
+// 			if len(member) > 64 {
+// 				outpoints = append(outpoints, member)
+// 			}
+// 		}
+// 		if spends, err := TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+// 			return nil, err
+// 		} else {
+// 			unspent := make([]string, 0, len(outpoints))
+// 			for i, outpoint := range outpoints {
+// 				if spends[i] == nil {
+// 					unspent = append(unspent, outpoint)
+// 				}
+// 			}
 
-			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
-				return nil, err
-			} else {
-				return txos, err
-			}
-		}
-	}
-}
+// 			if txos, err := LoadTxos(ctx, unspent, tags); err != nil {
+// 				return nil, err
+// 			} else {
+// 				return txos, err
+// 			}
+// 		}
+// 	}
+// }

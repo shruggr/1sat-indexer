@@ -1,4 +1,5 @@
 go build cmd/block-sync/block-sync.go
+go build cmd/bsv21/bsv21.go
 go build cmd/ingest/ingest.go
 go build cmd/origin/origin.go
 go build cmd/owner-sync/owner-sync.go

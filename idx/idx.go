@@ -70,6 +70,10 @@ func LogKey(tag string) string {
 	return "log:" + tag
 }
 
+func BalanceKey(key string) string {
+	return "bal:" + key
+}
+
 func HeightScore(height uint32, idx uint64) float64 {
 	return float64(uint64(height)*1000000000 + idx)
 }

@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	// "github.com/GorillaPool/go-junglebus/models"
-
 	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -51,12 +49,13 @@ func main() {
 		genesis.Hash, _ = chainhash.NewHashFromHex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 		genesis.MerkleRoot, _ = chainhash.NewHashFromHex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b")
 
+		hash := genesis.Hash.String()
 		if _, err := blk.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-			if err := pipe.HSet(ctx, blk.BlockHeadersKey, genesis.Hash, genesis).Err(); err != nil {
+			if err := pipe.HSet(ctx, blk.BlockHeadersKey, hash, genesis).Err(); err != nil {
 				return err
 			} else if err := blk.DB.ZAdd(ctx, blk.BlockHeightKey, redis.Z{
 				Score:  0,
-				Member: genesis.Hash,
+				Member: hash,
 			}).Err(); err != nil {
 				return err
 			}

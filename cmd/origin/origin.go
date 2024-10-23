@@ -13,7 +13,7 @@ import (
 
 const MAX_DEPTH = 255
 
-var PAGE_SIZE = uint64(1000)
+var PAGE_SIZE = uint32(1000)
 
 // var CONCURRENCY = 1
 var ctx = context.Background()
@@ -22,33 +22,35 @@ var originIndexer = &bopen.OriginIndexer{}
 var ingest = &idx.IngestCtx{
 	Tag:      "origin",
 	Indexers: []idx.Indexer{originIndexer},
+	PageSize: PAGE_SIZE,
 	// Concurrency: uint(CONCURRENCY),
 }
 
 func main() {
 	for {
-		event := &evt.Event{
-			Id:    "outpoint",
-			Value: "",
+		searchCfg := &idx.SearchCfg{
+			Key: evt.EventKey("origin", &evt.Event{
+				Id:    "outpoint",
+				Value: "",
+			}),
+			Limit: PAGE_SIZE,
 		}
-		if results, err := idx.Search(ctx, &idx.SearchCfg{
-			Tag:   "origin",
-			Event: event,
-			Limit: &PAGE_SIZE,
-		}); err != nil {
+		if outpoints, err := idx.Search(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
-			for _, result := range results {
-				if origin, err := ResolveOrigin(result.Outpoint, 0); err != nil {
+			for _, outpoint := range outpoints {
+				if op, err := lib.NewOutpointFromString(outpoint); err != nil {
+					log.Panic(err)
+				} else if origin, err := ResolveOrigin(op, 0); err != nil {
 					log.Panic(err)
 				} else if origin.Outpoint != nil {
-					log.Println("Resolved origin:", result.Outpoint.String(), "->", origin.Outpoint.String(), origin.Nonce)
-					if err := idx.TxoDB.ZRem(ctx, evt.EventKey("origin", event), result.Outpoint.String()).Err(); err != nil {
+					log.Println("Resolved origin:", outpoint, "->", origin.Outpoint.String(), origin.Nonce)
+					if err := idx.TxoDB.ZRem(ctx, searchCfg.Key, outpoint).Err(); err != nil {
 						log.Panic(err)
 					}
 				}
 			}
-			if len(results) == 0 {
+			if len(outpoints) == 0 {
 				// log.Println("No results")
 				time.Sleep(time.Second)
 			}

@@ -8,8 +8,12 @@ import (
 
 type PKHash []byte
 
-func (p *PKHash) Address() string {
-	add, _ := script.NewAddressFromPublicKeyHash(*p, true)
+func (p *PKHash) Address(network ...Network) string {
+	mainnet := true
+	if len(network) > 0 {
+		mainnet = network[0] != Testnet
+	}
+	add, _ := script.NewAddressFromPublicKeyHash(*p, mainnet)
 	return add.AddressString
 }
 

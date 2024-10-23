@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
@@ -13,57 +14,74 @@ import (
 
 type IngestCtx struct {
 	Tag         string
+	Key         string
 	Indexers    []Indexer
 	Concurrency uint
 	Verbose     bool
-	limiter     chan struct{}
+	PageSize    uint32
+	Limit       uint32
+	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
+	// limiter     chan struct{}
 }
 
 func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
-	cfg.limiter = make(chan struct{}, cfg.Concurrency)
+	limiter := make(chan struct{}, cfg.Concurrency)
 	errors := make(chan error)
 	done := make(chan string)
 	inflight := make(map[string]struct{})
 	ticker := time.NewTicker(15 * time.Second)
-	txcount := 0
-	queueKey := QueueKey(cfg.Tag)
+	ingestcount := 0
+	txcount := uint32(0)
+	// queueKey := QueueKey(cfg.Tag)
+	wg := sync.WaitGroup{}
 	for {
 		select {
 		case <-ticker.C:
-			log.Println("Transactions - Ingested", txcount, txcount/15, "tx/s")
-			txcount = 0
+			log.Println("Transactions - Ingested", ingestcount, ingestcount/15, "tx/s")
+			ingestcount = 0
 		case txid := <-done:
 			delete(inflight, txid)
-			txcount++
+			ingestcount++
+			wg.Done()
 		case err := <-errors:
 			log.Println("Error", err)
 			return err
 		default:
 			if cfg.Verbose {
-				log.Println("Loading", PAGE_SIZE, "transactions to ingest")
+				log.Println("Loading", cfg.PageSize, "transactions to ingest")
 			}
 			if txids, err := QueueDB.ZRangeArgs(ctx, redis.ZRangeArgs{
-				Key:   queueKey,
+				Key:   cfg.Key,
 				Start: 0,
-				Stop:  PAGE_SIZE - 1,
+				Stop:  cfg.PageSize - 1,
 			}).Result(); err != nil {
 				log.Panic(err)
 			} else {
 				for _, txid := range txids {
 					if _, ok := inflight[txid]; !ok {
+						txcount++
+						if cfg.Limit > 0 && txcount > cfg.Limit {
+							wg.Wait()
+							return nil
+						}
 						inflight[txid] = struct{}{}
-						cfg.limiter <- struct{}{}
+						limiter <- struct{}{}
+						wg.Add(1)
 						go func(txid string) {
 							defer func() {
-								<-cfg.limiter
+								<-limiter
 								done <- txid
 							}()
-							if _, err := cfg.IngestTxid(ctx, txid, AncestorConfig{
+							if idxCtx, err := cfg.IngestTxid(ctx, txid, AncestorConfig{
 								Load:  true,
 								Parse: true,
 								Save:  true,
 							}); err != nil {
 								errors <- err
+							} else if cfg.OnIngest != nil {
+								if err := (*cfg.OnIngest)(ctx, idxCtx); err != nil {
+									errors <- err
+								}
 							}
 						}(txid)
 					}
@@ -110,12 +128,14 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 	if err = Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
 		return
-	} else if err = Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
-		log.Panic(err)
-		return
-	} else if err = Dequeue(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
-		log.Panic(err)
-		return
+	} else if len(cfg.Tag) > 0 {
+		if err = Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+			log.Panic(err)
+			return
+		} else if err = Dequeue(ctx, QueueKey(cfg.Tag), idxCtx.TxidHex); err != nil {
+			log.Panic(err)
+			return
+		}
 	}
 
 	log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))

@@ -235,7 +235,11 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := idx.AddressUtxos(c.Context(), address, tags); err != nil {
+		if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
+			Key: idx.OwnerTxosKey(address),
+		}); err != nil {
+			return err
+		} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
@@ -327,7 +331,11 @@ func main() {
 			tags = strings.Split(queryTags, ",")
 		}
 
-		if txos, err := idx.AccountUtxos(c.Context(), account, tags); err != nil {
+		if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
+			Key: idx.AccountTxosKey(account),
+		}); err != nil {
+			return err
+		} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
 			return err
 		} else {
 			return c.JSON(txos)
