@@ -48,7 +48,7 @@ func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDat
 			return nil
 		} else {
 			pkhash := lib.PKHash(op.Data)
-			lock.Address = pkhash.Address()
+			lock.Address = pkhash.Address(idxCtx.Network)
 			txo.AddOwner(lock.Address)
 		}
 		if op, err := scr.ReadOp(&pos); err != nil {

@@ -25,6 +25,7 @@ type BroadcaseResponse struct {
 func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *BroadcaseResponse) {
 	var ingest = &idx.IngestCtx{
 		Indexers: config.Indexers,
+		Network:  config.Network,
 		Tag:      "broadcast",
 	}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/jb"
+	"github.com/shruggr/1sat-indexer/lib"
 )
 
 type IngestCtx struct {
@@ -20,6 +21,7 @@ type IngestCtx struct {
 	Verbose     bool
 	PageSize    uint32
 	Limit       uint32
+	Network     lib.Network
 	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
 	// limiter     chan struct{}
 }
@@ -104,7 +106,7 @@ func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string, ancestorCfg An
 }
 
 func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
-	idxCtx = NewIndexContext(ctx, tx, cfg.Indexers, ancestorCfg)
+	idxCtx = NewIndexContext(ctx, tx, cfg.Indexers, ancestorCfg, cfg.Network)
 	idxCtx.ParseTxn()
 	return
 }
@@ -132,7 +134,7 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 		if err = Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 			log.Panic(err)
 			return
-		} else if err = Dequeue(ctx, QueueKey(cfg.Tag), idxCtx.TxidHex); err != nil {
+		} else if err = Dequeue(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
 			log.Panic(err)
 			return
 		}

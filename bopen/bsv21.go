@@ -65,7 +65,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 	txo := idxCtx.Txos[vout]
 
 	var err error
-	if bsv21Data, ok := txo.Data[ONESAT_LABEL]; !ok {
+	if bsv21Data, ok := txo.Data[BOPEN_TAG]; !ok {
 		return nil
 	} else if bopen, ok := bsv21Data.Data.(OneSat); !ok {
 		return nil

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -23,6 +24,7 @@ var ingest = &idx.IngestCtx{
 	Tag:      "origin",
 	Indexers: []idx.Indexer{originIndexer},
 	PageSize: PAGE_SIZE,
+	Network:  config.Network,
 	// Concurrency: uint(CONCURRENCY),
 }
 

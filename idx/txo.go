@@ -66,6 +66,9 @@ func LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error) 
 }
 
 func LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
+	}
 	if msgpacks, err := TxoDB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {

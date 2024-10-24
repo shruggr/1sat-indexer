@@ -27,6 +27,7 @@ func main() {
 		Tag:         TAG,
 		Key:         idx.QueueKey(QUEUE),
 		Indexers:    config.Indexers,
+		Network:     config.Network,
 		Concurrency: CONCURRENCY,
 		Verbose:     VERBOSE > 0,
 	}).Exec(ctx); err != nil {

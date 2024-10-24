@@ -8,6 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 )
@@ -25,6 +26,7 @@ var ingest = &idx.IngestCtx{
 		&bopen.Bsv21Indexer{},
 		&bopen.OrdLockIndexer{},
 	},
+	Network:     config.Network,
 	Concurrency: 1,
 	PageSize:    PAGE_SIZE,
 }
