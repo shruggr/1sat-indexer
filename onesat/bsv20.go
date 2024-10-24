@@ -1,4 +1,4 @@
-package bopen
+package onesat
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,6 @@ import (
 	bip32 "github.com/bitcoin-sv/go-sdk/compat/bip32"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/lib"
 )
 
 type Bsv20Status int
@@ -30,25 +29,18 @@ const BSV20_INDEX_FEE = 1000
 const BSV20_INCLUDE_FEE = 10000000
 
 type Bsv20 struct {
-	Ticker        string        `json:"tick,omitempty"`
-	Op            string        `json:"op"`
-	Max           uint64        `json:"-"`
-	Limit         uint64        `json:"-"`
-	Decimals      uint8         `json:"-"`
-	Icon          *lib.Outpoint `json:"-"`
-	Supply        uint64        `json:"-"`
-	Amt           *uint64       `json:"amt"`
-	Implied       bool          `json:"-"`
-	Status        Bsv20Status   `json:"-"`
-	Reason        *string       `json:"reason,omitempty"`
-	PKHash        *lib.PKHash   `json:"owner,omitempty"`
-	Price         uint64        `json:"price,omitempty"`
-	PayOut        []byte        `json:"payout,omitempty"`
-	Listing       bool          `json:"listing"`
-	PricePerToken float64       `json:"pricePer,omitempty"`
-	FundPath      string        `json:"-"`
-	FundPKHash    []byte        `json:"-"`
-	FundBalance   int           `json:"-"`
+	Ticker      string      `json:"tick,omitempty"`
+	Op          string      `json:"op"`
+	Max         uint64      `json:"-"`
+	Limit       uint64      `json:"-"`
+	Decimals    uint8       `json:"-"`
+	Amt         *uint64     `json:"amt"`
+	Implied     bool        `json:"-"`
+	Status      Bsv20Status `json:"-"`
+	Reason      *string     `json:"reason,omitempty"`
+	FundPath    string      `json:"-"`
+	FundPKHash  []byte      `json:"-"`
+	FundBalance int         `json:"-"`
 }
 
 const BSV20_TAG = "bsv20"
@@ -66,15 +58,15 @@ func (i *Bsv20Indexer) Tag() string {
 func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
-	if idxData, ok := txo.Data[ONESAT_LABEL]; !ok {
+	if idxData, ok := txo.Data[INSC_TAG]; !ok {
 		return nil
-	} else if bopen, ok := idxData.Data.(OneSat); !ok {
+	} else if insc, ok := idxData.Data.(*Inscription); !ok {
 		return nil
-	} else if data, ok := bopen[BSV20_TAG].(map[string]string); !ok {
+	} else if insc.JsonMap == nil || insc.File == nil || !(strings.HasPrefix(insc.File.Type, "application/bsv-20") || (strings.HasPrefix(insc.File.Type, "text/plain") && idxCtx.Height < 793000)) {
 		return nil
-	} else if protocol, ok := data["p"]; !ok || protocol != "bsv-20" {
+	} else if protocol, ok := insc.JsonMap["p"]; !ok || protocol != "bsv-20" {
 		return nil
-	} else if tick, ok := data["tick"]; !ok {
+	} else if tick, ok := insc.JsonMap["tick"]; !ok {
 		return nil
 	} else {
 		if chars := []rune(tick); len(chars) > 4 {
@@ -88,13 +80,13 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		// } else if i.BlacklistFn != nil || (*i.BlacklistFn)(bsv20.Ticker) {
 		// 	return nil
 		// } else
-		if op, ok := data["op"]; !ok {
+		if op, ok := insc.JsonMap["op"]; !ok {
 			return nil
 		} else {
 			bsv20.Op = strings.ToLower(op)
 		}
 
-		if amt, ok := data["amt"]; ok {
+		if amt, ok := insc.JsonMap["amt"]; ok {
 			if amt, err := strconv.ParseUint(amt, 10, 64); err != nil {
 				return nil
 			} else {
@@ -102,7 +94,7 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			}
 		}
 
-		if dec, ok := data["dec"]; ok {
+		if dec, ok := insc.JsonMap["dec"]; ok {
 			if val, err := strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
 				return nil
 			} else {
@@ -113,12 +105,12 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		var err error
 		switch bsv20.Op {
 		case "deploy":
-			if max, ok := data["max"]; ok {
+			if max, ok := insc.JsonMap["max"]; ok {
 				if bsv20.Max, err = strconv.ParseUint(max, 10, 64); err != nil {
 					return nil
 				}
 			}
-			if limit, ok := data["lim"]; ok {
+			if limit, ok := insc.JsonMap["lim"]; ok {
 				if bsv20.Limit, err = strconv.ParseUint(limit, 10, 64); err != nil {
 					return nil
 				}
@@ -154,8 +146,4 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			PostProcess: true,
 		}
 	}
-}
-
-func ParseBsv20Inscription(ord *File, txo *idx.Txo) (bsv20 *Bsv20) {
-	return bsv20
 }

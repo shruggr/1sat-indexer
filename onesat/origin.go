@@ -1,4 +1,4 @@
-package bopen
+package onesat
 
 import (
 	"encoding/json"
@@ -9,6 +9,8 @@ import (
 )
 
 const ORIGIN_TAG = "origin"
+
+var TRIGGER = uint32(783968)
 
 type Origin struct {
 	Outpoint *lib.Outpoint `json:"outpoint"`

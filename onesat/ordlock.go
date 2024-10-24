@@ -1,4 +1,4 @@
-package bopen
+package onesat
 
 import (
 	"bytes"
@@ -57,7 +57,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 		if _, err = payOutput.ReadFrom(bytes.NewReader(ordLockOps[1].Data)); err != nil {
 			return nil
 		}
-		txo.AddOwner(pkhash.Address(idxCtx.Network))
+		txo.AddOwner(pkhash.Address())
 
 		ordLock := &OrdLock{
 			Price:  payOutput.Satoshis,
@@ -69,7 +69,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 			Data: ordLock,
 		}
 		ordLock.Tags = append(ordLock.Tags, "")
-		ordLock.Tags = append(ordLock.Tags, pkhash.Address(idxCtx.Network))
+		ordLock.Tags = append(ordLock.Tags, pkhash.Address())
 		if bsv21Data, ok := txo.Data[BSV21_TAG]; ok {
 			bsv21 := bsv21Data.Data.(*Bsv21)
 			ordLock.Tags = append(ordLock.Tags, bsv21.Id)

@@ -1,11 +1,14 @@
-package bopen
+package bitcom
 
 import (
 	"crypto/sha256"
 
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/lib"
 )
+
+var B_PROTO = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 
 type BIndexer struct {
 	idx.BaseIndexer
@@ -17,23 +20,30 @@ func (i *BIndexer) Tag() string {
 
 func (i *BIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
-		if b, ok := bopen.Data.(OneSat)[i.Tag()].(*File); ok {
-			idxData = &idx.IndexData{
-				Data: b,
+	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
+		for _, b := range bitcomData.Data.([]*Bitcom) {
+			if b.Protocol == B_PROTO {
+				b := ParseB(script.NewFromBytes(b.Script), 0)
+				if b != nil {
+					idxData = &idx.IndexData{
+						Data: b,
+					}
+					break
+				}
 			}
 		}
 	}
 	return
 }
 
-func ParseB(scr *script.Script, idx *int) (b *File) {
-	b = &File{}
+func ParseB(scr *script.Script, idx int) (b *lib.File) {
+	pos := &idx
+	b = &lib.File{}
 	for i := 0; i < 4; i++ {
-		prevIdx := *idx
-		op, err := scr.ReadOp(idx)
+		prevIdx := *pos
+		op, err := scr.ReadOp(pos)
 		if err != nil || op.Op == script.OpRETURN || (op.Op == 1 && op.Data[0] == '|') {
-			*idx = prevIdx
+			*pos = prevIdx
 			break
 		}
 

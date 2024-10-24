@@ -5,11 +5,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/shruggr/1sat-indexer/bopen"
 	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/onesat"
 )
 
 const MAX_DEPTH = 255
@@ -18,7 +18,7 @@ var PAGE_SIZE = uint32(1000)
 
 // var CONCURRENCY = 1
 var ctx = context.Background()
-var originIndexer = &bopen.OriginIndexer{}
+var originIndexer = &onesat.OriginIndexer{}
 
 var ingest = &idx.IngestCtx{
 	Tag:      "origin",
@@ -60,7 +60,7 @@ func main() {
 	}
 }
 
-func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *bopen.Origin, err error) {
+func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, err error) {
 	if idxCtx, err := ingest.ParseTxid(ctx, outpoint.TxidHex(), idx.AncestorConfig{
 		Load:  true,
 		Parse: true,
@@ -68,8 +68,8 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *bopen.Origin, e
 		log.Panic(err)
 	} else {
 		txo := idxCtx.Txos[outpoint.Vout()]
-		if originData, ok := txo.Data[bopen.ORIGIN_TAG]; ok {
-			origin = originData.Data.(*bopen.Origin)
+		if originData, ok := txo.Data[onesat.ORIGIN_TAG]; ok {
+			origin = originData.Data.(*onesat.Origin)
 		}
 		if origin.Outpoint == nil {
 			satsIn := uint64(0)
@@ -79,9 +79,9 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *bopen.Origin, e
 					continue
 				}
 				if satsIn == txo.OutAcc && *spend.Satoshis == 1 {
-					var parent *bopen.Origin
-					if o, ok := spend.Data[bopen.ORIGIN_TAG]; ok {
-						parent = o.Data.(*bopen.Origin)
+					var parent *onesat.Origin
+					if o, ok := spend.Data[onesat.ORIGIN_TAG]; ok {
+						parent = o.Data.(*onesat.Origin)
 					}
 
 					if parent == nil || parent.Outpoint == nil {

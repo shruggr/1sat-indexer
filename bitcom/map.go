@@ -1,4 +1,4 @@
-package bopen
+package bitcom
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/idx"
 )
+
+var MAP_PROTO = "1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5"
 
 const MAP_TAG = "map"
 
@@ -32,37 +34,43 @@ func (i *MapIndexer) FromBytes(data []byte) (any, error) {
 
 func (i *MapIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
-		if m, ok := bopen.Data.(OneSat)[MAP_TAG].(Map); ok {
+	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
+		mp := Map{}
+		for _, b := range bitcomData.Data.([]*Bitcom) {
+			if b.Protocol == MAP_PROTO {
+				ParseMAP(mp, script.NewFromBytes(b.Script), 0)
+			}
+		}
+		if len(mp) > 0 {
 			idxData = &idx.IndexData{
-				Data: m,
+				Data: mp,
 			}
 		}
 	}
 	return
 }
 
-func ParseMAP(scr *script.Script, idx *int) (mp Map) {
-	op, err := scr.ReadOp(idx)
+func ParseMAP(mp Map, scr *script.Script, idx int) {
+	pos := &idx
+	op, err := scr.ReadOp(pos)
 	if err != nil {
 		return
 	}
 	if string(op.Data) != "SET" {
-		return nil
+		return
 	}
-	mp = Map{}
 	for {
-		prevIdx := *idx
-		op, err = scr.ReadOp(idx)
+		prevIdx := *pos
+		op, err = scr.ReadOp(pos)
 		if err != nil || op.Op == script.OpRETURN || (op.Op == 1 && op.Data[0] == '|') {
-			*idx = prevIdx
+			*pos = prevIdx
 			break
 		}
 		opKey := strings.Replace(string(bytes.Replace(op.Data, []byte{0}, []byte{' '}, -1)), "\\u0000", " ", -1)
-		prevIdx = *idx
-		op, err = scr.ReadOp(idx)
+		prevIdx = *pos
+		op, err = scr.ReadOp(pos)
 		if err != nil || op.Op == script.OpRETURN || (op.Op == 1 && op.Data[0] == '|') {
-			*idx = prevIdx
+			*pos = prevIdx
 			break
 		}
 
@@ -87,6 +95,4 @@ func ParseMAP(scr *script.Script, idx *int) (mp Map) {
 			}
 		}
 	}
-
-	return
 }

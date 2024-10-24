@@ -120,6 +120,9 @@ func (idxCtx *IndexContext) ParseTxos() {
 				txo.Data[indexer.Tag()] = data
 			}
 		}
+		for _, indexer := range idxCtx.Indexers {
+			indexer.PreSave(idxCtx)
+		}
 	}
 }
 
@@ -171,9 +174,6 @@ func (idxCtx *IndexContext) Save() error {
 }
 
 func (idxCtx *IndexContext) SaveTxos() error {
-	for _, indexer := range idxCtx.Indexers {
-		indexer.PreSave(idxCtx)
-	}
 	for _, txo := range idxCtx.Txos {
 		if err := txo.Save(idxCtx.Ctx, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err

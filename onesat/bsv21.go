@@ -1,4 +1,4 @@
-package bopen
+package onesat
 
 import (
 	"crypto/sha256"
@@ -27,20 +27,16 @@ var (
 )
 
 type Bsv21 struct {
-	Id            string      `json:"id,omitempty"`
-	Op            string      `json:"op"`
-	Symbol        *string     `json:"sym,omitempty"`
-	Decimals      uint8       `json:"dec"`
-	Icon          string      `json:"icon,omitempty"`
-	Amt           uint64      `json:"amt"`
-	Status        Bsv20Status `json:"status"`
-	Reason        *string     `json:"reason,omitempty"`
-	Price         uint64      `json:"price,omitempty"`
-	PayOut        []byte      `json:"payout,omitempty"`
-	Listing       bool        `json:"listing"`
-	PricePerToken float64     `json:"pricePer,omitempty"`
-	FundAddress   string      `json:"fundAddress,omitempty"`
-	FundBalance   int         `json:"-"`
+	Id          string      `json:"id,omitempty"`
+	Op          string      `json:"op"`
+	Symbol      *string     `json:"sym,omitempty"`
+	Decimals    uint8       `json:"dec"`
+	Icon        string      `json:"icon,omitempty"`
+	Amt         uint64      `json:"amt"`
+	Status      Bsv20Status `json:"status"`
+	Reason      *string     `json:"reason,omitempty"`
+	FundAddress string      `json:"fundAddress,omitempty"`
+	FundBalance int         `json:"-"`
 }
 
 type Bsv21Indexer struct {
@@ -65,15 +61,15 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 	txo := idxCtx.Txos[vout]
 
 	var err error
-	if bsv21Data, ok := txo.Data[BOPEN_TAG]; !ok {
+	if idxData, ok := txo.Data[INSC_TAG]; !ok {
 		return nil
-	} else if bopen, ok := bsv21Data.Data.(OneSat); !ok {
+	} else if insc, ok := idxData.Data.(*Inscription); !ok {
 		return nil
-	} else if data, ok := bopen[BSV20_TAG].(map[string]string); !ok {
+	} else if insc.JsonMap == nil || insc.File == nil || insc.File.Type != "application/bsv-20" {
 		return nil
-	} else if protocol, ok := data["p"]; !ok || protocol != "bsv-20" {
+	} else if protocol, ok := insc.JsonMap["p"]; !ok || protocol != "bsv-20" {
 		return nil
-	} else if id, ok := data["id"]; !ok {
+	} else if id, ok := insc.JsonMap["id"]; !ok {
 		return nil
 	} else if _, err = lib.NewOutpointFromString(id); err != nil {
 		return nil
@@ -94,19 +90,19 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		bsv21 := &Bsv21{
 			Id: id,
 		}
-		if op, ok := data["op"]; ok {
+		if op, ok := insc.JsonMap["op"]; ok {
 			bsv21.Op = strings.ToLower(op)
 		} else {
 			return nil
 		}
 
-		if amt, ok := data["amt"]; ok {
+		if amt, ok := insc.JsonMap["amt"]; ok {
 			if bsv21.Amt, err = strconv.ParseUint(amt, 10, 64); err != nil {
 				return nil
 			}
 		}
 
-		if dec, ok := data["dec"]; ok {
+		if dec, ok := insc.JsonMap["dec"]; ok {
 			var val uint64
 			if val, err = strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
 				return nil
@@ -118,11 +114,11 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 
 		switch bsv21.Op {
 		case "deploy+mint":
-			if sym, ok := data["sym"]; ok {
+			if sym, ok := insc.JsonMap["sym"]; ok {
 				bsv21.Symbol = &sym
 			}
 			bsv21.Status = Valid
-			if icon, ok := data["icon"]; ok {
+			if icon, ok := insc.JsonMap["icon"]; ok {
 				if strings.HasPrefix(icon, "_") {
 					icon = fmt.Sprintf("%x%s", txo.Outpoint.Txid(), icon)
 				}

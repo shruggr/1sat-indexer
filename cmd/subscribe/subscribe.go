@@ -5,7 +5,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/bopen"
+	"github.com/shruggr/1sat-indexer/onesat"
 	"github.com/shruggr/1sat-indexer/sub"
 )
 
@@ -25,7 +25,7 @@ func init() {
 	flag.StringVar(&TAG, "tag", "", "(REQUIRED) Subscription Tag")
 	flag.StringVar(&QUEUE, "q", "ingest", "Queue")
 	flag.StringVar(&TOPIC, "t", "", "(REQUIRED) Junglebus SubscriptionID")
-	flag.UintVar(&FROM_BLOCK, "s", uint(bopen.TRIGGER), "Start from block")
+	flag.UintVar(&FROM_BLOCK, "s", uint(onesat.TRIGGER), "Start from block")
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")

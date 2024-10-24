@@ -1,4 +1,4 @@
-package bopen
+package bitcom
 
 import (
 	"crypto/sha256"
@@ -11,9 +11,10 @@ import (
 	bsm "github.com/bitcoin-sv/go-sdk/compat/bsm"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 )
+
+var SIGMA_PROTO = "SIGMA"
 
 type Sigmas []*Sigma
 
@@ -47,31 +48,35 @@ func (i *SigmaIndexer) Tag() string {
 
 func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
-		if sigs, ok := bopen.Data.(OneSat)[i.Tag()].(*Sigmas); ok {
-			idxData = &idx.IndexData{
-				Data: sigs,
+	var sigmas Sigmas
+	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
+		for _, b := range bitcomData.Data.([]*Bitcom) {
+			if b.Protocol == SIGMA_PROTO {
+				sigma := ParseSigma(idxCtx.Tx, vout, b.Pos)
+				if sigma != nil {
+					sigmas = append(sigmas, sigma)
+				}
 			}
-			for _, sig := range *sigs {
-				idxData.Events = append(idxData.Events, &evt.Event{
-					Id:    "address",
-					Value: sig.Address,
-				})
-			}
+		}
+	}
+	if len(sigmas) > 0 {
+		idxData = &idx.IndexData{
+			Data: sigmas,
 		}
 	}
 	return
 }
 
-func ParseSigma(tx *transaction.Transaction, vout uint32, idx *int) (sigma *Sigma) {
+func ParseSigma(tx *transaction.Transaction, vout uint32, idx int) (sigma *Sigma) {
+	pos := &idx
 	scr := *tx.Outputs[vout].LockingScript
-	startIdx := *idx
+	startIdx := *pos
 	sigma = &Sigma{}
 	for i := 0; i < 4; i++ {
-		prevIdx := *idx
-		op, err := scr.ReadOp(idx)
+		prevIdx := *pos
+		op, err := scr.ReadOp(pos)
 		if err != nil || op.Op == script.OpRETURN || (op.Op == 1 && op.Data[0] == '|') {
-			*idx = prevIdx
+			*pos = prevIdx
 			break
 		}
 

@@ -10,7 +10,7 @@ import (
 	"github.com/shruggr/1sat-indexer/jb"
 )
 
-var hexId = "40993922b7d7384379b401530e1ce3c4ccfdcedd322e5ad471de795d9d4280a9"
+var hexId = "13a64319ae38b90984c7b170c2c387c28055529f1ed5ad2b45e9a514d9f0a5ba"
 
 func main() {
 	ctx := context.Background()
@@ -31,6 +31,22 @@ func main() {
 			log.Println(string(out))
 		}
 	}
+
+	ingest := &idx.IngestCtx{
+		Indexers:    config.Indexers,
+		Concurrency: 1,
+		Verbose:     true,
+	}
+
+	if idxCtx, err := ingest.ParseTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+		log.Panic(err)
+	} else {
+		if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
+			log.Panic(err)
+		} else {
+			log.Println(string(out))
+		}
+	}
 	// scores, err := rdb.ZMScore(context.Background(), "txqueue", "1", "2").Result()
 
 	// tx, err := lib.JB.GetTransaction(context.Background(), hexId)
@@ -43,6 +59,7 @@ func main() {
 	// if err != nil {
 	// 	log.Panic(err)
 	// }
+
 	// ordinals.ParseInscriptions(txnCtx)
 
 	// // opns.ParseOpNS(txnCtx)
