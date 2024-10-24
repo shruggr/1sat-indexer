@@ -73,7 +73,9 @@ func (i *InscriptionIndexer) PreSave(idxCtx *idx.IndexContext) {
 	}
 }
 
-func ParseInscription(txo *idx.Txo, scr *script.Script, fromPos *int, bopen OneSat) *Inscription {
+func ParseInscription(idxCtx *idx.IndexContext, vout uint32, fromPos *int, bopen OneSat) *Inscription {
+	txo := idxCtx.Txos[vout]
+	scr := idxCtx.Tx.Outputs[vout].LockingScript
 	insc := &Inscription{
 		File: &File{},
 	}
@@ -170,12 +172,12 @@ ordLoop:
 
 	if len(*scr) >= pos+25 && script.NewFromBytes((*scr)[pos:pos+25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+3 : pos+23])
-		txo.AddOwner(pkhash.Address())
+		txo.AddOwner(pkhash.Address(idxCtx.Network))
 	} else if len(*scr) >= pos+26 &&
 		(*scr)[pos] == script.OpCODESEPARATOR &&
 		script.NewFromBytes((*scr)[pos+1:pos+26]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+4 : pos+24])
-		txo.AddOwner(pkhash.Address())
+		txo.AddOwner(pkhash.Address(idxCtx.Network))
 	}
 
 	return insc

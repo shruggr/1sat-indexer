@@ -131,8 +131,8 @@ func UpdateAccount(ctx context.Context, account string, owners []string) (bool, 
 			return false, err
 		} else if err = TxoDB.ZRangeStore(ctx, AccountTxosKey(account), redis.ZRangeArgs{
 			Key:   OwnerTxosKey(owner),
-			Start: "-inf",
-			Stop:  "+inf",
+			Start: 0,
+			Stop:  -1,
 		}).Err(); err != nil {
 			return false, err
 		}

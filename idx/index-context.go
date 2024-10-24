@@ -36,13 +36,18 @@ type IndexContext struct {
 	ancestorConfig AncestorConfig           `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig) *IndexContext {
+func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
 	idxCtx := &IndexContext{
 		Tx:             tx,
 		Txid:           tx.TxID(),
 		Indexers:       indexers,
 		Ctx:            ctx,
 		ancestorConfig: ancestorConfig,
+	}
+	if len(network) > 0 {
+		idxCtx.Network = network[0]
+	} else {
+		idxCtx.Network = lib.Mainnet
 	}
 	idxCtx.TxidHex = idxCtx.Txid.String()
 
@@ -106,7 +111,7 @@ func (idxCtx *IndexContext) ParseTxos() {
 		}
 		if len(*txout.LockingScript) >= 25 && script.NewFromBytes((*txout.LockingScript)[:25]).IsP2PKH() {
 			pkhash := lib.PKHash((*txout.LockingScript)[3:23])
-			txo.AddOwner(pkhash.Address())
+			txo.AddOwner(pkhash.Address(idxCtx.Network))
 		}
 		idxCtx.Txos = append(idxCtx.Txos, txo)
 		accSats += txout.Satoshis
@@ -139,7 +144,7 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 			log.Panicln(err)
 			return nil, err
 		} else {
-			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{})
+			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]
 			if idxCtx.ancestorConfig.Save {

@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.14
-	github.com/bitcoin-sv/go-sdk v1.1.10
+	github.com/bitcoin-sv/go-sdk v1.1.11
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/joho/godotenv v1.5.1
 	github.com/ordishs/go-bitcoin v1.0.86
@@ -18,7 +18,6 @@ require (
 	bitbucket.org/simon_ordish/cryptolib v1.0.48 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173 // indirect
-	github.com/bitcoinsv/bsvlog v0.0.0-20181216181007-cb81b076bf2e // indirect
 	github.com/bitcoinsv/bsvutil v0.0.0-20181216182056-1d77cf353ea9 // indirect
 	github.com/centrifugal/centrifuge-go v0.10.3 // indirect
 	github.com/centrifugal/protocol v0.13.4 // indirect

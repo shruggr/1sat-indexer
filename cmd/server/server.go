@@ -39,10 +39,7 @@ var currentSessions = sse.SessionsLock{
 
 var indexedTags = make([]string, 0, len(config.Indexers))
 
-var ingest = &idx.IngestCtx{
-	Indexers:    config.Indexers,
-	Concurrency: CONCURRENCY,
-}
+var ingest *idx.IngestCtx
 
 var chaintip *blk.BlockHeader
 
@@ -52,6 +49,12 @@ func init() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
+
+	ingest = &idx.IngestCtx{
+		Indexers:    config.Indexers,
+		Concurrency: CONCURRENCY,
+		Network:     config.Network,
+	}
 
 	for _, indexer := range config.Indexers {
 		indexedTags = append(indexedTags, indexer.Tag())

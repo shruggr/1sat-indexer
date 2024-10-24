@@ -75,7 +75,7 @@ func (i *BOpenIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 	start := 0
 	if len(*scr) >= 25 && script.NewFromBytes((*scr)[:25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[3:23])
-		txo.AddOwner(pkhash.Address())
+		txo.AddOwner(pkhash.Address(idxCtx.Network))
 		start = 25
 	}
 
@@ -107,7 +107,7 @@ func (i *BOpenIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			}
 		case script.OpDATA3:
 			if i > 2 && bytes.Equal(op.Data, []byte("ord")) && (*scr)[startI-2] == 0 && (*scr)[startI-1] == script.OpIF {
-				insc := ParseInscription(txo, scr, &i, bopen)
+				insc := ParseInscription(idxCtx, vout, &i, bopen)
 				bopen.addInstance(insc)
 			}
 		}
