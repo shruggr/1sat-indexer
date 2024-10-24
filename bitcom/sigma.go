@@ -3,15 +3,17 @@ package bitcom
 import (
 	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"log"
 	"strconv"
 
 	bsm "github.com/bitcoin-sv/go-sdk/compat/bsm"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bitcoin-sv/go-sdk/util"
 	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/lib"
 )
 
 var SIGMA_PROTO = "SIGMA"
@@ -68,6 +70,8 @@ func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *id
 }
 
 func ParseSigma(tx *transaction.Transaction, vout uint32, idx int) (sigma *Sigma) {
+	txid := tx.TxID().String()
+	log.Println(txid)
 	startIdx := idx
 	pos := &idx
 	scr := *tx.Outputs[vout].LockingScript
@@ -98,9 +102,10 @@ func ParseSigma(tx *transaction.Transaction, vout uint32, idx int) (sigma *Sigma
 		}
 	}
 
-	outpoint := lib.NewOutpointFromHash(tx.Inputs[sigma.Vin].SourceTXID, tx.Inputs[sigma.Vin].SourceTxOutIndex)
+	outpoint := util.ReverseBytes(tx.Inputs[sigma.Vin].SourceTXID.CloneBytes())
+	outpoint = binary.LittleEndian.AppendUint32(outpoint, tx.Inputs[sigma.Vin].SourceTxOutIndex)
+	inputHash := sha256.Sum256(outpoint)
 
-	inputHash := sha256.Sum256(*outpoint)
 	var scriptBuf []byte
 	if scr[startIdx-7] == script.OpRETURN {
 		scriptBuf = scr[:startIdx-7]
