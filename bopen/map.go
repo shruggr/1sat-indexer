@@ -32,7 +32,7 @@ func (i *MapIndexer) FromBytes(data []byte) (any, error) {
 
 func (i *MapIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
 		if m, ok := bopen.Data.(OneSat)[MAP_TAG].(Map); ok {
 			idxData = &idx.IndexData{
 				Data: m,

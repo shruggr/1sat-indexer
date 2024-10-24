@@ -17,7 +17,7 @@ func (i *BIndexer) Tag() string {
 
 func (i *BIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
 		if b, ok := bopen.Data.(OneSat)[i.Tag()].(*File); ok {
 			idxData = &idx.IndexData{
 				Data: b,

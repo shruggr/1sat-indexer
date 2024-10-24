@@ -47,7 +47,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxDa
 		return
 	}
 	txo := idxCtx.Txos[vout]
-	if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+	if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
 		if insc, ok := bopen.Data.(OneSat)[INSCRIPTION_TAG].(*Inscription); ok {
 			idxData = &idx.IndexData{
 				Data: insc,
@@ -65,7 +65,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxDa
 
 func (i *InscriptionIndexer) PreSave(idxCtx *idx.IndexContext) {
 	for _, txo := range idxCtx.Txos {
-		if bopen, ok := txo.Data[BOPEN_TAG]; ok {
+		if bopen, ok := txo.Data[ONESAT_LABEL]; ok {
 			if insc, ok := bopen.Data.(OneSat)[i.Tag()].(*Inscription); ok {
 				insc.File.Content = nil
 			}

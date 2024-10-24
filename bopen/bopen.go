@@ -11,7 +11,7 @@ import (
 	"github.com/shruggr/1sat-indexer/lib"
 )
 
-const BOPEN_TAG = "bopen"
+const ONESAT_LABEL = "1sat"
 
 type OneSat map[string]any
 
@@ -53,7 +53,7 @@ type BOpenIndexer struct {
 }
 
 func (i *BOpenIndexer) Tag() string {
-	return BOPEN_TAG
+	return ONESAT_LABEL
 }
 
 func (i *BOpenIndexer) FromBytes(data []byte) (any, error) {
@@ -122,8 +122,8 @@ func (i *BOpenIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 
 func (i *BOpenIndexer) PreSave(idxCtx *idx.IndexContext) {
 	for _, txo := range idxCtx.Txos {
-		if txo.Data[BOPEN_TAG] != nil {
-			delete(txo.Data, BOPEN_TAG)
+		if txo.Data[ONESAT_LABEL] != nil {
+			delete(txo.Data, ONESAT_LABEL)
 		}
 	}
 }

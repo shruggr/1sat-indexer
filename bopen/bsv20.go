@@ -66,7 +66,7 @@ func (i *Bsv20Indexer) Tag() string {
 func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
-	if idxData, ok := txo.Data[BOPEN_TAG]; !ok {
+	if idxData, ok := txo.Data[ONESAT_LABEL]; !ok {
 		return nil
 	} else if bopen, ok := idxData.Data.(OneSat); !ok {
 		return nil
