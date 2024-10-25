@@ -2,11 +2,5 @@
 app.yaml
 .gcloudignore
 
-block-sync
-ingest
-server
-subscribe
-owner-sync
-origin
-bsv21
+*.run
 config/config.go
