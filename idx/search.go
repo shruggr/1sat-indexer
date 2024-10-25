@@ -11,7 +11,7 @@ import (
 
 type SearchCfg struct {
 	Key     string
-	From    *float64
+	From    float64
 	Limit   uint32
 	Reverse bool
 }
@@ -26,15 +26,15 @@ func BuildQuery(cfg *SearchCfg) *redis.ZRangeBy {
 	query.Count = int64(cfg.Limit)
 
 	if cfg.Reverse {
-		if cfg.From != nil {
-			query.Max = fmt.Sprintf("(%f", *cfg.From)
+		if cfg.From != 0 {
+			query.Max = fmt.Sprintf("(%f", cfg.From)
 		} else {
 			query.Max = "+inf"
 		}
 		query.Min = "-inf"
 	} else {
-		if cfg.From != nil {
-			query.Min = fmt.Sprintf("(%f", *cfg.From)
+		if cfg.From != 0 {
+			query.Min = fmt.Sprintf("(%f", cfg.From)
 		} else {
 			query.Min = "-inf"
 		}
@@ -70,6 +70,9 @@ func FilterSpent(ctx context.Context, outpoints []string) ([]string, error) {
 	} else {
 		unspent := make([]string, 0, len(outpoints))
 		for i, outpoint := range outpoints {
+			if len(outpoint) < 65 {
+				continue
+			}
 			if spends[i] == nil {
 				unspent = append(unspent, outpoint)
 			}

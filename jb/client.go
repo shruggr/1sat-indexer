@@ -105,6 +105,7 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	if len(rawtx) == 0 && JB != nil {
 		// start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
+		fmt.Println("Requesting:", url)
 		inflightM.Lock()
 		inflight, ok := inflightMap[url]
 		if !ok {
