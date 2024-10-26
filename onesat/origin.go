@@ -43,10 +43,8 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 	deps := make([]*lib.Outpoint, 0)
 	origin := &Origin{}
 	satsIn := uint64(0)
-	missing := false
 	for _, spend := range idxCtx.Spends {
 		if spend.Satoshis == nil {
-			missing = true
 			break
 		}
 		deps = append(deps, spend.Outpoint)
@@ -56,14 +54,12 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 				origin.Outpoint = o.Data.(*Origin).Outpoint
 			}
 			break
-		} else if satsIn > txo.OutAcc {
-			break
 		}
 		satsIn += *spend.Satoshis
-	}
-
-	if !missing && origin.Outpoint == nil {
-		origin.Outpoint = txo.Outpoint
+		if satsIn > txo.OutAcc {
+			origin.Outpoint = txo.Outpoint
+			break
+		}
 	}
 
 	outpointEvent := &evt.Event{

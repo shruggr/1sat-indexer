@@ -38,7 +38,7 @@ func main() {
 			}),
 			Limit: PAGE_SIZE,
 		}
-		if outpoints, err := idx.Search(ctx, searchCfg); err != nil {
+		if outpoints, err := idx.SearchOutpoints(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
 			for _, outpoint := range outpoints {
@@ -77,7 +77,7 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, 
 		if origin.Outpoint == nil {
 			satsIn := uint64(0)
 			for _, spend := range idxCtx.Spends {
-				if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height < onesat.TRIGGER {
+				if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height >= onesat.TRIGGER {
 					var parent *onesat.Origin
 					if o, ok := spend.Data[onesat.ORIGIN_TAG]; ok {
 						parent = o.Data.(*onesat.Origin)
@@ -97,22 +97,24 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, 
 						Value: origin.Outpoint.String(),
 					})
 					break
-				} else if satsIn > txo.OutAcc {
-					break
 				}
 				satsIn += *spend.Satoshis
+				if satsIn > txo.OutAcc {
+					origin.Outpoint = txo.Outpoint
+					break
+				}
 
 			}
-			if origin.Outpoint == nil {
-				origin.Outpoint = txo.Outpoint
-			}
+			// if origin.Outpoint == nil {
+			// 	origin.Outpoint = txo.Outpoint
+			// }
 			// if origin.Outpoint == nil {
 			// 	log.Panic("Failed to resolve origin:", outpoint.String())
 			// }
 			// log.Println("Resolved origin:", outpoint.String(), "->", origin.Outpoint.String(), origin.Nonce)
-			if err := ingest.Save(ctx, idxCtx); err != nil {
-				log.Panic(err)
-			}
+		}
+		if err := ingest.Save(ctx, idxCtx); err != nil {
+			log.Panic(err)
 		}
 	}
 	return origin, nil

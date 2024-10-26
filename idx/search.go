@@ -47,7 +47,7 @@ func BuildQuery(cfg *SearchCfg) *redis.ZRangeBy {
 	return query
 }
 
-func SearchWithScores(ctx context.Context, cfg *SearchCfg) (results []redis.Z, err error) {
+func Search(ctx context.Context, cfg *SearchCfg) (results []redis.Z, err error) {
 	query := BuildQuery(cfg)
 	if cfg.Reverse {
 		return TxoDB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
@@ -56,8 +56,8 @@ func SearchWithScores(ctx context.Context, cfg *SearchCfg) (results []redis.Z, e
 	}
 }
 
-func Search(ctx context.Context, cfg *SearchCfg) (results []string, err error) {
-	if items, err := SearchWithScores(ctx, cfg); err != nil {
+func SearchOutpoints(ctx context.Context, cfg *SearchCfg) (results []string, err error) {
+	if items, err := Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		outpoints := make([]string, 0, len(items))
@@ -90,24 +90,28 @@ func FilterSpent(ctx context.Context, outpoints []string) ([]string, error) {
 
 func SearchTxos(ctx context.Context, cfg *SearchCfg) (txos []*Txo, err error) {
 	if cfg.IncludeTxo {
-		if outpoints, err := Search(ctx, cfg); err != nil {
+		if outpoints, err := SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
 		} else if txos, err = LoadTxos(ctx, outpoints, nil); err != nil {
 			return nil, err
 		}
 	} else {
-		if results, err := SearchWithScores(ctx, cfg); err != nil {
+		if results, err := Search(ctx, cfg); err != nil {
 			return nil, err
 		} else {
 			txos = make([]*Txo, 0, len(results))
 			for _, result := range results {
+				outpoint := result.Member.(string)
+				if len(outpoint) < 65 {
+					continue
+				}
 				txo := &Txo{
 					Height: uint32(result.Score / 1000000000),
 					Idx:    uint64(result.Score) % 1000000000,
 					Score:  result.Score,
 					Data:   make(map[string]*IndexData),
 				}
-				if txo.Outpoint, err = lib.NewOutpointFromString(result.Member.(string)); err != nil {
+				if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
 					return nil, err
 				}
 				txos = append(txos, txo)
@@ -134,7 +138,7 @@ func SearchTxos(ctx context.Context, cfg *SearchCfg) (txos []*Txo, err error) {
 func SearchTxns(ctx context.Context, cfg *SearchCfg) (txns []*lib.TxResult, err error) {
 	results := make([]*lib.TxResult, 0, 1000)
 	txMap := make(map[float64]*lib.TxResult)
-	if activity, err := SearchWithScores(ctx, cfg); err != nil {
+	if activity, err := Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		for _, item := range activity {
@@ -173,7 +177,7 @@ func SearchTxns(ctx context.Context, cfg *SearchCfg) (txns []*lib.TxResult, err 
 }
 
 func SearchUtxos(ctx context.Context, cfg *SearchCfg) ([]string, error) {
-	if results, err := Search(ctx, cfg); err != nil {
+	if results, err := SearchOutpoints(ctx, cfg); err != nil {
 		return nil, err
 	} else if results, err = FilterSpent(ctx, results); err != nil {
 		return nil, err
@@ -189,7 +193,7 @@ func Balance(ctx context.Context, key string) (balance uint64, err error) {
 		return 0, err
 	} else if err != redis.Nil {
 		return balance, nil
-	} else if outpoints, err = Search(ctx, &SearchCfg{Key: key}); err != nil {
+	} else if outpoints, err = SearchOutpoints(ctx, &SearchCfg{Key: key}); err != nil {
 		return 0, err
 	}
 	var msgpacks []interface{}

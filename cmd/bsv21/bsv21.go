@@ -36,7 +36,7 @@ func main() {
 
 	limiter := make(chan struct{}, CONCURRENCY)
 
-	if tokenIds, err := idx.Search(ctx, &idx.SearchCfg{
+	if tokenIds, err := idx.SearchOutpoints(ctx, &idx.SearchCfg{
 		Key: evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    "issue",
 			Value: "",
