@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var hexId = "ffd69898c2af3cef8dd26462cabc6020eef700b55edbafe32e062d9ced6f2175"
+var hexId = "00d23de921071a14cedcd4301b89530d168833cf7fe0b04f03caaf099611f278"
 var ctx = context.Background()
 
 func TestIngest(t *testing.T) {

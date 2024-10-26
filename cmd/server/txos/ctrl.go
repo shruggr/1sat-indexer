@@ -18,6 +18,7 @@ func init() {
 
 func RegisterRoutes(r fiber.Router) {
 	r.Get("/:outpoint", GetTxo)
+	r.Post("/", GetTxos)
 }
 
 func GetTxo(c *fiber.Ctx) error {
@@ -35,5 +36,27 @@ func GetTxo(c *fiber.Ctx) error {
 		}
 		c.Set("Cache-Control", "public,max-age=60")
 		return c.JSON(txo)
+	}
+}
+
+func GetTxos(c *fiber.Ctx) error {
+	var outpoints []string
+	if err := c.BodyParser(&outpoints); err != nil {
+		return err
+	}
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = indexedTags
+	}
+	if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
+		return err
+	} else {
+		if c.Query("script") == "true" {
+			for _, txo := range txos {
+				txo.LoadScript(c.Context())
+			}
+		}
+		c.Set("Cache-Control", "public,max-age=60")
+		return c.JSON(txos)
 	}
 }
