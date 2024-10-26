@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"math"
 	"time"
 
 	"github.com/shruggr/1sat-indexer/config"
@@ -12,7 +13,7 @@ import (
 	"github.com/shruggr/1sat-indexer/onesat"
 )
 
-const MAX_DEPTH = 255
+var MAX_DEPTH = uint32(math.Pow(2, 16))
 
 var PAGE_SIZE = uint32(1000)
 
@@ -61,7 +62,7 @@ func main() {
 	}
 }
 
-func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, err error) {
+func ResolveOrigin(outpoint *lib.Outpoint, depth uint32) (origin *onesat.Origin, err error) {
 	if idxCtx, err := ingest.ParseTxid(ctx, outpoint.TxidHex(), idx.AncestorConfig{
 		Load:  true,
 		Parse: true,
@@ -84,7 +85,7 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, 
 					}
 					if parent == nil || parent.Outpoint == nil {
 						if depth >= MAX_DEPTH {
-							log.Panicln("max depth reached")
+							log.Panicln("max depth reached", MAX_DEPTH)
 						}
 						if parent, err = ResolveOrigin(spend.Outpoint, depth+1); err != nil {
 							log.Panic(err)
