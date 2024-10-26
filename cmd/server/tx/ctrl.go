@@ -1,4 +1,4 @@
-package main
+package tx
 
 import (
 	"bytes"
@@ -7,24 +7,49 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/broadcast"
+	"github.com/shruggr/1sat-indexer/cmd/server/blocks"
 	"github.com/shruggr/1sat-indexer/jb"
 )
 
-func RegisterTxRoutes(r fiber.Router) {
+func RegisterRoutes(r fiber.Router) {
 	r.Post("/", BroadcastTx)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
 }
 
-func BroadcastTx(c *fiber.Ctx) error {
-	if tx, err := transaction.NewTransactionFromBytes(c.Body()); err != nil {
+func BroadcastTx(c *fiber.Ctx) (err error) {
+	var tx *transaction.Transaction
+	mime := c.Get("Content-Type")
+	switch mime {
+	case "application/octet-stream":
+		if c.Query("fmt") == "beef" {
+			if tx, err = transaction.NewTransactionFromBEEF(c.Body()); err != nil {
+				return c.SendStatus(400)
+			}
+		} else {
+			if tx, err = transaction.NewTransactionFromBytes(c.Body()); err != nil {
+				return c.SendStatus(400)
+			}
+		}
+	case "text/plain":
+		if c.Query("fmt") == "beef" {
+			if tx, err = transaction.NewTransactionFromBEEFHex(string(c.Body())); err != nil {
+				return c.SendStatus(400)
+			}
+		} else {
+			if tx, err = transaction.NewTransactionFromHex(string(c.Body())); err != nil {
+				return c.SendStatus(400)
+			}
+		}
+	default:
 		return c.SendStatus(400)
-	} else {
-		response := broadcast.Broadcast(c.Context(), tx)
-		c.Status(int(response.Status))
-		return c.JSON(response)
 	}
+
+	response := broadcast.Broadcast(c.Context(), tx)
+	c.Status(int(response.Status))
+	return c.JSON(response)
+
 }
 
 func GetTxWithProof(c *fiber.Ctx) error {
@@ -45,7 +70,7 @@ func GetTxWithProof(c *fiber.Ctx) error {
 				buf.Write(transaction.VarInt(0).Bytes())
 				c.Set("Cache-Control", "public,max-age=60")
 			} else {
-				if proof.BlockHeight < chaintip.Height-5 {
+				if proof.BlockHeight < blocks.Chaintip.Height-5 {
 					c.Set("Cache-Control", "public,max-age=31536000,immutable")
 				} else {
 					c.Set("Cache-Control", "public,max-age=60")
@@ -91,14 +116,14 @@ func GetProof(c *fiber.Ctx) error {
 	} else if proof == nil {
 		return c.SendStatus(404)
 	} else {
-		if proof.BlockHeight < chaintip.Height-5 {
+		if proof.BlockHeight < blocks.Chaintip.Height-5 {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")
 		}
 		switch c.Query("fmt", "bin") {
 		case "json":
-			c.JSON(proof)
+			return c.JSON(proof)
 		case "hex":
 			c.Set("Content-Type", "text/plain")
 			return c.SendString(proof.Hex())

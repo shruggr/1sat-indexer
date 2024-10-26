@@ -7,6 +7,7 @@ toolchain go1.23.2
 require (
 	github.com/GorillaPool/go-junglebus v0.2.14
 	github.com/bitcoin-sv/go-sdk v1.1.11
+	github.com/gofiber/fiber v1.14.6
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/joho/godotenv v1.5.1
 	github.com/ordishs/go-bitcoin v1.0.86
@@ -27,8 +28,10 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/go-zeromq/zmq4 v0.17.0 // indirect
+	github.com/gofiber/utils v0.0.10 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/schema v1.1.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,60 +14,25 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/blk"
+	"github.com/shruggr/1sat-indexer/cmd/server/acct"
+	"github.com/shruggr/1sat-indexer/cmd/server/blocks"
+	"github.com/shruggr/1sat-indexer/cmd/server/evt"
+	"github.com/shruggr/1sat-indexer/cmd/server/own"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
-	"github.com/shruggr/1sat-indexer/config"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/cmd/server/tag"
+	"github.com/shruggr/1sat-indexer/cmd/server/tx"
+	"github.com/shruggr/1sat-indexer/cmd/server/txos"
 )
 
-var POSTGRES string
-var CONCURRENCY uint
-var VERBOSE int
-var TAG string
 var PORT int
 
 var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
 }
 
-var indexedTags = make([]string, 0, len(config.Indexers))
-
-var ingest *idx.IngestCtx
-
-var chaintip *blk.BlockHeader
-
 func init() {
 	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
-	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
-	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
-	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
-
-	ingest = &idx.IngestCtx{
-		Indexers:    config.Indexers,
-		Concurrency: CONCURRENCY,
-		Network:     config.Network,
-	}
-
-	for _, indexer := range config.Indexers {
-		indexedTags = append(indexedTags, indexer.Tag())
-	}
-	go func() {
-		if header, c, err := blk.StartChaintipSub(context.Background()); err != nil {
-			log.Panic(err)
-		} else if header == nil {
-			log.Panic("No Chaintip")
-		} else {
-			log.Println("Chaintip", header.Height, header.Hash)
-			chaintip = header
-			for header := range c {
-				log.Println("Chaintip", header.Height, header.Hash)
-				chaintip = header
-			}
-		}
-	}()
 }
 
 func main() {
@@ -83,159 +47,13 @@ func main() {
 
 	v5 := app.Group("/v5")
 
-	RegisterBlockRoutes(v5.Group("/blocks"))
-	RegisterTxRoutes(v5.Group("/tx"))
-
-	app.Get("/v5/txo/tag/:tag", func(c *fiber.Ctx) error {
-		var tags []string
-		if dataTags, ok := c.Queries()["tags"]; !ok {
-			tags = indexedTags
-		} else {
-			tags = strings.Split(dataTags, ",")
-		}
-		from, err := strconv.ParseFloat(c.Params("from", "0"), 64)
-		if err != nil {
-			return err
-		}
-
-		if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
-			Key:     evt.TagKey(c.Params("tag")),
-			From:    from,
-			Reverse: c.QueryBool("rev", false),
-		}); err != nil {
-			return err
-		} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
-			return err
-		} else {
-			return c.JSON(txos)
-		}
-	})
-
-	app.Get("/v5/txo/:outpoint", func(c *fiber.Ctx) error {
-		if txo, err := idx.LoadTxo(c.Context(), c.Params("outpoint"), indexedTags); err != nil {
-			return err
-		} else if txo == nil {
-			return c.SendStatus(404)
-		} else {
-			c.Set("Cache-Control", "public,max-age=60")
-			return c.JSON(txo)
-		}
-	})
-
-	app.Get("/v5/address/:address/utxos", func(c *fiber.Ctx) (err error) {
-		address := c.Params("address")
-
-		var tags []string
-		if dataTags, ok := c.Queries()["tags"]; !ok {
-			tags = indexedTags
-		} else {
-			tags = strings.Split(dataTags, ",")
-		}
-
-		if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
-			Key: idx.OwnerTxosKey(address),
-		}); err != nil {
-			return err
-		} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
-			return err
-		} else {
-			return c.JSON(txos)
-		}
-	})
-
-	app.Put("/v5/acct/:account", func(c *fiber.Ctx) error {
-		account := c.Params("account")
-		var owners []string
-		if err := c.BodyParser(&owners); err != nil {
-			return c.SendStatus(400)
-		} else if len(owners) == 0 {
-			return c.SendStatus(400)
-		}
-
-		if _, err := idx.UpdateAccount(c.Context(), account, owners); err != nil {
-			return err
-		} else if err := idx.SyncAcct(c.Context(), TAG, account, ingest); err != nil {
-			return err
-		}
-
-		return c.SendStatus(204)
-	})
-
-	app.Get("/v5/acct/:account/utxos", func(c *fiber.Ctx) (err error) {
-		account := c.Params("account")
-
-		var tags []string
-		if queryTags, ok := c.Queries()["tags"]; !ok {
-			tags = indexedTags
-		} else {
-			tags = strings.Split(queryTags, ",")
-		}
-
-		if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
-			Key: idx.AccountTxosKey(account),
-		}); err != nil {
-			return err
-		} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
-			return err
-		} else {
-			return c.JSON(txos)
-		}
-	})
-
-	app.Get("/v5/acct/:account/:from", func(c *fiber.Ctx) (err error) {
-		account := c.Params("account")
-		var start float64
-		if start, err = strconv.ParseFloat(c.Params("from"), 64); err != nil {
-			return err
-		}
-
-		results := make([]*lib.TxResult, 0, 1000)
-		txMap := make(map[float64]*lib.TxResult)
-		if outpoints, err := idx.TxoDB.ZRangeArgsWithScores(c.Context(), redis.ZRangeArgs{
-			Key:     idx.AccountTxosKey(account),
-			ByScore: true,
-			Start:   fmt.Sprintf("(%f", start),
-			Stop:    "+inf",
-			Count:   1000,
-		}).Result(); err != nil {
-			return err
-		} else {
-			for _, item := range outpoints {
-				var txid string
-				var out *uint32
-				member := item.Member.(string)
-				if len(member) == 64 {
-					txid = member
-				} else if outpoint, err := lib.NewOutpointFromString(member); err != nil {
-					return err
-				} else {
-					txid = outpoint.TxidHex()
-					vout := outpoint.Vout()
-					out = &vout
-				}
-				var result *lib.TxResult
-				var ok bool
-				if result, ok = txMap[item.Score]; !ok {
-					height := uint32(item.Score / 1000000000)
-					result = &lib.TxResult{
-						Txid:   txid,
-						Height: height,
-						// Idx:     uint64((item.Score - float64(height)) * 1000000000),
-						Idx:     uint64(item.Score) % 1000000000,
-						Outputs: lib.NewOutputMap(),
-						Score:   item.Score,
-					}
-
-					txMap[item.Score] = result
-					results = append(results, result)
-				}
-				if out != nil {
-					result.Outputs[*out] = struct{}{}
-				}
-			}
-		}
-		return c.JSON(results)
-	})
+	blocks.RegisterRoutes(v5.Group("/blocks"))
+	tx.RegisterRoutes(v5.Group("/tx"))
+	txos.RegisterRoutes(v5.Group("/txo"))
+	evt.RegisterRoutes(v5.Group("/evt"))
+	tag.RegisterRoutes(v5.Group("/tag"))
+	own.RegisterRoutes(v5.Group("/own"))
+	acct.RegisterRoutes(v5.Group("/acct"))
 
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")

@@ -2,6 +2,7 @@ package idx
 
 import (
 	"encoding/json"
+	"log"
 )
 
 type Indexer interface {
@@ -26,8 +27,12 @@ func (b BaseIndexer) Parse(idxCtx *IndexContext, vout uint32) (idxData *IndexDat
 func (b BaseIndexer) PreSave(idxCtx *IndexContext) {}
 
 func (b BaseIndexer) FromBytes(data []byte) (any, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
 	obj := make(map[string]any)
 	if err := json.Unmarshal(data, &obj); err != nil {
+		log.Panicf("Error unmarshalling: %s %v", b.Tag(), err)
 		return nil, err
 	}
 	return obj, nil

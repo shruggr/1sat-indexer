@@ -1,13 +1,39 @@
-package main
+package blocks
 
 import (
+	"context"
+	"log"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/blk"
 )
 
-func RegisterBlockRoutes(r fiber.Router) {
+var Chaintip *blk.BlockHeader
+
+func init() {
+	var err error
+	if Chaintip, err = blk.Chaintip(context.Background()); err != nil {
+		log.Panic(err)
+	}
+
+	go func() {
+		if header, c, err := blk.StartChaintipSub(context.Background()); err != nil {
+			log.Panic(err)
+		} else if header == nil {
+			log.Panic("No Chaintip")
+		} else {
+			log.Println("Chaintip", header.Height, header.Hash)
+			Chaintip = header
+			for header := range c {
+				log.Println("Chaintip", header.Height, header.Hash)
+				Chaintip = header
+			}
+		}
+	}()
+}
+
+func RegisterRoutes(r fiber.Router) {
 	r.Get("/tip", GetChaintip)
 	r.Get("/height/:height", GetBlockByHeight)
 	r.Get("/hash/:hash", GetBlockByHash)
@@ -15,12 +41,7 @@ func RegisterBlockRoutes(r fiber.Router) {
 }
 
 func GetChaintip(c *fiber.Ctx) error {
-	if tip, err := blk.Chaintip(c.Context()); err != nil {
-		return err
-	} else {
-		c.Set("Cache-Control", "no-cache,no-store")
-		return c.JSON(tip)
-	}
+	return c.JSON(Chaintip)
 }
 
 func GetBlockByHeight(c *fiber.Ctx) error {
@@ -31,7 +52,7 @@ func GetBlockByHeight(c *fiber.Ctx) error {
 	} else if block == nil {
 		return c.SendStatus(404)
 	} else {
-		if block.Height < chaintip.Height-5 {
+		if block.Height < Chaintip.Height-5 {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")

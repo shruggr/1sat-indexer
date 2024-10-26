@@ -7,6 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/jb"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -17,10 +18,12 @@ type Txo struct {
 	Outpoint *lib.Outpoint         `json:"outpoint"`
 	Height   uint32                `json:"height"`
 	Idx      uint64                `json:"idx"`
-	Satoshis *uint64               `json:"satoshis"`
+	Satoshis *uint64               `json:"satoshis,omitempty"`
+	Script   []byte                `json:"script,omitempty"`
 	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
 	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
+	Score    float64               `json:"score,omitempty" msgpack:"-"`
 }
 
 func (t *Txo) AddOwner(owner string) {
@@ -46,21 +49,27 @@ func LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error) 
 			log.Panic(err)
 			return nil, err
 		}
-		if len(tags) > 0 {
-			if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
-				log.Panic(err)
-				return nil, err
-			} else {
-				for i, tag := range tags {
-					data := datas[i]
-					if data != nil {
-						txo.Data[tag] = &IndexData{
-							Data: json.RawMessage(data.(string)),
-						}
-					}
-				}
-			}
+		txo.Score = HeightScore(txo.Height, txo.Idx)
+
+		if err = txo.LoadData(ctx, tags); err != nil {
+			log.Panic(err)
+			return nil, err
 		}
+		// if len(tags) > 0 {
+		// 	if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
+		// 		log.Panic(err)
+		// 		return nil, err
+		// 	} else {
+		// 		for i, tag := range tags {
+		// 			data := datas[i]
+		// 			if data != nil {
+		// 				txo.Data[tag] = &IndexData{
+		// 					Data: json.RawMessage(data.(string)),
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
 		return txo, nil
 	}
 }
@@ -73,36 +82,66 @@ func LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, e
 		return nil, err
 	} else {
 		txos := make([]*Txo, 0, len(msgpacks))
-		for i, mp := range msgpacks {
+		for _, mp := range msgpacks {
 			var txo *Txo
 			if mp != nil {
-				outpoint := outpoints[i]
+				// outpoint := outpoints[i]
 				txo = &Txo{
 					Data: make(map[string]*IndexData),
 				}
 				if err = msgpack.Unmarshal([]byte(mp.(string)), txo); err != nil {
 					return nil, err
 				}
-				if len(tags) > 0 {
-					if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
-						log.Panic(err)
-						return nil, err
-					} else {
-						for i, tag := range tags {
-							data := datas[i]
-							if data != nil {
-								txo.Data[tag] = &IndexData{
-									Data: json.RawMessage(data.(string)),
-								}
-							}
-						}
-					}
-				}
+				txo.LoadData(ctx, tags)
+				// if len(tags) > 0 {
+				// 	if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
+				// 		log.Panic(err)
+				// 		return nil, err
+				// 	} else {
+				// 		for i, tag := range tags {
+				// 			data := datas[i]
+				// 			if data != nil {
+				// 				txo.Data[tag] = &IndexData{
+				// 					Data: json.RawMessage(data.(string)),
+				// 				}
+				// 			}
+				// 		}
+				// 	}
+				// }
 			}
 			txos = append(txos, txo)
 		}
 		return txos, nil
 	}
+}
+
+func (txo *Txo) LoadData(ctx context.Context, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	if datas, err := TxoDB.HMGet(ctx, TxoDataKey(txo.Outpoint.String()), tags...).Result(); err != nil {
+		log.Panic(err)
+		return err
+	} else {
+		for i, tag := range tags {
+			data := datas[i]
+			if data != nil {
+				txo.Data[tag] = &IndexData{
+					Data: json.RawMessage(data.(string)),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (txo *Txo) LoadScript(ctx context.Context) error {
+	if tx, err := jb.LoadTx(ctx, txo.Outpoint.TxidHex(), false); err != nil {
+		return err
+	} else {
+		txo.Script = *tx.Outputs[txo.Outpoint.Vout()].LockingScript
+	}
+	return nil
 }
 
 func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
