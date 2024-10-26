@@ -73,7 +73,7 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 		response.Error = err.Error()
 		return
 		// Log Transaction Status as pending
-	} else if idx.Log(ctx, idx.TxLogTag, response.Txid, -score); err != nil {
+	} else if err = idx.Log(ctx, idx.TxLogTag, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
 	}
@@ -82,24 +82,32 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 	for vin, spendOutpoint := range spendOutpoints {
 		// spendOutpoint := spend.Outpoint.String()
 		if added, err := idx.TxoDB.HSetNX(ctx, idx.SpendsKey, spendOutpoint, response.Txid).Result(); err != nil {
-			if err := rollbackSpends(ctx, spendOutpoints[:vin]); err == nil {
+			if err := rollbackSpends(ctx, spendOutpoints[:vin], response.Txid); err == nil {
 				idx.Delog(ctx, idx.TxLogTag, response.Txid)
 			}
 			response.Error = err.Error()
 			return
 		} else if !added {
-			if err := rollbackSpends(ctx, spendOutpoints[:vin]); err == nil {
-				idx.Delog(ctx, idx.TxLogTag, response.Txid)
+			if spend, err := idx.TxoDB.HGet(ctx, idx.SpendsKey, spendOutpoint).Result(); err != nil {
+				if err := rollbackSpends(ctx, spendOutpoints[:vin], response.Txid); err == nil {
+					idx.Delog(ctx, idx.TxLogTag, response.Txid)
+				}
+				response.Error = err.Error()
+				return
+			} else if spend != response.Txid {
+				if err := rollbackSpends(ctx, spendOutpoints[:vin], response.Txid); err == nil {
+					idx.Delog(ctx, idx.TxLogTag, response.Txid)
+				}
+				response.Status = 409
+				prevSpend := idx.TxoDB.HGet(ctx, idx.SpendsKey, spendOutpoint).String()
+				response.Error = fmt.Sprintf("double-spend: %s:%d - %s spent in %s", response.Txid, vin, spendOutpoint, prevSpend)
+				return
 			}
-			response.Status = 409
-			prevSpend := idx.TxoDB.HGet(ctx, idx.SpendsKey, spendOutpoint).String()
-			response.Error = fmt.Sprintf("double-spend: %s:%d - %s spent in %s", response.Txid, vin, spendOutpoint, prevSpend)
-			return
 		}
 	}
 
 	if _, failure := config.Broadcaster.Broadcast(tx); failure != nil {
-		rollbackSpends(ctx, spendOutpoints)
+		rollbackSpends(ctx, spendOutpoints, response.Txid)
 		if status, err := strconv.Atoi(failure.Code); err == nil {
 			response.Status = uint32(status)
 		}
@@ -118,9 +126,22 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 
 }
 
-func rollbackSpends(ctx context.Context, outpoints []string) error {
+func rollbackSpends(ctx context.Context, outpoints []string, txid string) error {
 	if len(outpoints) == 0 {
 		return nil
 	}
-	return idx.TxoDB.HDel(ctx, idx.SpendsKey, outpoints...).Err()
+	deletes := make([]string, 0, len(outpoints))
+	if spends, err := idx.TxoDB.HMGet(ctx, idx.SpendsKey, outpoints...).Result(); err != nil {
+		return err
+	} else {
+		for i, spend := range spends {
+			if spend.(string) == txid {
+				deletes = append(deletes, outpoints[i])
+			}
+		}
+	}
+	if len(deletes) > 0 {
+		return idx.TxoDB.HDel(ctx, idx.SpendsKey, deletes...).Err()
+	}
+	return nil
 }

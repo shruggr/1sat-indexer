@@ -3,6 +3,7 @@ package bitcom
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"strings"
 	"unicode/utf8"
 
@@ -27,6 +28,7 @@ func (i *MapIndexer) Tag() string {
 func (i *MapIndexer) FromBytes(data []byte) (any, error) {
 	obj := Map{}
 	if err := json.Unmarshal(data, &obj); err != nil {
+		log.Println("Error unmarshalling map", err)
 		return nil, err
 	}
 	return obj, nil

@@ -41,38 +41,29 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 	}
 
 	deps := make([]*lib.Outpoint, 0)
-	var origin *Origin
+	origin := &Origin{}
 	satsIn := uint64(0)
+	missing := false
 	for _, spend := range idxCtx.Spends {
 		if spend.Satoshis == nil {
-			origin = &Origin{}
+			missing = true
 			break
 		}
 		deps = append(deps, spend.Outpoint)
-		if satsIn < txo.OutAcc {
-			satsIn += *spend.Satoshis
-			continue
-		}
-		if satsIn == txo.OutAcc && *spend.Satoshis == 1 {
+		if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height >= TRIGGER {
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
-				origin = o.Data.(*Origin)
-			} else {
-				origin = &Origin{}
-				if spend.Height < TRIGGER {
-					origin.Outpoint = txo.Outpoint
-				}
+				origin.Nonce = o.Data.(*Origin).Nonce + 1
+				origin.Outpoint = o.Data.(*Origin).Outpoint
 			}
+			break
+		} else if satsIn > txo.OutAcc {
+			break
 		}
-		break
+		satsIn += *spend.Satoshis
 	}
 
-	if origin == nil {
-		origin = &Origin{
-			Outpoint: txo.Outpoint,
-			// Map:      Map{},
-		}
-	} else {
-		origin.Nonce++
+	if !missing && origin.Outpoint == nil {
+		origin.Outpoint = txo.Outpoint
 	}
 
 	outpointEvent := &evt.Event{

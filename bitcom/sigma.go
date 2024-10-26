@@ -48,6 +48,15 @@ func (i *SigmaIndexer) Tag() string {
 	return "sigma"
 }
 
+func (i *SigmaIndexer) FromBytes(data []byte) (any, error) {
+	var obj Sigmas
+	if err := json.Unmarshal(data, &obj); err != nil {
+		log.Println("Error unmarshalling map", err)
+		return nil, err
+	}
+	return obj, nil
+}
+
 func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
 	txo := idxCtx.Txos[vout]
 	var sigmas Sigmas
@@ -70,8 +79,8 @@ func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *id
 }
 
 func ParseSigma(tx *transaction.Transaction, vout uint32, idx int) (sigma *Sigma) {
-	txid := tx.TxID().String()
-	log.Println(txid)
+	// txid := tx.TxID().String()
+	// log.Println(txid)
 	startIdx := idx
 	pos := &idx
 	scr := *tx.Outputs[vout].LockingScript

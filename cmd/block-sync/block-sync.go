@@ -63,6 +63,7 @@ func main() {
 		}); err != nil {
 			log.Panic(err)
 		}
+		lastHash = genesis.Hash
 	} else {
 		fromBlock = uint32(lastBlocks[0].Score)
 		if lastHash, err = chainhash.NewHashFromHex(lastBlocks[0].Member.(string)); err != nil {

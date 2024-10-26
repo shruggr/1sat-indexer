@@ -126,6 +126,15 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 	if idxCtx, err = cfg.ParseTx(ctx, tx, ancestorCfg); err != nil {
 		return nil, err
 	}
+
+	err = cfg.Save(ctx, idxCtx)
+	if err == nil {
+		log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))
+	}
+	return
+}
+
+func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error) {
 	idxCtx.Save()
 	if err = Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
@@ -139,7 +148,5 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 			return
 		}
 	}
-
-	log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))
 	return
 }

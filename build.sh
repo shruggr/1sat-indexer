@@ -1,7 +1,7 @@
-go build cmd/block-sync/block-sync.go
-go build cmd/bsv21/bsv21.go
-go build cmd/ingest/ingest.go
-go build cmd/origin/origin.go
-go build cmd/owner-sync/owner-sync.go
-go build cmd/server/server.go
-go build cmd/subscribe/subscribe.go
+go build -o blocks.run cmd/block-sync/block-sync.go
+go build -o bsv21.run cmd/bsv21/bsv21.go
+go build -o ingest.run cmd/ingest/ingest.go
+go build -o origin.run cmd/origin/origin.go
+go build -o owners.run cmd/owner-sync/owner-sync.go
+go build -o server.run cmd/server/server.go
+go build -o subscribe.run cmd/subscribe/subscribe.go

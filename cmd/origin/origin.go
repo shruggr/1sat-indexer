@@ -18,11 +18,12 @@ var PAGE_SIZE = uint32(1000)
 
 // var CONCURRENCY = 1
 var ctx = context.Background()
-var originIndexer = &onesat.OriginIndexer{}
+
+// var originIndexer = &onesat.OriginIndexer{}
 
 var ingest = &idx.IngestCtx{
 	Tag:      "origin",
-	Indexers: []idx.Indexer{originIndexer},
+	Indexers: config.Indexers,
 	PageSize: PAGE_SIZE,
 	Network:  config.Network,
 	// Concurrency: uint(CONCURRENCY),
@@ -46,7 +47,7 @@ func main() {
 				} else if origin, err := ResolveOrigin(op, 0); err != nil {
 					log.Panic(err)
 				} else if origin.Outpoint != nil {
-					log.Println("Resolved origin:", outpoint, "->", origin.Outpoint.String(), origin.Nonce)
+					log.Println("Origin:", outpoint, "->", origin.Outpoint.String(), origin.Nonce)
 					if err := idx.TxoDB.ZRem(ctx, searchCfg.Key, outpoint).Err(); err != nil {
 						log.Panic(err)
 					}
@@ -66,24 +67,21 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, 
 		Parse: true,
 	}); err != nil {
 		log.Panic(err)
+		return nil, err
 	} else {
 		txo := idxCtx.Txos[outpoint.Vout()]
-		if originData, ok := txo.Data[onesat.ORIGIN_TAG]; ok {
+		originData, ok := txo.Data[onesat.ORIGIN_TAG]
+		if ok {
 			origin = originData.Data.(*onesat.Origin)
 		}
 		if origin.Outpoint == nil {
 			satsIn := uint64(0)
 			for _, spend := range idxCtx.Spends {
-				if satsIn < txo.OutAcc {
-					satsIn += *spend.Satoshis
-					continue
-				}
-				if satsIn == txo.OutAcc && *spend.Satoshis == 1 {
+				if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height < onesat.TRIGGER {
 					var parent *onesat.Origin
 					if o, ok := spend.Data[onesat.ORIGIN_TAG]; ok {
 						parent = o.Data.(*onesat.Origin)
 					}
-
 					if parent == nil || parent.Outpoint == nil {
 						if depth >= MAX_DEPTH {
 							log.Panicln("max depth reached")
@@ -94,17 +92,27 @@ func ResolveOrigin(outpoint *lib.Outpoint, depth uint8) (origin *onesat.Origin, 
 					}
 					origin.Outpoint = parent.Outpoint
 					origin.Nonce = parent.Nonce + 1
+					originData.Events = append(originData.Events, &evt.Event{
+						Id:    "outpoint",
+						Value: origin.Outpoint.String(),
+					})
+					break
+				} else if satsIn > txo.OutAcc {
+					break
 				}
-				break
+				satsIn += *spend.Satoshis
+
 			}
 			if origin.Outpoint == nil {
-				log.Panic("Failed to resolve origin:", outpoint.String())
+				origin.Outpoint = txo.Outpoint
 			}
-			log.Println("Resolved origin:", outpoint.String(), "->", origin.Outpoint.String(), origin.Nonce)
-			if err := txo.SaveData(ctx); err != nil {
+			// if origin.Outpoint == nil {
+			// 	log.Panic("Failed to resolve origin:", outpoint.String())
+			// }
+			// log.Println("Resolved origin:", outpoint.String(), "->", origin.Outpoint.String(), origin.Nonce)
+			if err := ingest.Save(ctx, idxCtx); err != nil {
 				log.Panic(err)
 			}
-
 		}
 	}
 	return origin, nil
