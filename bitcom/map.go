@@ -17,6 +17,17 @@ const MAP_TAG = "map"
 
 type Map map[string]interface{}
 
+func (m Map) Merge(m2 Map) Map {
+	r := make(Map, len(m)+len(m2))
+	for k, v := range m {
+		r[k] = v
+	}
+	for k, v := range m2 {
+		r[k] = v
+	}
+	return r
+}
+
 type MapIndexer struct {
 	idx.BaseIndexer
 }

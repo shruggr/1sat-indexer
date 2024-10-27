@@ -3,6 +3,7 @@ package onesat
 import (
 	"encoding/json"
 
+	"github.com/shruggr/1sat-indexer/bitcom"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -15,6 +16,9 @@ var TRIGGER = uint32(783968)
 type Origin struct {
 	Outpoint *lib.Outpoint `json:"outpoint"`
 	Nonce    uint64        `json:"nonce"`
+	Parent   *lib.Outpoint `json:"parent,omitempty"`
+	Type     string        `json:"type,omitempty"`
+	Map      bitcom.Map    `json:"map,omitempty"`
 }
 
 type OriginIndexer struct {
@@ -26,6 +30,10 @@ func (i *OriginIndexer) Tag() string {
 }
 
 func (i *OriginIndexer) FromBytes(data []byte) (any, error) {
+	return NewOriginFromBytes(data)
+}
+
+func NewOriginFromBytes(data []byte) (*Origin, error) {
 	obj := &Origin{}
 	if err := json.Unmarshal(data, obj); err != nil {
 		return nil, err
@@ -40,8 +48,20 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 		return nil
 	}
 
-	deps := make([]*lib.Outpoint, 0)
 	origin := &Origin{}
+	inscData := txo.Data[INSC_TAG]
+	if inscData != nil {
+		insc := inscData.Data.(*Inscription)
+		if insc.File != nil {
+			origin.Type = insc.File.Type
+		}
+	}
+	mapData := txo.Data[bitcom.MAP_TAG]
+	if mapData != nil {
+		origin.Map = mapData.Data.(bitcom.Map)
+	}
+	events := make([]*evt.Event, 0)
+	deps := make([]*lib.Outpoint, 0)
 	satsIn := uint64(0)
 	for _, spend := range idxCtx.Spends {
 		if spend.Satoshis == nil {
@@ -49,9 +69,21 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 		}
 		deps = append(deps, spend.Outpoint)
 		if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height >= TRIGGER {
+			origin.Parent = spend.Outpoint
+			events = append(events, &evt.Event{
+				Id:    "parent",
+				Value: spend.Outpoint.String(),
+			})
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
-				origin.Nonce = o.Data.(*Origin).Nonce + 1
-				origin.Outpoint = o.Data.(*Origin).Outpoint
+				parent := o.Data.(*Origin)
+				origin.Nonce = parent.Nonce + 1
+				origin.Outpoint = parent.Outpoint
+				// origin.Inscription = parent.Inscription
+				if origin.Map == nil {
+					origin.Map = parent.Map
+				} else if parent.Map != nil {
+					origin.Map = parent.Map.Merge(origin.Map)
+				}
 			}
 			break
 		}
@@ -62,15 +94,17 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 		}
 	}
 
-	outpointEvent := &evt.Event{
-		Id: "outpoint",
-	}
+	var outpoint string
 	if origin.Outpoint != nil {
-		outpointEvent.Value = origin.Outpoint.String()
+		outpoint = origin.Outpoint.String()
 	}
+	events = append(events, &evt.Event{
+		Id:    "outpoint",
+		Value: outpoint,
+	})
 	return &idx.IndexData{
 		Data:   origin,
 		Deps:   deps,
-		Events: []*evt.Event{outpointEvent},
+		Events: events,
 	}
 }

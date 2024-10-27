@@ -77,7 +77,6 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 							if idxCtx, err := cfg.IngestTxid(ctx, txid, AncestorConfig{
 								Load:  true,
 								Parse: true,
-								Save:  true,
 							}); err != nil {
 								errors <- err
 							} else if cfg.OnIngest != nil {

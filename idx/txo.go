@@ -55,21 +55,6 @@ func LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error) 
 			log.Panic(err)
 			return nil, err
 		}
-		// if len(tags) > 0 {
-		// 	if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
-		// 		log.Panic(err)
-		// 		return nil, err
-		// 	} else {
-		// 		for i, tag := range tags {
-		// 			data := datas[i]
-		// 			if data != nil {
-		// 				txo.Data[tag] = &IndexData{
-		// 					Data: json.RawMessage(data.(string)),
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// }
 		return txo, nil
 	}
 }
@@ -93,21 +78,6 @@ func LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, e
 					return nil, err
 				}
 				txo.LoadData(ctx, tags)
-				// if len(tags) > 0 {
-				// 	if datas, err := TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
-				// 		log.Panic(err)
-				// 		return nil, err
-				// 	} else {
-				// 		for i, tag := range tags {
-				// 			data := datas[i]
-				// 			if data != nil {
-				// 				txo.Data[tag] = &IndexData{
-				// 					Data: json.RawMessage(data.(string)),
-				// 				}
-				// 			}
-				// 		}
-				// 	}
-				// }
 			}
 			txos = append(txos, txo)
 		}

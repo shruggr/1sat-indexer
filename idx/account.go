@@ -90,7 +90,6 @@ func SyncOwner(ctx context.Context, tag string, add string, ing *IngestCtx) erro
 				if _, err := ing.IngestTxid(ctx, addTxn.Txid, AncestorConfig{
 					Load:  true,
 					Parse: true,
-					Save:  true,
 				}); err != nil {
 					log.Panic(err)
 				}

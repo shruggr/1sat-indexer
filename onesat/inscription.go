@@ -153,32 +153,19 @@ ordLoop:
 	insType := "file"
 	if insc.File.Size <= 1024 && utf8.Valid(insc.File.Content) && !bytes.Contains(insc.File.Content, []byte{0}) && !bytes.Contains(insc.File.Content, []byte("\\u0000")) {
 		mime := strings.ToLower(insc.File.Type)
-		if strings.HasPrefix(mime, "application") || strings.HasPrefix(mime, "text") {
-			jsonMap := map[string]string{}
-			if err := json.Unmarshal(insc.File.Content, &jsonMap); err == nil {
+		if strings.HasPrefix(mime, "application/json") || strings.HasPrefix(mime, "text") {
+			if err := json.Unmarshal(insc.File.Content, &insc.Json); err == nil {
 				insType = "json"
-				insc.Json = json.RawMessage(insc.File.Content)
-				insc.JsonMap = jsonMap
 			} else if AsciiRegexp.Match(insc.File.Content) {
 				if insType == "file" {
 					insType = "text"
 				}
 				insc.Text = string(insc.File.Content)
-				// re := regexp.MustCompile(`\W`)
-				// words := map[string]struct{}{}
-				// for _, word := range re.Split(insc.Text, -1) {
-				// 	if len(word) > 0 {
-				// 		word = strings.ToLower(word)
-				// 		words[word] = struct{}{}
-				// 	}
-				// }
-				// if len(words) > 0 {
-				// 	insc.Words = make([]string, 0, len(words))
-				// 	for word := range words {
-				// 		insc.Words = append(insc.Words, word)
-				// 	}
-				// }
 			}
+		}
+		if strings.HasPrefix(insc.File.Type, "application/bsv-20") {
+			insc.JsonMap = map[string]string{}
+			json.Unmarshal(insc.File.Content, &insc.JsonMap)
 		}
 	}
 
