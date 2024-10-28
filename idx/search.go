@@ -3,6 +3,7 @@ package idx
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -62,6 +63,9 @@ func SearchOutpoints(ctx context.Context, cfg *SearchCfg) (results []string, err
 	} else {
 		outpoints := make([]string, 0, len(items))
 		for _, item := range items {
+			if len(item.Member.(string)) < 65 {
+				continue
+			}
 			outpoints = append(outpoints, item.Member.(string))
 		}
 		return outpoints, nil
@@ -120,13 +124,18 @@ func SearchTxos(ctx context.Context, cfg *SearchCfg) (txos []*Txo, err error) {
 	}
 	if len(cfg.IncludeTags) > 0 {
 		for _, txo := range txos {
+			if txo.Data == nil {
+				txo.Data = make(map[string]*IndexData)
+			}
 			if err := txo.LoadData(ctx, cfg.IncludeTags); err != nil {
 				return nil, err
 			}
+			log.Println("Data loaded for", txo.Outpoint.String())
 		}
 	}
 	if cfg.IncludeScript {
 		for _, txo := range txos {
+			log.Println("Loading script for", txo.Outpoint.String())
 			if err := txo.LoadScript(ctx); err != nil {
 				return txos, err
 			}
@@ -186,10 +195,10 @@ func SearchUtxos(ctx context.Context, cfg *SearchCfg) ([]string, error) {
 	}
 }
 
-func Balance(ctx context.Context, key string) (balance uint64, err error) {
+func Balance(ctx context.Context, key string) (balance int64, err error) {
 	var outpoints []string
 	balanceKey := BalanceKey(key)
-	if balance, err = AcctDB.Get(ctx, balanceKey).Uint64(); err != nil && err != redis.Nil {
+	if balance, err = AcctDB.Get(ctx, balanceKey).Int64(); err != nil && err != redis.Nil {
 		return 0, err
 	} else if err != redis.Nil {
 		return balance, nil
@@ -207,7 +216,7 @@ func Balance(ctx context.Context, key string) (balance uint64, err error) {
 				return
 			}
 			if txo.Satoshis != nil {
-				balance += *txo.Satoshis
+				balance += int64(*txo.Satoshis)
 			}
 		}
 	}
