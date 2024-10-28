@@ -3,7 +3,6 @@ package idx
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -19,6 +18,7 @@ type SearchCfg struct {
 	IncludeTxo    bool
 	IncludeScript bool
 	IncludeTags   []string
+	FilterSpent   bool
 }
 
 type SearchResult struct {
@@ -94,9 +94,16 @@ func FilterSpent(ctx context.Context, outpoints []string) ([]string, error) {
 
 func SearchTxos(ctx context.Context, cfg *SearchCfg) (txos []*Txo, err error) {
 	if cfg.IncludeTxo {
-		if outpoints, err := SearchOutpoints(ctx, cfg); err != nil {
+		var outpoints []string
+		if outpoints, err = SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
-		} else if txos, err = LoadTxos(ctx, outpoints, nil); err != nil {
+		}
+		if cfg.FilterSpent {
+			if outpoints, err = FilterSpent(ctx, outpoints); err != nil {
+				return nil, err
+			}
+		}
+		if txos, err = LoadTxos(ctx, outpoints, nil); err != nil {
 			return nil, err
 		}
 	} else {
@@ -130,12 +137,10 @@ func SearchTxos(ctx context.Context, cfg *SearchCfg) (txos []*Txo, err error) {
 			if err := txo.LoadData(ctx, cfg.IncludeTags); err != nil {
 				return nil, err
 			}
-			log.Println("Data loaded for", txo.Outpoint.String())
 		}
 	}
 	if cfg.IncludeScript {
 		for _, txo := range txos {
-			log.Println("Loading script for", txo.Outpoint.String())
 			if err := txo.LoadScript(ctx); err != nil {
 				return txos, err
 			}
@@ -183,16 +188,6 @@ func SearchTxns(ctx context.Context, cfg *SearchCfg) (txns []*lib.TxResult, err 
 		}
 	}
 	return results, nil
-}
-
-func SearchUtxos(ctx context.Context, cfg *SearchCfg) ([]string, error) {
-	if results, err := SearchOutpoints(ctx, cfg); err != nil {
-		return nil, err
-	} else if results, err = FilterSpent(ctx, results); err != nil {
-		return nil, err
-	} else {
-		return results, nil
-	}
 }
 
 func Balance(ctx context.Context, key string) (balance int64, err error) {

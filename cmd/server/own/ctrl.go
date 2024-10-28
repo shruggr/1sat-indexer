@@ -23,18 +23,21 @@ func RegisterRoutes(r fiber.Router) {
 func OwnerUtxos(c *fiber.Ctx) error {
 	address := c.Params("address")
 
-	var tags []string
-	if dataTags, ok := c.Queries()["tags"]; !ok {
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
 		tags = indexedTags
-	} else {
-		tags = strings.Split(dataTags, ",")
 	}
-
-	if outpoints, err := idx.SearchUtxos(c.Context(), &idx.SearchCfg{
-		Key: idx.OwnerTxosKey(address),
+	c.ParamsInt("from", 0)
+	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+		Key:           idx.OwnerTxosKey(address),
+		From:          c.QueryFloat("from", 0),
+		Reverse:       c.QueryBool("rev", false),
+		Limit:         uint32(c.QueryInt("limit", 100)),
+		IncludeTxo:    c.QueryBool("txo", false),
+		IncludeTags:   tags,
+		IncludeScript: c.QueryBool("script", false),
+		FilterSpent:   true,
 	}); err != nil {
-		return err
-	} else if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)
