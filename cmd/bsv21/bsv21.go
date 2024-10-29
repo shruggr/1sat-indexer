@@ -122,29 +122,29 @@ func processToken(tokenId string) (err error) {
 				} else if len(items) == 0 {
 					break
 				} else {
-					txid := items[0]
-					if idxCtx, err := ingest.ParseTxid(ctx, txid, idx.AncestorConfig{
-						Load:  true,
-						Parse: true,
-					}); err != nil {
-						log.Println("Error parsing txid", txid, err)
-						return err
-					} else {
-						// for _, txo := range idxCtx.Txos {
-						// 	if idxData, ok := txo.Data[onesat.BSV21_TAG]; ok {
-						// 		if bsv21, ok := idxData.Data.(*onesat.Bsv21); ok {
-						// 			if bsv21.Id != tokenId || bsv21.Status == onesat.Pending {
-						// 				continue
-						// 			}
-						// 			idx.TxoDB.ZRem(ctx, idx.QueueKey(tokenId), txo.Outpoint.String())
-						// 		}
-						// 	}
-						// }
-						// if err := txo.Save(ctx, idxCtx.Height, idxCtx.Idx); err != nil {
-						// 	log.Println("Error saving txo", txid, err)
-						// 	return err
-						// }
-					}
+					// txid := items[0]
+					// if idxCtx, err := ingest.ParseTxid(ctx, txid, idx.AncestorConfig{
+					// 	Load:  true,
+					// 	Parse: true,
+					// }); err != nil {
+					// 	log.Println("Error parsing txid", txid, err)
+					// 	return err
+					// } else {
+					// for _, txo := range idxCtx.Txos {
+					// 	if idxData, ok := txo.Data[onesat.BSV21_TAG]; ok {
+					// 		if bsv21, ok := idxData.Data.(*onesat.Bsv21); ok {
+					// 			if bsv21.Id != tokenId || bsv21.Status == onesat.Pending {
+					// 				continue
+					// 			}
+					// 			idx.TxoDB.ZRem(ctx, idx.QueueKey(tokenId), txo.Outpoint.String())
+					// 		}
+					// 	}
+					// }
+					// if err := txo.Save(ctx, idxCtx.Height, idxCtx.Idx); err != nil {
+					// 	log.Println("Error saving txo", txid, err)
+					// 	return err
+					// }
+					// }
 				}
 			}
 			// if   {
