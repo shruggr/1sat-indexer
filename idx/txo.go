@@ -161,7 +161,7 @@ func (txo *Txo) Save(ctx context.Context, height uint32, idx uint64) error {
 	}); err != nil {
 		log.Panic(err)
 		return err
-	} else if txo.SaveData(ctx); err != nil {
+	} else if err = txo.SaveData(ctx); err != nil {
 		log.Panic(err)
 		return err
 	}
