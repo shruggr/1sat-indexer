@@ -117,7 +117,7 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 		response.Success = true
 		response.Status = 200
 	}
-	if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+	if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
 		response.Error = err.Error()
 		return
 	}
