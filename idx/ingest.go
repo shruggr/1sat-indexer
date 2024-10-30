@@ -127,7 +127,7 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 	}
 
 	err = cfg.Save(ctx, idxCtx)
-	if err == nil {
+	if err == nil && cfg.Verbose {
 		log.Println("Ingested", idxCtx.TxidHex, idxCtx.Score/1000000000, time.Since(start))
 	}
 	return
