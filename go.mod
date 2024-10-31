@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.14
-	github.com/bitcoin-sv/go-sdk v1.1.11
+	github.com/bitcoin-sv/go-sdk v1.1.12
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/joho/godotenv v1.5.1
 	github.com/ordishs/go-bitcoin v1.0.86
@@ -45,7 +45,7 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.4.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.56.0 // indirect
+	github.com/valyala/fasthttp v1.57.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
