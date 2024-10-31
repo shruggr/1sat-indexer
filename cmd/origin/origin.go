@@ -23,7 +23,6 @@ var ingest = &idx.IngestCtx{
 	Tag:      "origin",
 	Indexers: []idx.Indexer{inscIndexer, originIndexer},
 	Network:  config.Network,
-	// Concurrency: uint(CONCURRENCY),
 }
 
 var eventKey = evt.EventKey("origin", &evt.Event{
@@ -33,15 +32,14 @@ var eventKey = evt.EventKey("origin", &evt.Event{
 
 var queue = make(chan string, 10000000)
 var processed map[string]struct{}
+var wg sync.WaitGroup
 
 func main() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
-	var wg sync.WaitGroup
 	go func() {
 		limiter := make(chan struct{}, CONCURRENCY)
-		for outpoint := range queue {
-			txid := outpoint[:64]
+		for txid := range queue {
 			if _, ok := processed[txid]; !ok {
 				processed[txid] = struct{}{}
 				limiter <- struct{}{}
@@ -68,11 +66,15 @@ func main() {
 		if outpoints, err := idx.SearchOutpoints(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
-			log.Println("Queuing", len(outpoints), "outpoints")
 			processed = make(map[string]struct{}, 10000)
+			txids := make(map[string]struct{}, len(outpoints))
 			for _, outpoint := range outpoints {
+				txids[outpoint[:64]] = struct{}{}
+			}
+			log.Println("Calculating origins for", len(txids), "txns")
+			for txid := range txids {
 				wg.Add(1)
-				queue <- outpoint
+				queue <- txid
 			}
 			wg.Wait()
 			if len(outpoints) == 0 {
@@ -97,7 +99,8 @@ func ResolveOrigins(txid string) (err error) {
 				origin := spend.Data[onesat.ORIGIN_TAG].Data.(*onesat.Origin)
 				if origin.Outpoint == nil {
 					log.Println("Queuing parent:", spend.Outpoint.String())
-					queue <- spend.Outpoint.String()
+					wg.Add(1)
+					queue <- spend.Outpoint.TxidHex()
 				}
 			}
 		}
@@ -112,10 +115,10 @@ func ResolveOrigins(txid string) (err error) {
 			}
 		}
 		if len(resolved) > 0 {
-			if _, err := idx.TxoDB.ZRem(ctx, eventKey, resolved...).Result(); err != nil {
+			if removed, err := idx.TxoDB.ZRem(ctx, eventKey, resolved...).Result(); err != nil {
 				log.Panic(err)
-				// } else {
-				// 	log.Println("Resolved", removed, "outpoints", idxCtx.TxidHex)
+			} else {
+				log.Println("Resolved", removed, "outpoints", idxCtx.TxidHex)
 			}
 		}
 	}

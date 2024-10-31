@@ -17,6 +17,7 @@ import (
 	"github.com/shruggr/1sat-indexer/cmd/server/acct"
 	"github.com/shruggr/1sat-indexer/cmd/server/blocks"
 	"github.com/shruggr/1sat-indexer/cmd/server/evt"
+	"github.com/shruggr/1sat-indexer/cmd/server/origins"
 	"github.com/shruggr/1sat-indexer/cmd/server/own"
 	"github.com/shruggr/1sat-indexer/cmd/server/sse"
 	"github.com/shruggr/1sat-indexer/cmd/server/tag"
@@ -47,13 +48,14 @@ func main() {
 
 	v5 := app.Group("/v5")
 
+	acct.RegisterRoutes(v5.Group("/acct"))
 	blocks.RegisterRoutes(v5.Group("/blocks"))
+	evt.RegisterRoutes(v5.Group("/evt"))
+	origins.RegisterRoutes(v5.Group("/origins"))
+	own.RegisterRoutes(v5.Group("/own"))
+	tag.RegisterRoutes(v5.Group("/tag"))
 	tx.RegisterRoutes(v5.Group("/tx"))
 	txos.RegisterRoutes(v5.Group("/txo"))
-	evt.RegisterRoutes(v5.Group("/evt"))
-	tag.RegisterRoutes(v5.Group("/tag"))
-	own.RegisterRoutes(v5.Group("/own"))
-	acct.RegisterRoutes(v5.Group("/acct"))
 
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")
