@@ -2,7 +2,6 @@ package acct
 
 import (
 	"flag"
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -64,7 +63,6 @@ func AccountUtxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = indexedTags
 	}
-	c.ParamsInt("from", 0)
 	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           idx.AccountTxosKey(account),
 		From:          c.QueryFloat("from", 0),
@@ -82,13 +80,9 @@ func AccountUtxos(c *fiber.Ctx) error {
 }
 
 func AccountActivity(c *fiber.Ctx) (err error) {
-	from := c.QueryFloat("from", 0)
-	if from == 0 {
-		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
-	}
 	if results, err := idx.SearchTxns(c.Context(), &idx.SearchCfg{
 		Key:     idx.AccountTxosKey(c.Params("account")),
-		From:    from,
+		From:    c.QueryFloat("from", 0),
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
 	}); err != nil {

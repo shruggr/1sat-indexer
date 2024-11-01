@@ -2,24 +2,64 @@ package origins
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/onesat"
 )
 
+var indexedTags = make([]string, 0, len(config.Indexers))
+
+func init() {
+	for _, indexer := range config.Indexers {
+		indexedTags = append(indexedTags, indexer.Tag())
+	}
+}
+
 func RegisterRoutes(r fiber.Router) {
-	r.Post("/ancestors", OriginAncestors)
-	r.Post("/history", OriginHistory)
+	r.Post("/ancestors", OriginsAncestors)
+	r.Get("/ancestors/:outpoint", OriginAncestors)
+	r.Post("/history", OriginsHistory)
+	r.Get("/history/:outpoint", OriginsHistory)
 }
 
 func OriginHistory(c *fiber.Ctx) error {
+	outpoint := c.Params("outpoint")
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = indexedTags
+	}
+
+	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+		Key: evt.EventKey("origin", &evt.Event{
+			Id:    "outpoint",
+			Value: outpoint,
+		}),
+		IncludeTxo:    c.QueryBool("txo", false),
+		IncludeTags:   tags,
+		IncludeScript: c.QueryBool("script", false),
+	}); err != nil {
+		return err
+	} else {
+		return c.JSON(txos)
+	}
+
+}
+
+func OriginsHistory(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {
 		return c.SendStatus(400)
 	} else if len(outpoints) == 0 {
 		return c.SendStatus(400)
+	}
+
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = indexedTags
 	}
 
 	history := make([]*idx.Txo, 0, len(outpoints))
@@ -29,7 +69,9 @@ func OriginHistory(c *fiber.Ctx) error {
 				Id:    "outpoint",
 				Value: outpoint,
 			}),
-			From: c.QueryFloat("from", 0),
+			IncludeTxo:    c.QueryBool("txo", false),
+			IncludeTags:   tags,
+			IncludeScript: c.QueryBool("script", false),
 		}); err != nil {
 			return err
 		} else {
@@ -40,11 +82,55 @@ func OriginHistory(c *fiber.Ctx) error {
 }
 
 func OriginAncestors(c *fiber.Ctx) error {
+	outpoint := c.Params("outpoint")
+
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = indexedTags
+	}
+
+	if data, err := idx.TxoDB.HGet(c.Context(), idx.TxoDataKey(outpoint), "origin").Result(); err != nil {
+		return err
+	} else {
+		origin := onesat.Origin{}
+		if err := json.Unmarshal([]byte(data), &origin); err != nil {
+			return err
+		}
+		outpoint = origin.Outpoint.String()
+	}
+
+	ancestors := make([]*idx.Txo, 0)
+	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+		Key: evt.EventKey("origin", &evt.Event{
+			Id:    "outpoint",
+			Value: outpoint,
+		}),
+		IncludeTxo:    c.QueryBool("txo", false),
+		IncludeTags:   tags,
+		IncludeScript: c.QueryBool("script", false),
+	}); err != nil {
+		return err
+	} else {
+		for _, txo := range txos {
+			if txo.Outpoint.String() != outpoint {
+				ancestors = append(ancestors, txo)
+			}
+		}
+	}
+	return c.JSON(ancestors)
+}
+
+func OriginsAncestors(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {
 		return c.SendStatus(400)
 	} else if len(outpoints) == 0 {
 		return c.SendStatus(400)
+	}
+
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = indexedTags
 	}
 
 	origins := make([]string, 0, len(outpoints))
@@ -69,7 +155,9 @@ func OriginAncestors(c *fiber.Ctx) error {
 				Id:    "outpoint",
 				Value: outpoint,
 			}),
-			From: c.QueryFloat("from", 0),
+			IncludeTxo:    c.QueryBool("txo", false),
+			IncludeTags:   tags,
+			IncludeScript: c.QueryBool("script", false),
 		}); err != nil {
 			return err
 		} else {
