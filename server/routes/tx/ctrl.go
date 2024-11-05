@@ -7,11 +7,15 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/broadcast"
-	"github.com/shruggr/1sat-indexer/cmd/server/blocks"
+	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/jb"
+	"github.com/shruggr/1sat-indexer/server/routes/blocks"
 )
 
-func RegisterRoutes(r fiber.Router) {
+var ingest *idx.IngestCtx
+
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	r.Post("/", BroadcastTx)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
@@ -47,6 +51,9 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 	}
 
 	response := broadcast.Broadcast(c.Context(), tx)
+	if response.Success {
+		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
+	}
 	c.Status(int(response.Status))
 	return c.JSON(response)
 

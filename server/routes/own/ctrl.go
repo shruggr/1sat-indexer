@@ -1,43 +1,36 @@
-package evt
+package own
 
 import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/config"
-	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 )
 
-var indexedTags = make([]string, 0, len(config.Indexers))
+var ingest *idx.IngestCtx
 
-func init() {
-	for _, indexer := range config.Indexers {
-		indexedTags = append(indexedTags, indexer.Tag())
-	}
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
+	r.Get("/:owner/utxos", OwnerUtxos)
 }
 
-func RegisterRoutes(r fiber.Router) {
-	r.Get("/:tag/:id/:value", TxosByEvent)
-}
+func OwnerUtxos(c *fiber.Ctx) error {
+	address := c.Params("address")
 
-func TxosByEvent(c *fiber.Ctx) error {
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
-
+	c.ParamsInt("from", 0)
 	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key: evt.EventKey(c.Params("tag"), &evt.Event{
-			Id:    c.Params("id"),
-			Value: c.Params("value"),
-		}),
+		Key:           idx.OwnerTxosKey(address),
 		From:          c.QueryFloat("from", 0),
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
+		FilterSpent:   true,
 	}); err != nil {
 		return err
 	} else {

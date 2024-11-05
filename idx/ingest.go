@@ -26,6 +26,14 @@ type IngestCtx struct {
 	// limiter     chan struct{}
 }
 
+func (cfg *IngestCtx) IndexedTags() []string {
+	var indexedTags = make([]string, 0, len(cfg.Indexers))
+	for _, indexer := range cfg.Indexers {
+		indexedTags = append(indexedTags, indexer.Tag())
+	}
+	return indexedTags
+}
+
 func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 	limiter := make(chan struct{}, cfg.Concurrency)
 	errors := make(chan error)

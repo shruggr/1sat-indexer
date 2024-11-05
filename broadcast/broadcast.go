@@ -23,12 +23,6 @@ type BroadcaseResponse struct {
 }
 
 func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *BroadcaseResponse) {
-	var ingest = &idx.IngestCtx{
-		Indexers: config.Indexers,
-		Network:  config.Network,
-		Tag:      "broadcast",
-	}
-
 	txid := tx.TxID()
 	response = &BroadcaseResponse{
 		Txid:   txid.String(),
@@ -116,10 +110,6 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 	} else {
 		response.Success = true
 		response.Status = 200
-	}
-	if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
-		response.Error = err.Error()
-		return
 	}
 
 	return

@@ -1,37 +1,18 @@
 package acct
 
 import (
-	"flag"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/idx"
 )
 
 var TAG = "acct"
 
-var CONCURRENCY uint
-var indexedTags = make([]string, 0, len(config.Indexers))
-
 var ingest *idx.IngestCtx
 
-func init() {
-	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
-	// flag.Parse()
-
-	ingest = &idx.IngestCtx{
-		Indexers:    config.Indexers,
-		Concurrency: CONCURRENCY,
-		Network:     config.Network,
-	}
-
-	for _, indexer := range config.Indexers {
-		indexedTags = append(indexedTags, indexer.Tag())
-	}
-}
-
-func RegisterRoutes(r fiber.Router) {
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	r.Put("/:account", RegisterAccount)
 	r.Get("/:account", AccountActivity)
 	r.Get("/:account/utxos", AccountUtxos)
@@ -61,7 +42,7 @@ func AccountUtxos(c *fiber.Ctx) error {
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
 	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           idx.AccountTxosKey(account),

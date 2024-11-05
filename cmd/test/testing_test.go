@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var hexId = "00d23de921071a14cedcd4301b89530d168833cf7fe0b04f03caaf099611f278"
+var hexId = "ecaa8afaf7ca76c5007bc7dd33d966fbb91bf51030c137bfafecc6bdd1bfac14"
 var ctx = context.Background()
 
 func TestIngest(t *testing.T) {
@@ -21,7 +21,7 @@ func TestIngest(t *testing.T) {
 		Verbose:     true,
 	}
 
-	idxCtx, err := ingest.IngestTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true})
+	idxCtx, err := ingest.IngestTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true, Save: true})
 	assert.NoError(t, err)
 
 	out, err := json.MarshalIndent(idxCtx, "", "  ")

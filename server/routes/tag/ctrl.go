@@ -4,27 +4,21 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/evt"
 	"github.com/shruggr/1sat-indexer/idx"
 )
 
-var indexedTags = make([]string, 0, len(config.Indexers))
+var ingest *idx.IngestCtx
 
-func init() {
-	for _, indexer := range config.Indexers {
-		indexedTags = append(indexedTags, indexer.Tag())
-	}
-}
-
-func RegisterRoutes(r fiber.Router) {
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	r.Get("/:tag", TxosByTag)
 }
 
 func TxosByTag(c *fiber.Ctx) error {
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
 
 	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
