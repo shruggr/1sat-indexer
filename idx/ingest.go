@@ -23,7 +23,7 @@ type IngestCtx struct {
 	Limit       uint32
 	Network     lib.Network
 	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
-	// limiter     chan struct{}
+	Once        bool
 }
 
 func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
@@ -111,6 +111,14 @@ func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, 
 }
 
 func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
+	if cfg.Once {
+		if score, err := LogScore(ctx, cfg.Tag, txid); err != nil {
+			log.Panic(err)
+			return nil, err
+		} else if score > 0 {
+			return nil, nil
+		}
+	}
 	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else if tx == nil {

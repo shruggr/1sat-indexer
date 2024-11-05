@@ -2,6 +2,7 @@ package acct
 
 import (
 	"flag"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -9,7 +10,7 @@ import (
 	"github.com/shruggr/1sat-indexer/idx"
 )
 
-var TAG = "acct"
+var TAG string
 
 var CONCURRENCY uint
 var indexedTags = make([]string, 0, len(config.Indexers))
@@ -18,12 +19,14 @@ var ingest *idx.IngestCtx
 
 func init() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
-	// flag.Parse()
+	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
 
 	ingest = &idx.IngestCtx{
+		Tag:         TAG,
 		Indexers:    config.Indexers,
 		Concurrency: CONCURRENCY,
 		Network:     config.Network,
+		Once:        true,
 	}
 
 	for _, indexer := range config.Indexers {
@@ -80,9 +83,13 @@ func AccountUtxos(c *fiber.Ctx) error {
 }
 
 func AccountActivity(c *fiber.Ctx) (err error) {
+	from := c.QueryFloat("from", 0)
+	if from == 0 {
+		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
+	}
 	if results, err := idx.SearchTxns(c.Context(), &idx.SearchCfg{
 		Key:     idx.AccountTxosKey(c.Params("account")),
-		From:    c.QueryFloat("from", 0),
+		From:    from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
 	}); err != nil {
