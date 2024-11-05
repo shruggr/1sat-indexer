@@ -23,9 +23,11 @@ func init() {
 
 func main() {
 	app := server.Initialize(&idx.IngestCtx{
+		Tag:         "ingest",
 		Indexers:    config.Indexers,
 		Concurrency: CONCURRENCY,
 		Network:     config.Network,
+		Once:        true,
 	})
 	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))

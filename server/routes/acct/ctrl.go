@@ -1,13 +1,14 @@
 package acct
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/idx"
 )
 
-var TAG = "acct"
+var TAG string
 
 var ingest *idx.IngestCtx
 
@@ -61,9 +62,13 @@ func AccountUtxos(c *fiber.Ctx) error {
 }
 
 func AccountActivity(c *fiber.Ctx) (err error) {
+	from := c.QueryFloat("from", 0)
+	if from == 0 {
+		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
+	}
 	if results, err := idx.SearchTxns(c.Context(), &idx.SearchCfg{
 		Key:     idx.AccountTxosKey(c.Params("account")),
-		From:    c.QueryFloat("from", 0),
+		From:    from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
 	}); err != nil {
