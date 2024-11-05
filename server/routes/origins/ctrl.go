@@ -53,7 +53,7 @@ func OriginsHistory(c *fiber.Ctx) error {
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
 
 	history := make([]*idx.Txo, 0, len(outpoints))
@@ -80,7 +80,7 @@ func OriginAncestors(c *fiber.Ctx) error {
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
 
 	if data, err := idx.TxoDB.HGet(c.Context(), idx.TxoDataKey(outpoint), "origin").Result(); err != nil {
@@ -124,7 +124,7 @@ func OriginsAncestors(c *fiber.Ctx) error {
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = indexedTags
+		tags = ingest.IndexedTags()
 	}
 
 	origins := make([]string, 0, len(outpoints))
