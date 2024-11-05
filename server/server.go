@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -28,7 +29,7 @@ var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
 }
 
-func Initialize(ingestCtx *idx.IngestCtx) *fiber.App {
+func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *fiber.App {
 	app := fiber.New()
 	app.Use(recover.New())
 	app.Use(logger.New())
@@ -46,7 +47,7 @@ func Initialize(ingestCtx *idx.IngestCtx) *fiber.App {
 	origins.RegisterRoutes(v5.Group("/origins"), ingestCtx)
 	own.RegisterRoutes(v5.Group("/own"), ingestCtx)
 	tag.RegisterRoutes(v5.Group("/tag"), ingestCtx)
-	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx)
+	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx, broadcaster)
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {

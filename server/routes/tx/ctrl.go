@@ -13,9 +13,11 @@ import (
 )
 
 var ingest *idx.IngestCtx
+var b transaction.Broadcaster
 
-func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) {
 	ingest = ingestCtx
+	b = broadcaster
 	r.Post("/", BroadcastTx)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
@@ -50,7 +52,7 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 		return c.SendStatus(400)
 	}
 
-	response := broadcast.Broadcast(c.Context(), tx)
+	response := broadcast.Broadcast(c.Context(), tx, b)
 	if response.Success {
 		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
 	}

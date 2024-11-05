@@ -9,7 +9,6 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/spv"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/config"
 	"github.com/shruggr/1sat-indexer/idx"
 	"github.com/shruggr/1sat-indexer/jb"
 	"github.com/shruggr/1sat-indexer/lib"
@@ -22,7 +21,7 @@ type BroadcaseResponse struct {
 	Error   string `json:"error"`
 }
 
-func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *BroadcaseResponse) {
+func Broadcast(ctx context.Context, tx *transaction.Transaction, broadcaster transaction.Broadcaster) (response *BroadcaseResponse) {
 	txid := tx.TxID()
 	response = &BroadcaseResponse{
 		Txid:   txid.String(),
@@ -100,7 +99,7 @@ func Broadcast(ctx context.Context, tx *transaction.Transaction) (response *Broa
 		}
 	}
 
-	if _, failure := config.Broadcaster.Broadcast(tx); failure != nil {
+	if _, failure := broadcaster.Broadcast(tx); failure != nil {
 		rollbackSpends(ctx, spendOutpoints, response.Txid)
 		if status, err := strconv.Atoi(failure.Code); err == nil {
 			response.Status = uint32(status)

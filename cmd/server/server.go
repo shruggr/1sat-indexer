@@ -28,7 +28,7 @@ func main() {
 		Concurrency: CONCURRENCY,
 		Network:     config.Network,
 		Once:        true,
-	})
+	}, config.Broadcaster)
 	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))
 }
