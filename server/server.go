@@ -143,27 +143,27 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 	})
 
 	go func() {
-		sub := redis.NewClient(&redis.Options{
-			Addr:     os.Getenv("REDISQUEUE"),
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		})
-		ctx := context.Background()
-		pubsub := sub.Subscribe(ctx, "block")
-		ch := pubsub.Channel()
+		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
+			panic(err)
+		} else {
+			sub := redis.NewClient(opts)
+			ctx := context.Background()
+			pubsub := sub.Subscribe(ctx, "block")
+			ch := pubsub.Channel()
 
-		for {
-			select {
-			case addSubs := <-currentSessions.AddSubs:
-				log.Println("Subscribing to", addSubs)
-				pubsub.Subscribe(ctx, addSubs...)
-			case removedSubs := <-currentSessions.RemoveSubs:
-				log.Println("Unsubscribing to", removedSubs)
-				pubsub.Unsubscribe(ctx, removedSubs...)
-			case msg := <-ch:
-				log.Println("Received Message", msg.Channel, msg.Payload)
-				for _, session := range currentSessions.Topics[msg.Channel] {
-					session.StateChannel <- msg
+			for {
+				select {
+				case addSubs := <-currentSessions.AddSubs:
+					log.Println("Subscribing to", addSubs)
+					pubsub.Subscribe(ctx, addSubs...)
+				case removedSubs := <-currentSessions.RemoveSubs:
+					log.Println("Unsubscribing to", removedSubs)
+					pubsub.Unsubscribe(ctx, removedSubs...)
+				case msg := <-ch:
+					log.Println("Received Message", msg.Channel, msg.Payload)
+					for _, session := range currentSessions.Topics[msg.Channel] {
+						session.StateChannel <- msg
+					}
 				}
 			}
 		}

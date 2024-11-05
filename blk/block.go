@@ -38,11 +38,11 @@ func init() {
 	}
 
 	log.Println("REDISBLK", os.Getenv("REDISBLK"))
-	DB = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISBLK"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISBLK")); err != nil {
+		panic(err)
+	} else {
+		DB = redis.NewClient(opts)
+	}
 }
 
 var sub *redis.Client
@@ -51,27 +51,26 @@ func StartChaintipSub(ctx context.Context) (chaintip *BlockHeader, c chan *Block
 	c = make(chan *BlockHeader)
 	go func(c chan *BlockHeader) {
 		log.Println("REDISEVT", os.Getenv("REDISEVT"))
-		sub = redis.NewClient(&redis.Options{
-			Addr:     os.Getenv("REDISEVT"),
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		})
-		pubSub := sub.Subscribe(context.Background(), ChaintipKey)
-		ch := pubSub.Channel()
-		for {
-			select {
-			case <-ctx.Done():
-				sub.Close()
-				return
-			case msg := <-ch:
-				chaintip := &BlockHeader{}
-				if err := json.Unmarshal([]byte(msg.Payload), chaintip); err != nil {
-					log.Println("Failed to unmarshal chaintip", err)
-				} else {
-					c <- chaintip
+		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
+			log.Println("Failed to parse redis url", err)
+		} else {
+			sub = redis.NewClient(opts)
+			pubSub := sub.Subscribe(context.Background(), ChaintipKey)
+			ch := pubSub.Channel()
+			for {
+				select {
+				case <-ctx.Done():
+					sub.Close()
+					return
+				case msg := <-ch:
+					chaintip := &BlockHeader{}
+					if err := json.Unmarshal([]byte(msg.Payload), chaintip); err != nil {
+						log.Println("Failed to unmarshal chaintip", err)
+					} else {
+						c <- chaintip
+					}
 				}
 			}
-
 		}
 	}(c)
 

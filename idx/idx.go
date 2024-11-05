@@ -35,25 +35,25 @@ func init() {
 	}
 
 	log.Println("REDISTXO", os.Getenv("REDISTXO"))
-	TxoDB = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISTXO"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	} else {
+		TxoDB = redis.NewClient(opts)
+	}
 
 	log.Println("REDISQUEUE", os.Getenv("REDISQUEUE"))
-	QueueDB = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISQUEUE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISQUEUE")); err != nil {
+		panic(err)
+	} else {
+		QueueDB = redis.NewClient(opts)
+	}
 
 	log.Println("REDISACCT", os.Getenv("REDISACCT"))
-	AcctDB = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISACCT"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISACCT")); err != nil {
+		panic(err)
+	} else {
+		AcctDB = redis.NewClient(opts)
+	}
 }
 
 // const IngestLogKey = "log:tx"

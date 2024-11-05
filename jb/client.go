@@ -41,11 +41,11 @@ func init() {
 	}
 
 	log.Println("REDISCACHE", os.Getenv("REDISCACHE"))
-	Cache = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISCACHE"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISCACHE")); err != nil {
+		panic(err)
+	} else {
+		Cache = redis.NewClient(opts)
+	}
 
 	if os.Getenv("BITCOIN_HOST") != "" {
 		port, _ := strconv.ParseInt(os.Getenv("BITCOIN_PORT"), 10, 32)

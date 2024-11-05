@@ -13,8 +13,6 @@ import (
 var PORT int
 var CONCURRENCY uint
 
-var ingest *idx.IngestCtx
-
 func init() {
 	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")

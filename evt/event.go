@@ -31,11 +31,11 @@ func init() {
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
 	log.Println("REDISEVT", os.Getenv("REDISEVT"))
-	db = redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDISEVT"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
+		panic(err)
+	} else {
+		db = redis.NewClient(opts)
+	}
 }
 
 func Publish(ctx context.Context, event string, data string) error {
