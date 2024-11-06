@@ -9,9 +9,9 @@ import (
 	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/jb"
-	"github.com/shruggr/1sat-indexer/lib"
-	// "github.com/shruggr/1sat-indexer/data"
+	"github.com/shruggr/1sat-indexer/v5/jb"
+	"github.com/shruggr/1sat-indexer/v5/lib"
+	// "github.com/shruggr/1sat-indexer/v5/data"
 )
 
 type AncestorConfig struct {

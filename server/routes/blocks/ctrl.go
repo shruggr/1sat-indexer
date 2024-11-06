@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/blk"
+	"github.com/shruggr/1sat-indexer/v5/blk"
 )
 
 var Chaintip *blk.BlockHeader

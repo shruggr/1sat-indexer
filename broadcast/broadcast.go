@@ -9,9 +9,9 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/spv"
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/jb"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
+	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
 type BroadcaseResponse struct {

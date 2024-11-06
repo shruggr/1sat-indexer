@@ -6,10 +6,10 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/broadcast"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/jb"
-	"github.com/shruggr/1sat-indexer/server/routes/blocks"
+	"github.com/shruggr/1sat-indexer/v5/broadcast"
+	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
+	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
 )
 
 var ingest *idx.IngestCtx

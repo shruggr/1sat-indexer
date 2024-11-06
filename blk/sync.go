@@ -9,7 +9,7 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/evt"
+	"github.com/shruggr/1sat-indexer/v5/evt"
 )
 
 const PAGE_SIZE = 10000

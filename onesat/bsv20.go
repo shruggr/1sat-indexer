@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	bip32 "github.com/bitcoin-sv/go-sdk/compat/bip32"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/v5/evt"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 type Bsv20Status int

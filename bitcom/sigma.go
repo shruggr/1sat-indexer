@@ -13,7 +13,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/script"
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/bitcoin-sv/go-sdk/util"
-	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 var SIGMA_PROTO = "SIGMA"

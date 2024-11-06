@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/jb"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 const OwnerSyncKey = "own:sync"

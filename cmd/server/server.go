@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/config"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/server"
+	"github.com/shruggr/1sat-indexer/v5/config"
+	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/server"
 )
 
 var PORT int

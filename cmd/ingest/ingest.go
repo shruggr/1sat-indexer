@@ -4,8 +4,8 @@ import (
 	"context"
 	"flag"
 
-	"github.com/shruggr/1sat-indexer/config"
-	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/v5/config"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 var CONCURRENCY uint

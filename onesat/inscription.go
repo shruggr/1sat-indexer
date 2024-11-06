@@ -9,10 +9,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/bitcom"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/v5/bitcom"
+	"github.com/shruggr/1sat-indexer/v5/evt"
+	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
 var INSC_TAG = "insc"

@@ -6,9 +6,9 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/jb"
-	"github.com/shruggr/1sat-indexer/lib"
+	"github.com/shruggr/1sat-indexer/v5/evt"
+	"github.com/shruggr/1sat-indexer/v5/jb"
+	"github.com/shruggr/1sat-indexer/v5/lib"
 	"github.com/vmihailenco/msgpack/v5"
 )
 

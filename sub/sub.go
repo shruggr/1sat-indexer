@@ -11,8 +11,8 @@ import (
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/idx"
-	"github.com/shruggr/1sat-indexer/jb"
+	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 const ProgressKey = "progress"

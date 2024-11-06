@@ -2,7 +2,7 @@ package bitcom
 
 import (
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 const BITCOM_TAG = "bitcom"

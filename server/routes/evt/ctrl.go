@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/evt"
-	"github.com/shruggr/1sat-indexer/idx"
+	"github.com/shruggr/1sat-indexer/v5/evt"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 var ingest *idx.IngestCtx

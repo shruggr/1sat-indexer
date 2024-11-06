@@ -1,4 +1,4 @@
-module github.com/shruggr/1sat-indexer
+module github.com/shruggr/1sat-indexer/v5
 
 go 1.22.0
 
@@ -27,7 +27,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/go-zeromq/zmq4 v0.17.0 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/josharian/intern v1.0.0 // indirect

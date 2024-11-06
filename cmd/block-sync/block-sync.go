@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/shruggr/1sat-indexer/blk"
+	"github.com/shruggr/1sat-indexer/v5/blk"
 )
 
 const PAGE_SIZE = 10000

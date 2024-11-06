@@ -5,8 +5,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/onesat"
-	"github.com/shruggr/1sat-indexer/sub"
+	"github.com/shruggr/1sat-indexer/v5/onesat"
+	"github.com/shruggr/1sat-indexer/v5/sub"
 )
 
 var POSTGRES string
