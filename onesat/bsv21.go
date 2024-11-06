@@ -69,10 +69,6 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		return nil
 	} else if protocol, ok := insc.JsonMap["p"]; !ok || protocol != "bsv-20" {
 		return nil
-	} else if id, ok := insc.JsonMap["id"]; !ok {
-		return nil
-	} else if _, err = lib.NewOutpointFromString(id); err != nil {
-		return nil
 	} else {
 		// if i.WhitelistFn != nil {
 		// 	whitelisted := (*i.WhitelistFn)(id)
@@ -87,9 +83,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		// 		return nil
 		// 	}
 		// }
-		bsv21 := &Bsv21{
-			Id: id,
-		}
+		bsv21 := &Bsv21{}
 		if op, ok := insc.JsonMap["op"]; ok {
 			bsv21.Op = strings.ToLower(op)
 		} else {
@@ -114,6 +108,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 
 		switch bsv21.Op {
 		case "deploy+mint":
+			bsv21.Id = txo.Outpoint.String()
 			if sym, ok := insc.JsonMap["sym"]; ok {
 				bsv21.Symbol = &sym
 			}
@@ -144,6 +139,13 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				Value: "",
 			})
 		case "transfer", "burn":
+			if id, ok := insc.JsonMap["id"]; !ok {
+				return nil
+			} else if _, err = lib.NewOutpointFromString(id); err != nil {
+				return nil
+			} else {
+				bsv21.Id = id
+			}
 		default:
 			return nil
 		}
