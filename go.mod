@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.14
-	github.com/bitcoin-sv/go-sdk v1.1.12
+	github.com/bitcoin-sv/go-sdk v1.1.14
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/joho/godotenv v1.5.1
 	github.com/ordishs/go-bitcoin v1.0.86
