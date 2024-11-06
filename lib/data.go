@@ -67,7 +67,8 @@ func LoadTx(txid string) (tx *bt.Tx, err error) {
 }
 
 func LoadRawtx(txid string) (rawtx []byte, err error) {
-	rawtx, _ = Cache.HGet(context.Background(), "tx", txid).Bytes()
+	cacheKey := "tx:" + txid
+	rawtx, _ = Cache.Get(context.Background(), cacheKey).Bytes()
 
 	if len(rawtx) > 100 {
 		return rawtx, nil
@@ -96,7 +97,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Cache.HSet(context.Background(), "tx", txid, rawtx).Err()
+	Cache.Set(context.Background(), cacheKey, rawtx, 0).Err()
 	return
 }
 

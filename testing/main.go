@@ -16,7 +16,7 @@ import (
 
 var dryRun = false
 
-var hexId = "905db47ef89809199d8a673907661316c728f57d12bbc3171d8a340be6946a1c"
+var hexId = "ff423a984e59e762fc9d93198a5bee6ecf6ce1ba05c7385c833b8d4384be325d"
 
 func main() {
 	// var err error
@@ -72,16 +72,16 @@ func main() {
 		log.Panic(err)
 	}
 
-	// log.Println(current.String())
+	// // log.Println(current.String())
 
-	// op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// current, err := ordinals.GetLatestOutpoint(context.Background(), op)
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
+	// // op, err := lib.NewOutpointFromString("2ec2781d815226e925747246b4c10730269da0e431f9edafcd6c12d8726434c6_0")
+	// // if err != nil {
+	// // 	log.Panic(err)
+	// // }
+	// // current, err := ordinals.GetLatestOutpoint(context.Background(), op)
+	// // if err != nil {
+	// // 	log.Panic(err)
+	// // }
 
 	fmt.Println(string(out))
 }
