@@ -11,7 +11,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/acct"
@@ -31,7 +30,7 @@ var currentSessions = sse.SessionsLock{
 
 func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *fiber.App {
 	app := fiber.New()
-	app.Use(recover.New())
+	// app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(compress.New())
 
