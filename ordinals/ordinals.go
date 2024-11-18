@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -162,12 +161,12 @@ ordLoop:
 			if len(op2.Data) < 256 && utf8.Valid(op2.Data) {
 				ins.File.Type = string(op2.Data)
 			}
-		case 2:
-			var pointer uint64
-			if len(op2.Data) > 0 {
-				pointer = binary.LittleEndian.Uint64(op2.Data)
-			}
-			ins.Pointer = &pointer
+		// case 2:
+		// 	var pointer uint64
+		// 	if len(op2.Data) > 0 {
+		// 		pointer = binary.LittleEndian.Uint64(op2.Data)
+		// 	}
+		// 	ins.Pointer = &pointer
 		case 3:
 			if parent, err := lib.NewOutpointFromTxOutpoint(op2.Data); err == nil {
 				ins.Parent = parent

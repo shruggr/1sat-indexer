@@ -136,7 +136,7 @@ func GetSpend(outpoint *Outpoint) (spend []byte, err error) {
 
 func GetChaintip(ctx context.Context) *models.BlockHeader {
 	chaintip := &models.BlockHeader{}
-	if data, err := Rdb.Get(ctx, "chaintip").Bytes(); err != nil {
+	if data, err := Cache.Get(ctx, "blk:tip").Bytes(); err != nil {
 		log.Panic(err)
 	} else if err = json.Unmarshal(data, &chaintip); err != nil {
 		log.Panic(err)
