@@ -12,6 +12,7 @@ import (
 	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
@@ -25,6 +26,12 @@ type Sub struct {
 	Topic        string
 	FromBlock    uint
 	Verbose      bool
+}
+
+var store *redisstore.RedisStore
+
+func init() {
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
 }
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
@@ -62,7 +69,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
+			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
 				errors <- err
 			}
 		}
@@ -72,7 +79,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
 				errors <- err
 			}
 		}

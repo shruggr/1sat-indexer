@@ -13,6 +13,8 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
+const TxLogTag = "tx"
+
 type IngestCtx struct {
 	Tag         string
 	Key         string
@@ -24,6 +26,7 @@ type IngestCtx struct {
 	Network     lib.Network
 	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
 	Once        bool
+	Store       TxoStore
 }
 
 func (cfg *IngestCtx) IndexedTags() []string {
@@ -113,14 +116,14 @@ func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string, ancestorCfg An
 }
 
 func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
-	idxCtx = NewIndexContext(ctx, tx, cfg.Indexers, ancestorCfg, cfg.Network)
+	idxCtx = NewIndexContext(ctx, cfg.Store, tx, cfg.Indexers, ancestorCfg, cfg.Network)
 	idxCtx.ParseTxn()
 	return
 }
 
 func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
 	if cfg.Once {
-		if score, err := LogScore(ctx, cfg.Tag, txid); err != nil {
+		if score, err := cfg.Store.LogScore(ctx, cfg.Tag, txid); err != nil {
 			log.Panic(err)
 			return nil, err
 		} else if score > 0 {
@@ -151,14 +154,14 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 
 func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error) {
 	idxCtx.Save()
-	if err = Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+	if err = cfg.Store.Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
 		return
 	} else if len(cfg.Tag) > 0 {
-		if err = Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+		if err = cfg.Store.Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
 			log.Panic(err)
 			return
-		} else if err = Dequeue(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
+		} else if err = cfg.Store.Delog(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
 			log.Panic(err)
 			return
 		}

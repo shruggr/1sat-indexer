@@ -4,12 +4,14 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/onesat"
 )
 
@@ -33,6 +35,12 @@ var eventKey = evt.EventKey("origin", &evt.Event{
 var queue = make(chan string, 10000000)
 var processed map[string]struct{}
 var wg sync.WaitGroup
+
+var store *redisstore.RedisStore
+
+func init() {
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+}
 
 func main() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
@@ -63,7 +71,7 @@ func main() {
 			Key:   eventKey,
 			Limit: 10000,
 		}
-		if outpoints, err := idx.SearchOutpoints(ctx, searchCfg); err != nil {
+		if outpoints, err := store.SearchMembers(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
 			processed = make(map[string]struct{}, 10000)
