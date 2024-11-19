@@ -6,6 +6,7 @@ import (
 
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 )
 
 var CONCURRENCY uint
@@ -25,7 +26,7 @@ func main() {
 	ctx := context.Background()
 	if err := (&idx.IngestCtx{
 		Tag:         TAG,
-		Key:         idx.QueueKey(QUEUE),
+		Key:         redisstore.QueueKey(QUEUE),
 		Indexers:    config.Indexers,
 		Network:     config.Network,
 		Concurrency: CONCURRENCY,

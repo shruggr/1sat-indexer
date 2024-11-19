@@ -11,8 +11,11 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
-	// "github.com/shruggr/1sat-indexer/v5/data"
 )
+
+func HeightScore(height uint32, idx uint64) float64 {
+	return float64(uint64(height)*1000000000 + idx)
+}
 
 type AncestorConfig struct {
 	Load  bool
@@ -34,14 +37,16 @@ type IndexContext struct {
 	Network        lib.Network              `json:"-"`
 	tags           []string                 `json:"-"`
 	ancestorConfig AncestorConfig           `json:"-"`
+	Store          TxoStore                 `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
+func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
 	idxCtx := &IndexContext{
 		Tx:             tx,
 		Txid:           tx.TxID(),
 		Indexers:       indexers,
 		Ctx:            ctx,
+		Store:          store,
 		ancestorConfig: ancestorConfig,
 	}
 	if len(network) > 0 {
@@ -128,7 +133,7 @@ func (idxCtx *IndexContext) ParseTxos() {
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
-	if txo, err = LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
+	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if txo != nil {
@@ -147,7 +152,7 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 			log.Panicln(err)
 			return nil, err
 		} else {
-			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
+			spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]
 			if idxCtx.ancestorConfig.Save {
@@ -175,7 +180,7 @@ func (idxCtx *IndexContext) Save() error {
 
 func (idxCtx *IndexContext) SaveTxos() error {
 	for _, txo := range idxCtx.Txos {
-		if err := txo.Save(idxCtx.Ctx, idxCtx.Height, idxCtx.Idx); err != nil {
+		if err := idxCtx.Store.SaveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err
 		}
 	}
@@ -184,7 +189,7 @@ func (idxCtx *IndexContext) SaveTxos() error {
 
 func (idxCtx *IndexContext) SaveSpends() error {
 	for _, spend := range idxCtx.Spends {
-		if err := spend.SaveSpend(idxCtx.Ctx, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
+		if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, spend, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err
 		}
 	}

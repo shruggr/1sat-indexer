@@ -52,7 +52,7 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 		return c.SendStatus(400)
 	}
 
-	response := broadcast.Broadcast(c.Context(), tx, b)
+	response := broadcast.Broadcast(c.Context(), ingest.Store, tx, b)
 	if response.Success {
 		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
 	}

@@ -22,7 +22,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 	c.ParamsInt("from", 0)
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           idx.OwnerTxosKey(address),
 		From:          c.QueryFloat("from", 0),
 		Reverse:       c.QueryBool("rev", false),

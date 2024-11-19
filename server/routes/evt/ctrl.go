@@ -1,6 +1,7 @@
 package evt
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,10 +22,11 @@ func TxosByEvent(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	decodedValue, _ := url.QueryUnescape(c.Params("value"))
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key: evt.EventKey(c.Params("tag"), &evt.Event{
 			Id:    c.Params("id"),
-			Value: c.Params("value"),
+			Value: decodedValue,
 		}),
 		From:          c.QueryFloat("from", 0),
 		Reverse:       c.QueryBool("rev", false),

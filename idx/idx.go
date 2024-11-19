@@ -1,7 +1,6 @@
 package idx
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -58,57 +57,34 @@ func init() {
 
 // const IngestLogKey = "log:tx"
 // const IngestQueueKey = "que:ing"
-const TxosKey = "txos"
-const SpendsKey = "spends"
-const TxLogTag = "tx"
 
-func QueueKey(tag string) string {
-	return "que:" + tag
-}
+// const PAGE_SIZE = 1000
 
-func LogKey(tag string) string {
-	return "log:" + tag
-}
+// func Delog(ctx context.Context, tag string, id string) error {
+// 	return QueueDB.ZRem(ctx, LogKey(tag), id).Err()
+// }
 
-func BalanceKey(key string) string {
-	return "bal:" + key
-}
+// func Log(ctx context.Context, tag string, id string, score float64) (err error) {
+// 	return QueueDB.ZAdd(ctx, LogKey(tag), redis.Z{
+// 		Score:  score,
+// 		Member: id,
+// 	}).Err()
+// }
 
-func HeightScore(height uint32, idx uint64) float64 {
-	return float64(uint64(height)*1000000000 + idx)
-}
+// func LogScore(ctx context.Context, tag string, id string) (score float64, err error) {
+// 	if score, err = QueueDB.ZScore(ctx, LogKey(tag), id).Result(); err == redis.Nil {
+// 		err = nil
+// 	}
+// 	return
+// }
 
-func TxoDataKey(outpoint string) string {
-	return "txo:data:" + outpoint
-}
+// func Enqueue(ctx context.Context, tag string, id string, score float64) error {
+// 	return QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
+// 		Score:  score,
+// 		Member: id,
+// 	}).Err()
+// }
 
-const PAGE_SIZE = 1000
-
-func Delog(ctx context.Context, tag string, id string) error {
-	return QueueDB.ZRem(ctx, LogKey(tag), id).Err()
-}
-
-func Log(ctx context.Context, tag string, id string, score float64) (err error) {
-	return QueueDB.ZAdd(ctx, LogKey(tag), redis.Z{
-		Score:  score,
-		Member: id,
-	}).Err()
-}
-
-func LogScore(ctx context.Context, tag string, id string) (score float64, err error) {
-	if score, err = QueueDB.ZScore(ctx, LogKey(tag), id).Result(); err == redis.Nil {
-		err = nil
-	}
-	return
-}
-
-func Enqueue(ctx context.Context, tag string, id string, score float64) error {
-	return QueueDB.ZAdd(ctx, QueueKey(tag), redis.Z{
-		Score:  score,
-		Member: id,
-	}).Err()
-}
-
-func Dequeue(ctx context.Context, tag string, id string) error {
-	return QueueDB.ZRem(ctx, QueueKey(tag), id).Err()
-}
+// func Dequeue(ctx context.Context, tag string, id string) error {
+// 	return QueueDB.ZRem(ctx, QueueKey(tag), id).Err()
+// }
