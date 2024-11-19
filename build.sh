@@ -1,27 +1,7 @@
-cd ./cmd/ord
-go build
-cd ../market
-go build
-cd ../market-spends
-go build
-cd ../locks
-go build
-cd ../opns
-go build
-cd ../bsv20-analysis
-go build
-cd ../bsv20-deploy
-go build
-cd ../bsv20v1
-go build
-cd ../bsv20v2
-go build
-cd ../mempool
-go build
-cd ../clean-mempool
-go build 
-cd ../sigil
-go build
-cd ../block-sync
-go build
-cd ../../
+go build -o blocks.run cmd/block-sync/block-sync.go
+go build -o bsv21.run cmd/bsv21/bsv21.go
+go build -o ingest.run cmd/ingest/ingest.go
+go build -o origin.run cmd/origin/origin.go
+go build -o owners.run cmd/owner-sync/owner-sync.go
+go build -o server.run cmd/server/server.go
+go build -o subscribe.run cmd/subscribe/subscribe.go

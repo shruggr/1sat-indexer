@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/bitcoin-sv/go-sdk/chainhash"
 	"github.com/bitcoin-sv/go-sdk/util"
 )
 
@@ -16,6 +17,18 @@ type Outpoint []byte
 
 func NewOutpoint(txid []byte, vout uint32) *Outpoint {
 	o := Outpoint(binary.LittleEndian.AppendUint32(util.ReverseBytes(txid), vout))
+	return &o
+}
+
+func NewOutpointFromHash(txid *chainhash.Hash, vout uint32) *Outpoint {
+	o := Outpoint(binary.LittleEndian.AppendUint32(txid.CloneBytes(), vout))
+	return &o
+}
+
+func NewOutpointFromBytes(b []byte) *Outpoint {
+	buf := make([]byte, 36)
+	copy(buf, b)
+	o := Outpoint(buf)
 	return &o
 }
 
