@@ -28,7 +28,7 @@ CREATE TABLE owner_accounts (
     account TEXT,
     sync_height INT DEFAULT 0
 );
-CREATE INDEX idx_owner_accounts_account ON account_owner (account);
+CREATE INDEX idx_owner_accounts_account ON owner_accounts (account);
 
 CREATE TABLE progress (
     member TEXT PRIMARY KEY,

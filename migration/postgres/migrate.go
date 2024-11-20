@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	godotenv.Load("../.env")
+	godotenv.Load("../../.env")
 	m, err := migrate.New(
 		"file://",
 		os.Getenv("POSTGRES_FULL"),

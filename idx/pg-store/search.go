@@ -39,22 +39,28 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 
 func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGResult, err error) {
 	var sqlBuilder strings.Builder
-	sqlBuilder.WriteString(`SELECT member, score 
-		FROM logs 
-		WHERE search_key = $1 `)
+	args := make([]interface{}, 0, 3)
+	sqlBuilder.WriteString(`SELECT logs.member, logs.score 
+		FROM logs `)
 	if cfg.FilterSpent {
-		sqlBuilder.WriteString("AND spent = '' ")
+		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
 	}
+
+	sqlBuilder.WriteString(`WHERE search_key = $1 `)
+	args = append(args, cfg.Key, cfg.From)
 	if cfg.Reverse {
-		sqlBuilder.WriteString("AND score < $2 ORDER BY score DESC LIMIT $3")
+		sqlBuilder.WriteString("AND score < $2 ORDER BY score DESC ")
 	} else {
-		sqlBuilder.WriteString("AND score > $2 ORDER BY score ASC LIMIT $3")
+		sqlBuilder.WriteString("AND score > $2 ORDER BY score ASC ")
 	}
+	if cfg.Limit > 0 {
+		sqlBuilder.WriteString("LIMIT $3")
+		args = append(args, cfg.Limit)
+	}
+
 	if rows, err := p.DB.Query(ctx,
 		sqlBuilder.String(),
-		cfg.Key,
-		cfg.From,
-		cfg.Limit,
+		args...,
 	); err != nil {
 		return nil, err
 	} else {
