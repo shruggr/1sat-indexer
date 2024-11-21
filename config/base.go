@@ -9,3 +9,4 @@ import (
 var Indexers = []idx.Indexer{}
 var Broadcaster transaction.Broadcaster
 var Network = lib.Mainnet
+var Store idx.TxoStore

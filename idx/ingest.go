@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -63,11 +62,10 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Println("Loading", cfg.PageSize, "transactions to ingest")
 			}
-			if txids, err := QueueDB.ZRangeArgs(ctx, redis.ZRangeArgs{
+			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
 				Key:   cfg.Key,
-				Start: 0,
-				Stop:  cfg.PageSize - 1,
-			}).Result(); err != nil {
+				Limit: cfg.PageSize,
+			}); err != nil {
 				log.Panic(err)
 			} else {
 				for _, txid := range txids {

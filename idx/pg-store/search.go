@@ -77,7 +77,7 @@ func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGR
 	return results, nil
 }
 
-func (p *PGStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
+func (p *PGStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
 	if items, err := p.search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
@@ -95,7 +95,7 @@ func (p *PGStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (resu
 func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
 	if cfg.IncludeTxo {
 		var outpoints []string
-		if outpoints, err = p.SearchOutpoints(ctx, cfg); err != nil {
+		if outpoints, err = p.SearchMembers(ctx, cfg); err != nil {
 			return nil, err
 		}
 		if txos, err = p.LoadTxos(ctx, outpoints, nil); err != nil {

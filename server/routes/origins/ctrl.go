@@ -7,7 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/onesat"
 )
 
@@ -84,11 +83,11 @@ func OriginAncestors(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	if data, err := idx.TxoDB.HGet(c.Context(), redisstore.TxoDataKey(outpoint), "origin").Result(); err != nil {
+	if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 		return err
 	} else {
 		origin := onesat.Origin{}
-		if err := json.Unmarshal([]byte(data), &origin); err != nil {
+		if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
 			return err
 		}
 		outpoint = origin.Outpoint.String()
@@ -132,11 +131,11 @@ func OriginsAncestors(c *fiber.Ctx) error {
 	outpointMap := make(map[string]struct{}, len(outpoints))
 	for _, outpoint := range outpoints {
 		outpointMap[outpoint] = struct{}{}
-		if data, err := idx.TxoDB.HGet(c.Context(), redisstore.TxoDataKey(outpoint), "origin").Result(); err != nil {
+		if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 			return err
 		} else {
 			origin := onesat.Origin{}
-			if err := json.Unmarshal([]byte(data), &origin); err != nil {
+			if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
 				return err
 			}
 			origins = append(origins, origin.Outpoint.String())
@@ -163,5 +162,6 @@ func OriginsAncestors(c *fiber.Ctx) error {
 			}
 		}
 	}
+
 	return c.JSON(ancestors)
 }
