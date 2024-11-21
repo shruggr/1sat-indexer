@@ -191,7 +191,7 @@ func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns [
 
 func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, err error) {
 	var outpoints []string
-	balanceKey := BalanceKey(key)
+	balanceKey := idx.BalanceKey(key)
 	if balance, err = r.TxoDB.Get(ctx, balanceKey).Int64(); err != nil && err != redis.Nil {
 		return 0, err
 	} else if err != redis.Nil {

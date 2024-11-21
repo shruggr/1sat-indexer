@@ -29,3 +29,18 @@ func init() {
 		}
 	}
 }
+
+func BalanceKey(key string) string {
+	return "bal:" + key
+}
+
+const OwnerSyncKey = "own:sync"
+const OwnerAccountKey = "own:acct"
+
+func QueueKey(tag string) string {
+	return "que:" + tag
+}
+
+func LogKey(tag string) string {
+	return "log:" + tag
+}

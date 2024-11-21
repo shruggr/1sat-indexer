@@ -112,7 +112,7 @@ func ResolveOrigins(txid string) (err error) {
 				}
 			}
 		}
-		resolved := make([]interface{}, 0, len(idxCtx.Txos))
+		resolved := make([]string, 0, len(idxCtx.Txos))
 		for _, txo := range idxCtx.Txos {
 			if txo.Data[onesat.ORIGIN_TAG] != nil {
 				origin := txo.Data[onesat.ORIGIN_TAG].Data.(*onesat.Origin)
@@ -123,10 +123,8 @@ func ResolveOrigins(txid string) (err error) {
 			}
 		}
 		if len(resolved) > 0 {
-			if removed, err := idx.TxoDB.ZRem(ctx, eventKey, resolved...).Result(); err != nil {
+			if err := store.Delog(ctx, eventKey, resolved...); err != nil {
 				log.Panic(err)
-			} else {
-				log.Println("Resolved", removed, "outpoints", idxCtx.TxidHex)
 			}
 		}
 	}

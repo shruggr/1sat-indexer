@@ -6,29 +6,29 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (p *PGStore) Delog(ctx context.Context, tag string, member string) error {
+func (p *PGStore) Delog(ctx context.Context, key string, members ...string) error {
 	_, err := p.DB.Exec(ctx, `DELETE FROM logs
-		WHERE search_key=$1 AND member=$2`,
-		tag,
-		member,
+		WHERE search_key=$1 AND member=ANY($2)`,
+		key,
+		members,
 	)
 	return err
 }
 
-func (p *PGStore) Log(ctx context.Context, tag string, member string, score float64) (err error) {
+func (p *PGStore) Log(ctx context.Context, key string, member string, score float64) (err error) {
 	_, err = p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
 		VALUES ($1, $2, $3)`,
-		tag,
+		key,
 		member,
 		score,
 	)
 	return
 }
 
-func (p *PGStore) LogScore(ctx context.Context, tag string, member string) (score float64, err error) {
+func (p *PGStore) LogScore(ctx context.Context, key string, member string) (score float64, err error) {
 	err = p.DB.QueryRow(ctx, `SELECT score FROM logs
 		WHERE search_key=$1 AND member=$2`,
-		tag,
+		key,
 		member,
 	).Scan(&score)
 	if err == pgx.ErrNoRows {

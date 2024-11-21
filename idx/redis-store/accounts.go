@@ -16,7 +16,7 @@ func (r *RedisStore) AcctsByOwners(ctx context.Context, owners []string) ([]stri
 	}
 	acctSet := make(map[string]struct{}, len(owners))
 	accts := make([]string, 0, len(owners))
-	if ownAccts, err := r.TxoDB.HMGet(ctx, OwnerAccountKey, owners...).Result(); err != nil {
+	if ownAccts, err := r.TxoDB.HMGet(ctx, idx.OwnerAccountKey, owners...).Result(); err != nil {
 		return nil, err
 	} else {
 		for _, acct := range ownAccts {
@@ -41,14 +41,14 @@ func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners [
 		if owner == "" {
 			continue
 		}
-		if added, err := r.TxoDB.ZAddNX(ctx, OwnerSyncKey, redis.Z{
+		if added, err := r.TxoDB.ZAddNX(ctx, idx.OwnerSyncKey, redis.Z{
 			Score:  0,
 			Member: owner,
 		}).Result(); err != nil {
 			return err
 		} else if added == 0 {
 			continue
-		} else if err := r.TxoDB.HSet(ctx, OwnerAccountKey, owner, account).Err(); err != nil {
+		} else if err := r.TxoDB.HSet(ctx, idx.OwnerAccountKey, owner, account).Err(); err != nil {
 			return err
 		} else if r.TxoDB.SAdd(ctx, accountKey, owner).Err() != nil {
 			return err
@@ -79,7 +79,8 @@ func (r *RedisStore) SyncAcct(ctx context.Context, tag string, acct string, ing 
 
 func (r *RedisStore) SyncOwner(ctx context.Context, tag string, own string, ing *idx.IngestCtx) error {
 	log.Println("Syncing:", own)
-	if lastHeight, err := r.AcctDB.ZScore(ctx, OwnerSyncKey, own).Result(); err != nil && err != redis.Nil {
+	r.LogScore(ctx, tag, own)
+	if lastHeight, err := r.AcctDB.ZScore(ctx, idx.OwnerSyncKey, own).Result(); err != nil && err != redis.Nil {
 		return err
 	} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
 		log.Panic(err)
@@ -87,7 +88,7 @@ func (r *RedisStore) SyncOwner(ctx context.Context, tag string, own string, ing 
 		limiter := make(chan struct{}, ing.Concurrency)
 		var wg sync.WaitGroup
 		for _, addTxn := range addTxns {
-			if err := r.AcctDB.ZScore(ctx, LogKey(tag), addTxn.Txid).Err(); err != nil && err != redis.Nil {
+			if err := r.AcctDB.ZScore(ctx, idx.LogKey(tag), addTxn.Txid).Err(); err != nil && err != redis.Nil {
 				return err
 			} else if err != redis.Nil {
 				continue
@@ -113,7 +114,7 @@ func (r *RedisStore) SyncOwner(ctx context.Context, tag string, own string, ing 
 			}
 		}
 		wg.Wait()
-		if err := r.AcctDB.ZAdd(ctx, OwnerSyncKey, redis.Z{
+		if err := r.AcctDB.ZAdd(ctx, idx.OwnerSyncKey, redis.Z{
 			Score:  float64(lastHeight),
 			Member: own,
 		}).Err(); err != nil {

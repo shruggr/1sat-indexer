@@ -156,10 +156,10 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 		log.Panic(err)
 		return
 	} else if len(cfg.Tag) > 0 {
-		if err = cfg.Store.Log(ctx, cfg.Tag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+		if err = cfg.Store.Log(ctx, LogKey(cfg.Tag), idxCtx.TxidHex, idxCtx.Score); err != nil {
 			log.Panic(err)
 			return
-		} else if err = cfg.Store.Delog(ctx, cfg.Tag, idxCtx.TxidHex); err != nil {
+		} else if err = cfg.Store.Delog(ctx, QueueKey(cfg.Tag), idxCtx.TxidHex); err != nil {
 			log.Panic(err)
 			return
 		}

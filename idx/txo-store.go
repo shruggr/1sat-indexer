@@ -43,6 +43,6 @@ type TxoStore interface {
 	SyncAcct(ctx context.Context, tag, acct string, ingest *IngestCtx) error
 	SyncOwner(ctx context.Context, tag, owner string, ingest *IngestCtx) error
 	Log(ctx context.Context, tag string, id string, score float64) error
-	Delog(ctx context.Context, tag string, id string) error
+	Delog(ctx context.Context, tag string, ids ...string) error
 	LogScore(ctx context.Context, tag string, id string) (float64, error)
 }
