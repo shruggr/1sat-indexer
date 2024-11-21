@@ -50,6 +50,10 @@ func (i *Bsv21Indexer) Tag() string {
 }
 
 func (i *Bsv21Indexer) FromBytes(data []byte) (any, error) {
+	return i.Bsv21FromBytes(data)
+}
+
+func (i *Bsv21Indexer) Bsv21FromBytes(data []byte) (*Bsv21, error) {
 	obj := &Bsv21{}
 	if err := json.Unmarshal(data, obj); err != nil {
 		return nil, err
