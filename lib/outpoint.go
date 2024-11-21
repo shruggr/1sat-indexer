@@ -56,6 +56,11 @@ func (o *Outpoint) Txid() []byte {
 	return util.ReverseBytes((*o)[:32])
 }
 
+func (o *Outpoint) TxidHash() *chainhash.Hash {
+	hash, _ := chainhash.NewHash((*o)[:32])
+	return hash
+}
+
 func (o *Outpoint) TxidHex() string {
 	return hex.EncodeToString(o.Txid())
 }
