@@ -320,7 +320,7 @@ func (p *PGStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool,
 		VALUES ($1, $2)
 		ON CONFLICT (outpoint) DO UPDATE 
 			SET spend = $2 
-			WHERE spend == ''`,
+			WHERE txos.spend = ''`,
 		outpoint,
 		txid,
 	); err != nil {

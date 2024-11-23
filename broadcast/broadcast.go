@@ -27,7 +27,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		Txid:   txid.String(),
 		Status: 500,
 	}
-	log.Println("Broadcasting", response.Txid)
+	log.Println("Broadcasting", response.Txid, tx.Hex())
 
 	// Load Inputs
 	spendOutpoints := make([]string, 0, len(tx.Inputs))
@@ -106,6 +106,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = failure.Description
 		return
 	} else {
+		log.Println("Broadcasted", response.Txid)
 		response.Success = true
 		response.Status = 200
 	}

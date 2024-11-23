@@ -17,7 +17,8 @@ func (p *PGStore) Delog(ctx context.Context, key string, members ...string) erro
 
 func (p *PGStore) Log(ctx context.Context, key string, member string, score float64) (err error) {
 	_, err = p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-		VALUES ($1, $2, $3)`,
+		VALUES ($1, $2, $3)
+		ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
 		key,
 		member,
 		score,

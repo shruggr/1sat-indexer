@@ -15,3 +15,7 @@ func OwnerTxosKey(owner string) string {
 func AccountTxosKey(account string) string {
 	return "acct:" + account + ":txo"
 }
+
+func LockKey(outpoint string) string {
+	return "lock:" + outpoint
+}
