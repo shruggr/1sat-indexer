@@ -12,7 +12,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
-	"github.com/shruggr/1sat-indexer/v5/onesat"
+	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
 
 var CONCURRENCY uint

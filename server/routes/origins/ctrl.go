@@ -7,7 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/onesat"
+	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
 
 var ingest *idx.IngestCtx
