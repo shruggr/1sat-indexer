@@ -41,7 +41,7 @@ func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (
 	)
 	txo := &idx.Txo{}
 	var sats sql.NullInt64
-	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, sats); err == pgx.ErrNoRows {
+	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &sats); err == pgx.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)

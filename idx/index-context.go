@@ -125,9 +125,9 @@ func (idxCtx *IndexContext) ParseTxos() {
 				txo.Data[indexer.Tag()] = data
 			}
 		}
-		for _, indexer := range idxCtx.Indexers {
-			indexer.PreSave(idxCtx)
-		}
+	}
+	for _, indexer := range idxCtx.Indexers {
+		indexer.PreSave(idxCtx)
 	}
 }
 
