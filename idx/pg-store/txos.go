@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"time"
@@ -39,12 +40,17 @@ func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (
 		outpoint,
 	)
 	txo := &idx.Txo{}
-	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis); err == pgx.ErrNoRows {
+	var sats sql.NullInt64
+	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, sats); err == pgx.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)
 		return nil, err
 	} else {
+		if sats.Valid {
+			satoshis := uint64(sats.Int64)
+			txo.Satoshis = &satoshis
+		}
 		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
 		if txo.Data, err = p.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
 			log.Panic(err)

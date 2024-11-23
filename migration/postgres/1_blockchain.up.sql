@@ -1,7 +1,7 @@
 CREATE TABLE txos (
     outpoint TEXT PRIMARY KEY,
-    height INT,
-    idx BIGINT,
+    height INT DEFAULT EXTRACT(EPOCH FROM NOW())::integer,
+    idx BIGINT DEFAULT 0,
     spend TEXT NOT NULL DEFAULT '',
     satoshis BIGINT
 );

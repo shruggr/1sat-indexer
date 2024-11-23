@@ -23,4 +23,5 @@ type TxResult struct {
 	Height  uint32    `json:"height"`
 	Idx     uint64    `json:"idx"`
 	Score   float64   `json:"score"`
+	Rawtx   []byte    `json:"rawtx,omitempty"`
 }
