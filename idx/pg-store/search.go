@@ -193,3 +193,15 @@ func (p *PGStore) Balance(ctx context.Context, key string) (balance int64, err e
 	// }
 	return
 }
+
+func (p *PGStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
+	row := p.DB.QueryRow(ctx, `SELECT COUNT(1)
+		FROM logs
+		WHERE key = $1`,
+		key,
+	)
+	if err = row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return
+}

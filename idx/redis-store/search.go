@@ -217,3 +217,7 @@ func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, er
 	err = r.TxoDB.Set(ctx, balanceKey, balance, 60*time.Second).Err()
 	return
 }
+
+func (r *RedisStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
+	return r.TxoDB.ZCard(ctx, key).Uint64()
+}

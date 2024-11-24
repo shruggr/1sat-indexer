@@ -40,9 +40,11 @@ type TxoStore interface {
 	SearchMembers(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchTxos(ctx context.Context, cfg *SearchCfg) ([]*Txo, error)
 	SearchTxns(ctx context.Context, cfg *SearchCfg) ([]*lib.TxResult, error)
+	CountMembers(ctx context.Context, key string) (uint64, error)
 	SyncAcct(ctx context.Context, tag, acct string, ingest *IngestCtx) error
 	SyncOwner(ctx context.Context, tag, owner string, ingest *IngestCtx) error
 	Log(ctx context.Context, tag string, id string, score float64) error
+	LogOnce(ctx context.Context, tag string, id string, score float64) (bool, error)
 	Delog(ctx context.Context, tag string, ids ...string) error
 	LogScore(ctx context.Context, tag string, id string) (float64, error)
 }
