@@ -71,7 +71,7 @@ func main() {
 			Key:   eventKey,
 			Limit: 10000,
 		}
-		if outpoints, err := store.SearchMembers(ctx, searchCfg); err != nil {
+		if outpoints, err := store.SearchOutpoints(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
 			processed = make(map[string]struct{}, 10000)

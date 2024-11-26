@@ -57,7 +57,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 			LockingScript: lockingScript,
 			Change:        true,
 		})
-		if outpoints, err := idxCtx.Store.SearchMembers(idxCtx.Ctx, &SearchCfg{
+		if outpoints, err := idxCtx.Store.SearchOutpoints(idxCtx.Ctx, &SearchCfg{
 			Key:         OwnerKey(address.AddressString),
 			Limit:       25,
 			FilterSpent: true,

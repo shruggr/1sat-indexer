@@ -45,9 +45,10 @@ func AccountUtxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
+	from := c.QueryFloat("from", 0)
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           idx.AccountTxosKey(account),
-		From:          c.QueryFloat("from", 0),
+		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),
@@ -68,7 +69,7 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 	}
 	if results, err := ingest.Store.SearchTxns(c.Context(), &idx.SearchCfg{
 		Key:     idx.AccountTxosKey(c.Params("account")),
-		From:    from,
+		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
 	}); err != nil {

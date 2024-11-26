@@ -52,7 +52,7 @@ func main() {
 		go subscribe()
 	}
 	go categorize()
-	if tokenIds, err := store.SearchMembers(ctx, &idx.SearchCfg{
+	if tokenIds, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
 		Key: evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    "issue",
 			Value: "",
@@ -205,7 +205,7 @@ func subscribe() {
 }
 
 func categorize() {
-	if txids, err := store.SearchMembers(ctx, &idx.SearchCfg{
+	if txids, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
 		Key: queueKey,
 	}); err != nil {
 		log.Panic(err)

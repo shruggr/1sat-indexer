@@ -166,3 +166,42 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 	}
 	return
 }
+
+// func (cfg *IngestCtx) AuditBroadcasts(ctx context.Context) ([]string, error) {
+// 	to := float64(0)
+// 	score := -1 * HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
+// 	if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
+// 		Key:     TxLogTag,
+// 		From:    &score,
+// 		To:      &to,
+// 		Verbose: true,
+// 	}); err != nil {
+// 		return nil, err
+// 	} else {
+// 		for _, txid := range txids {
+// 			if rawtx, err := jb.LoadRemoteRawtx(ctx, txid); err != nil {
+// 				log.Println("Failed to load rawtx for", txid, err)
+// 			} else if len(rawtx) == 0 {
+// 				// TODO: Cleanup transaction
+// 			} else if proof, err := jb.LoadProof(ctx, txid); err != nil {
+// 				log.Println("Failed to load proof for", txid, err)
+// 			} else if proof == nil {
+// 				score := HeightScore(uint32(time.Now().Unix()), 0)
+// 				if err := cfg.Store.Log(ctx, TxLogTag, txid, score); err != nil {
+// 					log.Println("Failed to log transaction", txid, err)
+// 				}
+// 			} else if tx, err := transaction.NewTransactionFromBytes(rawtx); err != nil {
+// 				log.Println("Failed to parse transaction", txid, err)
+// 			} else {
+// 				tx.MerklePath = proof
+// 				if valid, err := tx.MerklePath.Verify(tx.TxID(), (&blk.HeadersClient{})); err != nil {
+// 					log.Println("Failed to verify transaction", txid, err)
+// 				} else if !valid {
+// 					// chain reorg. Retrieve updated proof
+// 				} else if _, err := cfg.IngestTx(ctx, tx, AncestorConfig{}); err != nil {
+// 					log.Println("Failed to ingest transaction", txid, err)
+// 				}
+// 			}
+// 		}
+// 	}
+// }

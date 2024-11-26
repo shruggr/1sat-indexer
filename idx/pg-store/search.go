@@ -3,9 +3,9 @@ package pgstore
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -13,28 +13,6 @@ import (
 type PGResult struct {
 	Outpoint string
 	Score    float64
-}
-
-func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
-	query := &redis.ZRangeBy{}
-	query.Count = int64(cfg.Limit)
-
-	if cfg.Reverse {
-		if cfg.From != 0 {
-			query.Max = fmt.Sprintf("(%f", cfg.From)
-		} else {
-			query.Max = "+inf"
-		}
-		query.Min = "-inf"
-	} else {
-		if cfg.From != 0 {
-			query.Min = fmt.Sprintf("(%f", cfg.From)
-		} else {
-			query.Min = "-inf"
-		}
-		query.Max = "+inf"
-	}
-	return query
 }
 
 func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGResult, err error) {
@@ -46,22 +24,33 @@ func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGR
 		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
 	}
 
+	args = append(args, cfg.Key)
 	sqlBuilder.WriteString(`WHERE search_key = $1 `)
-	args = append(args, cfg.Key, cfg.From)
-	if cfg.Reverse {
-		sqlBuilder.WriteString("AND score < $2 ORDER BY score DESC ")
-	} else {
-		sqlBuilder.WriteString("AND score > $2 ORDER BY score ASC ")
-	}
-	if cfg.Limit > 0 {
-		sqlBuilder.WriteString("LIMIT $3")
-		args = append(args, cfg.Limit)
+	if cfg.From != nil {
+		args = append(args, *cfg.From)
+		param := len(args)
+		if cfg.Reverse {
+			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", param))
+		} else {
+			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", param))
+		}
 	}
 
-	if rows, err := p.DB.Query(ctx,
-		sqlBuilder.String(),
-		args...,
-	); err != nil {
+	if cfg.To != nil {
+		args = append(args, *cfg.To)
+		param := len(args)
+		if cfg.Reverse {
+			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", param))
+		} else {
+			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", param))
+		}
+	}
+
+	sql := sqlBuilder.String()
+	if cfg.Verbose {
+		log.Println(sql, args)
+	}
+	if rows, err := p.DB.Query(ctx, sql, args...); err != nil {
 		return nil, err
 	} else {
 		defer rows.Close()
@@ -81,6 +70,18 @@ func (p *PGStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (result
 	if items, err := p.search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
+		members := make([]string, 0, len(items))
+		for _, item := range items {
+			members = append(members, item.Outpoint)
+		}
+		return members, nil
+	}
+}
+
+func (p *PGStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
+	if items, err := p.search(ctx, cfg); err != nil {
+		return nil, err
+	} else {
 		outpoints := make([]string, 0, len(items))
 		for _, item := range items {
 			if len(item.Outpoint) < 65 {
@@ -95,7 +96,7 @@ func (p *PGStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (result
 func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
 	if cfg.IncludeTxo {
 		var outpoints []string
-		if outpoints, err = p.SearchMembers(ctx, cfg); err != nil {
+		if outpoints, err = p.SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
 		}
 		if txos, err = p.LoadTxos(ctx, outpoints, nil); err != nil {

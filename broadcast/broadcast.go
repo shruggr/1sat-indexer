@@ -51,10 +51,11 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	log.Println("Load Spends", response.Txid)
 
 	score := idx.HeightScore(uint32(time.Now().Unix()), 0)
-	// TODO: More useful messages
 
 	// TODO: Verify Fees
+
 	// Verify Transaction locally
+	// TODO: More useful messages
 	if valid, err := spv.VerifyScripts(tx); err != nil {
 		response.Error = err.Error()
 		return
@@ -66,7 +67,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = err.Error()
 		return
 		// Log Transaction Status as pending
-	} else if err = store.Log(ctx, idx.TxLogTag, response.Txid, score); err != nil {
+	} else if err = store.Log(ctx, idx.TxLogTag, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
 	}
@@ -106,6 +107,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = failure.Description
 		return
 	} else {
+		store.Log(ctx, idx.TxLogTag, response.Txid, score)
 		log.Println("Broadcasted", response.Txid)
 		response.Success = true
 		response.Status = 200
@@ -130,7 +132,47 @@ func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string,
 		}
 	}
 	if len(deletes) > 0 {
-		return store.UnsetSpends(ctx, deletes)
+		if err := store.UnsetSpends(ctx, deletes); err != nil {
+			return err
+		}
+	}
+	if err := store.Delog(ctx, idx.TxLogTag, txid); err != nil {
+		return err
 	}
 	return nil
+}
+
+func AuditBroadcasts(ctx context.Context, store idx.TxoStore) ([]string, error) {
+	to := float64(0)
+	score := -1 * idx.HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
+	if txids, err := store.SearchMembers(ctx, &idx.SearchCfg{
+		Key:     idx.TxLogTag,
+		From:    &score,
+		To:      &to,
+		Verbose: true,
+	}); err != nil {
+		return nil, err
+	} else {
+		for _, txid := range txids {
+			if rawtx, err := jb.LoadRemoteRawtx(ctx, txid); err != nil {
+				log.Println("Failed to load rawtx for", txid, err)
+			} else if len(rawtx) == 0 {
+				if tx, err := jb.LoadTx(ctx, txid, false); err != nil {
+					log.Println("Failed to load rawtx for", txid, err)
+				} else {
+					spendOutpoints := make([]string, 0, len(tx.Inputs))
+					for _, input := range tx.Inputs {
+						spendOutpoint := lib.NewOutpointFromHash(input.SourceTXID, input.SourceTxOutIndex)
+						spendOutpoints = append(spendOutpoints, spendOutpoint.String())
+					}
+					if err := rollbackSpends(ctx, store, spendOutpoints, txid); err != nil {
+						log.Println("Failed to rollback spends for", txid, err)
+					}
+				}
+			} else if err := store.Log(ctx, idx.TxLogTag, txid, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+				log.Println("Failed to log transaction", txid, err)
+			}
+		}
+		return txids, nil
+	}
 }

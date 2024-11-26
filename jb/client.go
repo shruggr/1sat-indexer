@@ -103,34 +103,7 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	}
 
 	if len(rawtx) == 0 && JB != nil {
-		// start := time.Now()
-		url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-		// fmt.Println("Requesting:", url)
-		inflightM.Lock()
-		inflight, ok := inflightMap[url]
-		if !ok {
-			inflight = &InFlight{}
-			inflight.Wg.Add(1)
-			inflightMap[url] = inflight
-		}
-		inflightM.Unlock()
-		if ok {
-			// log.Println("Waiting for rawtx", txid)
-			inflight.Wg.Wait()
-			rawtx = inflight.Result
-		} else {
-			// log.Println("Requesting rawtx", txid)
-			if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
-				rawtx, _ = io.ReadAll(resp.Body)
-			}
-			inflight.Result = rawtx
-			inflight.Wg.Done()
-
-			inflightM.Lock()
-			delete(inflightMap, url)
-			inflightM.Unlock()
-		}
-		// log.Println("Rawtx", txid, time.Since(start))
+		rawtx, _ = LoadRemoteRawtx(ctx, txid)
 	}
 
 	if len(rawtx) == 0 && bit != nil {
@@ -144,6 +117,38 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 		Cache.Set(ctx, cacheKey, rawtx, 0).Err()
 	}
 
+	return
+}
+
+func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
+	// start := time.Now()
+	url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
+	// fmt.Println("Requesting:", url)
+	inflightM.Lock()
+	inflight, ok := inflightMap[url]
+	if !ok {
+		inflight = &InFlight{}
+		inflight.Wg.Add(1)
+		inflightMap[url] = inflight
+	}
+	inflightM.Unlock()
+	if ok {
+		// log.Println("Waiting for rawtx", txid)
+		inflight.Wg.Wait()
+		rawtx = inflight.Result
+	} else {
+		// log.Println("Requesting rawtx", txid)
+		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
+			rawtx, _ = io.ReadAll(resp.Body)
+		}
+		inflight.Result = rawtx
+		inflight.Wg.Done()
+
+		inflightM.Lock()
+		delete(inflightMap, url)
+		inflightM.Unlock()
+	}
+	// log.Println("Rawtx", txid, time.Since(start))
 	return
 }
 

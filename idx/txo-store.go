@@ -8,14 +8,15 @@ import (
 
 type SearchCfg struct {
 	Key           string
-	From          float64
-	To            float64
+	From          *float64
+	To            *float64
 	Limit         uint32
 	Reverse       bool
 	IncludeTxo    bool
 	IncludeScript bool
 	IncludeTags   []string
 	FilterSpent   bool
+	Verbose       bool
 }
 
 type SearchResult struct {
@@ -38,6 +39,7 @@ type TxoStore interface {
 	UnsetSpends(ctx context.Context, outpoints []string) error
 	SaveTxoData(ctx context.Context, txo *Txo) error
 	SearchMembers(ctx context.Context, cfg *SearchCfg) ([]string, error)
+	SearchOutpoints(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchTxos(ctx context.Context, cfg *SearchCfg) ([]*Txo, error)
 	SearchTxns(ctx context.Context, cfg *SearchCfg) ([]*lib.TxResult, error)
 	CountMembers(ctx context.Context, key string) (uint64, error)

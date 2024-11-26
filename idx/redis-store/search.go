@@ -16,20 +16,28 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 	query.Count = int64(cfg.Limit)
 
 	if cfg.Reverse {
-		if cfg.From != 0 {
-			query.Max = fmt.Sprintf("(%f", cfg.From)
+		if cfg.From != nil {
+			query.Max = fmt.Sprintf("(%f", *cfg.From)
 		} else {
 			query.Max = "+inf"
 		}
 		query.Min = "-inf"
 	} else {
-		if cfg.From != 0 {
-			query.Min = fmt.Sprintf("(%f", cfg.From)
+		if cfg.From != nil {
+			query.Min = fmt.Sprintf("(%f", *cfg.From)
 		} else {
 			query.Min = "-inf"
 		}
 		query.Max = "+inf"
 	}
+	if cfg.To != nil {
+		if cfg.Reverse {
+			query.Min = fmt.Sprintf("(%f", *cfg.To)
+		} else {
+			query.Max = fmt.Sprintf("(%f", *cfg.To)
+		}
+	}
+
 	return query
 }
 
@@ -81,6 +89,18 @@ func (r *RedisStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (res
 	if items, err := r.search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
+		members := make([]string, 0, len(items))
+		for _, item := range items {
+			members = append(members, item.Member.(string))
+		}
+		return members, nil
+	}
+}
+
+func (r *RedisStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
+	if items, err := r.search(ctx, cfg); err != nil {
+		return nil, err
+	} else {
 		outpoints := make([]string, 0, len(items))
 		for _, item := range items {
 			if len(item.Member.(string)) < 65 {
@@ -95,7 +115,7 @@ func (r *RedisStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (res
 func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
 	if cfg.IncludeTxo {
 		var outpoints []string
-		if outpoints, err = r.SearchMembers(ctx, cfg); err != nil {
+		if outpoints, err = r.SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
 		}
 		if cfg.FilterSpent {
@@ -196,7 +216,7 @@ func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, er
 		return 0, err
 	} else if err != redis.Nil {
 		return balance, nil
-	} else if outpoints, err = r.SearchMembers(ctx, &idx.SearchCfg{Key: key}); err != nil {
+	} else if outpoints, err = r.SearchOutpoints(ctx, &idx.SearchCfg{Key: key}); err != nil {
 		return 0, err
 	}
 	var msgpacks []interface{}

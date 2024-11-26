@@ -19,6 +19,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	ingest = ingestCtx
 	b = broadcaster
 	r.Post("/", BroadcastTx)
+	r.Get("/audit", AuditTxs)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
@@ -140,5 +141,13 @@ func GetProof(c *fiber.Ctx) error {
 			c.Set("Content-Type", "application/octet-stream")
 			return c.Send(proof.Bytes())
 		}
+	}
+}
+
+func AuditTxs(c *fiber.Ctx) error {
+	if txids, err := broadcast.AuditBroadcasts(c.Context(), ingest.Store); err != nil {
+		return err
+	} else {
+		return c.JSON(txids)
 	}
 }
