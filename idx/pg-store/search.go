@@ -41,6 +41,12 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		}
 	}
 
+	if cfg.Reverse {
+		sqlBuilder.WriteString("ORDER BY score DESC ")
+	} else {
+		sqlBuilder.WriteString("ORDER BY score ASC ")
+	}
+
 	sql := sqlBuilder.String()
 	if cfg.Verbose {
 		log.Println(sql, args)
