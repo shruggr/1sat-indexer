@@ -97,7 +97,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 	}
 
-	if _, failure := broadcaster.Broadcast(tx); failure != nil {
+	if success, failure := broadcaster.Broadcast(tx); failure != nil {
 		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
 		if status, err := strconv.Atoi(failure.Code); err == nil {
 			response.Status = uint32(status)
@@ -106,7 +106,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		return
 	} else {
 		store.Log(ctx, idx.TxLogTag, response.Txid, score)
-		log.Println("Broadcasted", response.Txid)
+		log.Println("Broadcasted", response.Txid, success)
 		response.Success = true
 		response.Status = 200
 	}

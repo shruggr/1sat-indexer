@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.14
-	github.com/bitcoin-sv/go-sdk v1.1.14
+	github.com/bitcoin-sv/go-sdk v1.1.15
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/jackc/pgx/v5 v5.7.1

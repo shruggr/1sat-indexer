@@ -21,7 +21,8 @@ CREATE TABLE logs (
     score DOUBLE PRECISION,
     PRIMARY KEY (search_key, member)
 );
-CREATE INDEX idx_logs_score ON logs (search_key, score);
+CREATE INDEX idx_logs_score ON logs (search_key text_pattern_ops, score)
+    INCLUDE (member);
 
 CREATE TABLE owner_accounts (
     owner TEXT PRIMARY KEY,

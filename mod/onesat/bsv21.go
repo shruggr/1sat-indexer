@@ -185,6 +185,9 @@ func (i *Bsv21Indexer) PreSave(idxCtx *idx.IndexContext) {
 	for _, txo := range idxCtx.Txos {
 		if idxData, ok := txo.Data[BSV21_TAG]; ok {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
+				if bsv21.Op == "deploy+mint" {
+					continue
+				}
 				if token, ok := ctx.tokens[bsv21.Id]; !ok {
 					token = &bsv21Token{
 						outputs: []*idx.IndexData{

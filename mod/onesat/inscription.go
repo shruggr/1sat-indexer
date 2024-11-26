@@ -46,7 +46,7 @@ func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
 
 func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
-	if idxCtx.Height < TRIGGER || txo.Satoshis == nil || *txo.Satoshis != 1 {
+	if (idxCtx.Height > 0 && idxCtx.Height < TRIGGER) || txo.Satoshis == nil || *txo.Satoshis != 1 {
 		return nil
 	}
 	scr := idxCtx.Tx.Outputs[vout].LockingScript

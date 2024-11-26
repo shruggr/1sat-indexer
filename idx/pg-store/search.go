@@ -13,8 +13,7 @@ import (
 func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.SearchResult, err error) {
 	var sqlBuilder strings.Builder
 	args := make([]interface{}, 0, 3)
-	sqlBuilder.WriteString(`SELECT logs.member, logs.score 
-		FROM logs `)
+	sqlBuilder.WriteString(`SELECT logs.member, logs.score FROM logs `)
 	if cfg.FilterSpent {
 		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
 	}
@@ -52,7 +51,7 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		results = make([]*idx.SearchResult, 0, cfg.Limit)
 		for rows.Next() {
 			var result idx.SearchResult
-			if err = rows.Scan(result.Member, &result.Score); err != nil {
+			if err = rows.Scan(&result.Member, &result.Score); err != nil {
 				return nil, err
 			}
 			results = append(results, &result)

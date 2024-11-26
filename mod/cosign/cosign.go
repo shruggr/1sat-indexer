@@ -38,19 +38,8 @@ func CosignFromBytes(data []byte) (*Cosign, error) {
 
 func (i *CosignIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
-	lockingScript := idxCtx.Tx.Outputs[vout].LockingScript
-	chunks, _ := lockingScript.Chunks()
 
-	cosign := parseScript(chunks, 0)
-	if cosign == nil {
-		for i, chunk := range chunks {
-			if chunk.Op == script.OpCODESEPARATOR {
-				if cosign = parseScript(chunks, i+1); cosign != nil {
-					break
-				}
-			}
-		}
-	}
+	cosign := parseScript(idxCtx.Tx.Outputs[vout].LockingScript)
 	if cosign != nil {
 		txo.AddOwner(cosign.Address)
 		return &idx.IndexData{
@@ -70,22 +59,25 @@ func (i *CosignIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 	return nil
 }
 
-func parseScript(chunks []*script.ScriptChunk, offset int) (cosign *Cosign) {
-	if len(chunks) >= 7+offset &&
-		chunks[0+offset].Op == script.OpDUP &&
-		chunks[1+offset].Op == script.OpHASH160 &&
-		len(chunks[2+offset].Data) == 20 &&
-		chunks[3+offset].Op == script.OpEQUALVERIFY &&
-		chunks[4+offset].Op == script.OpCHECKSIGVERIFY &&
-		len(chunks[5+offset].Data) == 33 &&
-		chunks[6+offset].Op == script.OpCHECKSIG {
+func parseScript(s *script.Script) *Cosign {
+	chunks, _ := s.Chunks()
+	for i := range len(chunks) - 6 {
+		if chunks[0+i].Op == script.OpDUP &&
+			chunks[1+i].Op == script.OpHASH160 &&
+			len(chunks[2+i].Data) == 20 &&
+			chunks[3+i].Op == script.OpEQUALVERIFY &&
+			chunks[4+i].Op == script.OpCHECKSIGVERIFY &&
+			len(chunks[5+i].Data) == 33 &&
+			chunks[6+i].Op == script.OpCHECKSIG {
 
-		cosign = &Cosign{
-			Cosigner: hex.EncodeToString(chunks[5+offset].Data),
-		}
-		if add, err := script.NewAddressFromPublicKeyHash(chunks[2+offset].Data, true); err == nil {
-			cosign.Address = add.AddressString
+			cosign := &Cosign{
+				Cosigner: hex.EncodeToString(chunks[5+i].Data),
+			}
+			if add, err := script.NewAddressFromPublicKeyHash(chunks[2+i].Data, true); err == nil {
+				cosign.Address = add.AddressString
+			}
+			return cosign
 		}
 	}
-	return
+	return nil
 }

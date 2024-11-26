@@ -125,12 +125,15 @@ func (c *CosignApproverTemplate) Sign(tx *transaction.Transaction, inputIndex ui
 	sigBuf = append(sigBuf, signature...)
 	sigBuf = append(sigBuf, uint8(*c.SigHashFlag))
 
-	scr := script.Script(make([]byte, 0, 59))
-	s := &scr
-	s.AppendPushData(sigBuf)
+	s := &script.Script{}
 	chunks, _ := c.UserScript.Chunks()
+	if err = s.AppendPushData(sigBuf); err != nil {
+		return nil, err
+	}
 	for _, op := range chunks {
-		s.AppendPushData(op.Data)
+		if err = s.AppendPushData(op.Data); err != nil {
+			return nil, err
+		}
 	}
 
 	return s, nil
