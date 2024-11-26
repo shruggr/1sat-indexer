@@ -7,6 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -197,6 +198,11 @@ func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns [
 					Idx:     uint64(item.Score) % 1000000000,
 					Outputs: lib.NewOutputMap(),
 					Score:   item.Score,
+				}
+				if cfg.IncludeRawtx {
+					if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
+						return nil, err
+					}
 				}
 				txMap[item.Score] = result
 				results = append(results, result)

@@ -15,6 +15,7 @@ type SearchCfg struct {
 	IncludeTxo    bool
 	IncludeScript bool
 	IncludeTags   []string
+	IncludeRawtx  bool
 	FilterSpent   bool
 	Verbose       bool
 }
