@@ -50,14 +50,14 @@ func (r *RedisStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []
 	}
 }
 
-func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []idx.SearchResult, err error) {
+func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.SearchResult, err error) {
 	redisResults, err := r.search(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	results = make([]idx.SearchResult, 0, len(redisResults))
+	results = make([]*idx.SearchResult, 0, len(redisResults))
 	for _, redisResult := range redisResults {
-		results = append(results, idx.SearchResult{
+		results = append(results, &idx.SearchResult{
 			Member: redisResult.Member.(string),
 			Score:  redisResult.Score,
 		})

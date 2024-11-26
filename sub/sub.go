@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -30,7 +29,7 @@ type Sub struct {
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"), os.Getenv("REDISACCT"), os.Getenv("REDISQUEUE"))
 }
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
@@ -75,7 +74,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(0, 0)); err != nil {
 				errors <- err
 			}
 		}

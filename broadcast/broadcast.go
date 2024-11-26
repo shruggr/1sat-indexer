@@ -50,12 +50,10 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 
 	log.Println("Load Spends", response.Txid)
 
-	score := idx.HeightScore(uint32(time.Now().Unix()), 0)
+	score := idx.HeightScore(0, 0)
 
 	// TODO: Verify Fees
-
 	// Verify Transaction locally
-	// TODO: More useful messages
 	if valid, err := spv.VerifyScripts(tx); err != nil {
 		response.Error = err.Error()
 		return
@@ -169,7 +167,7 @@ func AuditBroadcasts(ctx context.Context, store idx.TxoStore) ([]string, error) 
 						log.Println("Failed to rollback spends for", txid, err)
 					}
 				}
-			} else if err := store.Log(ctx, idx.TxLogTag, txid, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+			} else if err := store.Log(ctx, idx.TxLogTag, txid, idx.HeightScore(0, 0)); err != nil {
 				log.Println("Failed to log transaction", txid, err)
 			}
 		}

@@ -17,12 +17,22 @@ type RedisStore struct {
 	QueueDB *redis.Client
 }
 
-func NewRedisTxoStore(connString string) *RedisStore {
+func NewRedisTxoStore(txoConnString string, acctConnString string, queConnString string) *RedisStore {
 	r := &RedisStore{}
-	if opts, err := redis.ParseURL(connString); err != nil {
+	if opts, err := redis.ParseURL(txoConnString); err != nil {
 		panic(err)
 	} else {
 		r.TxoDB = redis.NewClient(opts)
+	}
+	if opts, err := redis.ParseURL(acctConnString); err != nil {
+		panic(err)
+	} else {
+		r.AcctDB = redis.NewClient(opts)
+	}
+	if opts, err := redis.ParseURL(queConnString); err != nil {
+		panic(err)
+	} else {
+		r.QueueDB = redis.NewClient(opts)
 	}
 	return r
 }

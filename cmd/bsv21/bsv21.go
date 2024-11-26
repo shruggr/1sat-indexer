@@ -25,7 +25,7 @@ var ctx = context.Background()
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"), os.Getenv("REDISACCT"), os.Getenv("REDISQUEUE"))
 }
 
 var ingest = &idx.IngestCtx{

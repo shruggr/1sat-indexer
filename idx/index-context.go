@@ -14,6 +14,9 @@ import (
 )
 
 func HeightScore(height uint32, idx uint64) float64 {
+	if height == 0 {
+		return float64(time.Now().UnixNano())
+	}
 	return float64(uint64(height)*1000000000 + idx)
 }
 
@@ -64,8 +67,6 @@ func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transa
 				break
 			}
 		}
-	} else {
-		idxCtx.Height = uint32(time.Now().Unix())
 	}
 	idxCtx.Score = HeightScore(idxCtx.Height, idxCtx.Idx)
 	for _, indexer := range indexers {

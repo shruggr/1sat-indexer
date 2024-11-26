@@ -30,6 +30,7 @@ func main() {
 		Network:     config.Network,
 		Concurrency: CONCURRENCY,
 		Verbose:     VERBOSE > 0,
+		Store:       config.Store,
 	}).Exec(ctx); err != nil {
 		panic(err)
 	}

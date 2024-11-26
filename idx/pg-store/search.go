@@ -10,12 +10,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
-type PGResult struct {
-	Outpoint string
-	Score    float64
-}
-
-func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGResult, err error) {
+func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.SearchResult, err error) {
 	var sqlBuilder strings.Builder
 	args := make([]interface{}, 0, 3)
 	sqlBuilder.WriteString(`SELECT logs.member, logs.score 
@@ -54,40 +49,40 @@ func (p *PGStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []PGR
 		return nil, err
 	} else {
 		defer rows.Close()
-		results = make([]PGResult, 0, cfg.Limit)
+		results = make([]*idx.SearchResult, 0, cfg.Limit)
 		for rows.Next() {
-			var result PGResult
-			if err = rows.Scan(&result.Outpoint, &result.Score); err != nil {
+			var result idx.SearchResult
+			if err = rows.Scan(result.Member, &result.Score); err != nil {
 				return nil, err
 			}
-			results = append(results, result)
+			results = append(results, &result)
 		}
 	}
 	return results, nil
 }
 
 func (p *PGStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
-	if items, err := p.search(ctx, cfg); err != nil {
+	if items, err := p.Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		members := make([]string, 0, len(items))
 		for _, item := range items {
-			members = append(members, item.Outpoint)
+			members = append(members, item.Member)
 		}
 		return members, nil
 	}
 }
 
 func (p *PGStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
-	if items, err := p.search(ctx, cfg); err != nil {
+	if items, err := p.Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		outpoints := make([]string, 0, len(items))
 		for _, item := range items {
-			if len(item.Outpoint) < 65 {
+			if len(item.Member) < 65 {
 				continue
 			}
-			outpoints = append(outpoints, item.Outpoint)
+			outpoints = append(outpoints, item.Member)
 		}
 		return outpoints, nil
 	}
@@ -103,21 +98,18 @@ func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*i
 			return nil, err
 		}
 	} else {
-		if results, err := p.search(ctx, cfg); err != nil {
+		if results, err := p.Search(ctx, cfg); err != nil {
 			return nil, err
 		} else {
 			txos = make([]*idx.Txo, 0, len(results))
 			for _, result := range results {
-				if len(result.Outpoint) < 65 {
-					continue
-				}
 				txo := &idx.Txo{
 					Height: uint32(result.Score / 1000000000),
 					Idx:    uint64(result.Score) % 1000000000,
 					Score:  result.Score,
 					Data:   make(map[string]*idx.IndexData),
 				}
-				if txo.Outpoint, err = lib.NewOutpointFromString(result.Outpoint); err != nil {
+				if txo.Outpoint, err = lib.NewOutpointFromString(result.Member); err != nil {
 					return nil, err
 				}
 				txos = append(txos, txo)
@@ -146,15 +138,15 @@ func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*i
 func (p *PGStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns []*lib.TxResult, err error) {
 	results := make([]*lib.TxResult, 0, 1000)
 	txMap := make(map[float64]*lib.TxResult)
-	if activity, err := p.search(ctx, cfg); err != nil {
+	if activity, err := p.Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		for _, item := range activity {
 			var txid string
 			var out *uint32
-			if len(item.Outpoint) == 64 {
-				txid = item.Outpoint
-			} else if outpoint, err := lib.NewOutpointFromString(item.Outpoint); err != nil {
+			if len(item.Member) == 64 {
+				txid = item.Member
+			} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
 				return nil, err
 			} else {
 				txid = outpoint.TxidHex()

@@ -21,11 +21,7 @@ var ctx = context.Background()
 var originIndexer = &onesat.OriginIndexer{}
 var inscIndexer = &onesat.InscriptionIndexer{}
 
-var ingest = &idx.IngestCtx{
-	Tag:      "origin",
-	Indexers: []idx.Indexer{inscIndexer, originIndexer},
-	Network:  config.Network,
-}
+var ingest *idx.IngestCtx
 
 var eventKey = evt.EventKey("origin", &evt.Event{
 	Id:    "outpoint",
@@ -39,7 +35,13 @@ var wg sync.WaitGroup
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"), os.Getenv("REDISACCT"), os.Getenv("REDISQUEUE"))
+	ingest = &idx.IngestCtx{
+		Tag:      "origin",
+		Indexers: []idx.Indexer{inscIndexer, originIndexer},
+		Network:  config.Network,
+		Store:    store,
+	}
 }
 
 func main() {

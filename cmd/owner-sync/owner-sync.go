@@ -4,25 +4,24 @@ import (
 	"context"
 	"flag"
 	"log"
-	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var ctx = context.Background()
 var CONCURRENCY int
 var TAG string
-var store *redisstore.RedisStore
+var store idx.TxoStore
 
 func init() {
 	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
 	flag.IntVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	store = config.Store
 }
 
 func main() {
