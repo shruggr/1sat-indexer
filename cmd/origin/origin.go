@@ -35,7 +35,7 @@ var wg sync.WaitGroup
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"), os.Getenv("REDISACCT"), os.Getenv("REDISQUEUE"))
+	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
 	ingest = &idx.IngestCtx{
 		Tag:      "origin",
 		Indexers: []idx.Indexer{inscIndexer, originIndexer},

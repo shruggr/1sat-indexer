@@ -45,9 +45,9 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 func (r *RedisStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []redis.Z, err error) {
 	query := BuildQuery(cfg)
 	if cfg.Reverse {
-		return r.TxoDB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
+		return r.DB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
 	} else {
-		return r.TxoDB.ZRangeByScoreWithScores(ctx, cfg.Key, query).Result()
+		return r.DB.ZRangeByScoreWithScores(ctx, cfg.Key, query).Result()
 	}
 }
 
@@ -70,7 +70,7 @@ func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string) ([]str
 	if len(outpoints) == 0 {
 		return outpoints, nil
 	}
-	if spends, err := r.TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+	if spends, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
 		unspent := make([]string, 0, len(outpoints))
@@ -218,7 +218,7 @@ func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns [
 func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, err error) {
 	var outpoints []string
 	balanceKey := idx.BalanceKey(key)
-	if balance, err = r.TxoDB.Get(ctx, balanceKey).Int64(); err != nil && err != redis.Nil {
+	if balance, err = r.DB.Get(ctx, balanceKey).Int64(); err != nil && err != redis.Nil {
 		return 0, err
 	} else if err != redis.Nil {
 		return balance, nil
@@ -226,7 +226,7 @@ func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, er
 		return 0, err
 	}
 	var msgpacks []interface{}
-	if msgpacks, err = r.TxoDB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
+	if msgpacks, err = r.DB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
 		return
 	}
 	for _, mp := range msgpacks {
@@ -240,10 +240,10 @@ func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, er
 			}
 		}
 	}
-	err = r.TxoDB.Set(ctx, balanceKey, balance, 60*time.Second).Err()
+	err = r.DB.Set(ctx, balanceKey, balance, 60*time.Second).Err()
 	return
 }
 
 func (r *RedisStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
-	return r.TxoDB.ZCard(ctx, key).Uint64()
+	return r.DB.ZCard(ctx, key).Uint64()
 }

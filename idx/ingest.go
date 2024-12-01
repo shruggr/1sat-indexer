@@ -169,13 +169,14 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 }
 
 func (cfg *IngestCtx) AuditBroadcasts(ctx context.Context, bcast *broadcaster.Arc) ([]*broadcaster.ArcResponse, error) {
-	to := float64(0)
-	score := -1 * HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
+	// to := float64(0)
+	// score := -1 * HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
+	score := float64(5e16)
 	var statuses []*broadcaster.ArcResponse
 	if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
-		Key:     TxLogTag,
-		From:    &score,
-		To:      &to,
+		Key:  TxLogTag,
+		From: &score,
+		// To:      &to,
 		Verbose: true,
 	}); err != nil {
 		return nil, err

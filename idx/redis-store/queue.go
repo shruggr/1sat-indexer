@@ -11,18 +11,18 @@ func (r *RedisStore) Delog(ctx context.Context, key string, members ...string) e
 	for i, m := range members {
 		memInt[i] = m
 	}
-	return r.QueueDB.ZRem(ctx, key, memInt...).Err()
+	return r.DB.ZRem(ctx, key, memInt...).Err()
 }
 
 func (r *RedisStore) Log(ctx context.Context, key string, member string, score float64) (err error) {
-	return r.QueueDB.ZAdd(ctx, key, redis.Z{
+	return r.DB.ZAdd(ctx, key, redis.Z{
 		Score:  score,
 		Member: member,
 	}).Err()
 }
 
 func (r *RedisStore) LogOnce(ctx context.Context, key string, member string, score float64) (bool, error) {
-	if rows, err := r.QueueDB.ZAddNX(ctx, key, redis.Z{
+	if rows, err := r.DB.ZAddNX(ctx, key, redis.Z{
 		Score:  score,
 		Member: member,
 	}).Result(); err != nil {
@@ -33,7 +33,7 @@ func (r *RedisStore) LogOnce(ctx context.Context, key string, member string, sco
 }
 
 func (r *RedisStore) LogScore(ctx context.Context, key string, member string) (score float64, err error) {
-	if score, err = r.QueueDB.ZScore(ctx, key, member).Result(); err == redis.Nil {
+	if score, err = r.DB.ZScore(ctx, key, member).Result(); err == redis.Nil {
 		err = nil
 	}
 	return

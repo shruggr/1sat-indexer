@@ -12,33 +12,21 @@ import (
 )
 
 type RedisStore struct {
-	TxoDB   *redis.Client
-	AcctDB  *redis.Client
-	QueueDB *redis.Client
+	DB *redis.Client
 }
 
-func NewRedisTxoStore(txoConnString string, acctConnString string, queConnString string) *RedisStore {
+func NewRedisTxoStore(connString string) *RedisStore {
 	r := &RedisStore{}
-	if opts, err := redis.ParseURL(txoConnString); err != nil {
+	if opts, err := redis.ParseURL(connString); err != nil {
 		panic(err)
 	} else {
-		r.TxoDB = redis.NewClient(opts)
-	}
-	if opts, err := redis.ParseURL(acctConnString); err != nil {
-		panic(err)
-	} else {
-		r.AcctDB = redis.NewClient(opts)
-	}
-	if opts, err := redis.ParseURL(queConnString); err != nil {
-		panic(err)
-	} else {
-		r.QueueDB = redis.NewClient(opts)
+		r.DB = redis.NewClient(opts)
 	}
 	return r
 }
 
 func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (*idx.Txo, error) {
-	if result, err := r.TxoDB.HGet(ctx, TxosKey, outpoint).Bytes(); err == redis.Nil {
+	if result, err := r.DB.HGet(ctx, TxosKey, outpoint).Bytes(); err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)
@@ -63,7 +51,7 @@ func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []st
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
-	if msgpacks, err := r.TxoDB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
+	if msgpacks, err := r.DB.HMGet(ctx, TxosKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
 		txos := make([]*idx.Txo, 0, len(msgpacks))
@@ -93,7 +81,7 @@ func (r *RedisStore) LoadData(ctx context.Context, outpoint string, tags []strin
 		return nil, nil
 	}
 	data = make(idx.IndexDataMap, len(tags))
-	if datas, err := r.TxoDB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
+	if datas, err := r.DB.HMGet(ctx, TxoDataKey(outpoint), tags...).Result(); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else {
@@ -121,7 +109,7 @@ func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, b
 		log.Println("Marshal Txo", err)
 		log.Panic(err)
 		return err
-	} else if _, err := r.TxoDB.Pipelined(ctx, func(pipe redis.Pipeliner) (err error) {
+	} else if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) (err error) {
 		if err := pipe.HSet(ctx, TxosKey, outpoint, mp).Err(); err != nil {
 			log.Println("HSET Txo", err)
 			log.Panic(err)
@@ -178,7 +166,7 @@ func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string,
 		log.Panic(err)
 		return err
 	}
-	if _, err := r.TxoDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		if err := pipe.HSet(ctx,
 			SpendsKey,
 			spend.Outpoint.String(),
@@ -229,7 +217,7 @@ func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) 
 	outpoint := txo.Outpoint.String()
 	score := idx.HeightScore(txo.Height, txo.Idx)
 	datas := make(map[string]any, len(txo.Data))
-	if _, err := r.TxoDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		for tag, data := range txo.Data {
 			tagKey := evt.TagKey(tag)
 			if err := pipe.ZAdd(ctx, tagKey, redis.Z{
@@ -277,12 +265,12 @@ func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) 
 }
 
 func (r *RedisStore) GetSpend(ctx context.Context, outpoint string) (string, error) {
-	return r.TxoDB.HGet(ctx, SpendsKey, outpoint).Result()
+	return r.DB.HGet(ctx, SpendsKey, outpoint).Result()
 }
 
 func (r *RedisStore) GetSpends(ctx context.Context, outpoints []string) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
-	if records, err := r.TxoDB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
+	if records, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
 		for _, record := range records {
@@ -295,9 +283,9 @@ func (r *RedisStore) GetSpends(ctx context.Context, outpoints []string) ([]strin
 }
 
 func (r *RedisStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
-	return r.TxoDB.HSetNX(ctx, SpendsKey, outpoint, txid).Result()
+	return r.DB.HSetNX(ctx, SpendsKey, outpoint, txid).Result()
 }
 
 func (r *RedisStore) UnsetSpends(ctx context.Context, outpoints []string) error {
-	return r.TxoDB.HDel(ctx, SpendsKey, outpoints...).Err()
+	return r.DB.HDel(ctx, SpendsKey, outpoints...).Err()
 }
