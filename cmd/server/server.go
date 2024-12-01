@@ -14,7 +14,7 @@ var PORT int
 var CONCURRENCY uint
 
 func init() {
-	flag.IntVar(&PORT, "p", 8083, "Port to listen on")
+	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
 }
