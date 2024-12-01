@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var hexId = "c697ca54080101a4fcd4365114d5a9080771cc34fafb4a5ad21be0ad319f3c9a"
+var hexId = "b70ec98aec25d49356092676cf46a452122b3c1b3b9bfc1e8e656c5d37a6f9af"
 var ctx = context.Background()
 
 func TestIngest(t *testing.T) {
@@ -26,6 +26,15 @@ func TestIngest(t *testing.T) {
 	assert.NoError(t, err)
 
 	out, err := json.MarshalIndent(idxCtx, "", "  ")
+	assert.NoError(t, err)
+	log.Println(string(out))
+}
+
+func TestArcStatus(t *testing.T) {
+	status, err := config.Broadcaster.Status(hexId)
+	assert.NoError(t, err)
+
+	out, err := json.MarshalIndent(status, "", "  ")
 	assert.NoError(t, err)
 	log.Println(string(out))
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
@@ -145,9 +146,9 @@ func GetProof(c *fiber.Ctx) error {
 }
 
 func AuditTxs(c *fiber.Ctx) error {
-	if txids, err := broadcast.AuditBroadcasts(c.Context(), ingest.Store); err != nil {
+	if statuses, err := ingest.AuditBroadcasts(c.Context(), config.Broadcaster); err != nil {
 		return err
 	} else {
-		return c.JSON(txids)
+		return c.JSON(statuses)
 	}
 }
