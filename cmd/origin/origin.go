@@ -52,22 +52,29 @@ func main() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
 	go func() {
+		failed := make(chan string, 100)
 		limiter := make(chan struct{}, CONCURRENCY)
-		for txid := range queue {
-			if _, ok := processed[txid]; !ok {
-				processed[txid] = struct{}{}
-				limiter <- struct{}{}
-				go func(txid string) {
-					defer func() {
-						<-limiter
-						wg.Done()
-					}()
-					if err := ResolveOrigins(txid); err != nil {
-						log.Panic(err)
-					}
-				}(txid)
-			} else {
-				wg.Done()
+		for {
+			select {
+			case txid := <-queue:
+				if _, ok := processed[txid]; !ok {
+					processed[txid] = struct{}{}
+					limiter <- struct{}{}
+					go func(txid string) {
+						defer func() {
+							<-limiter
+							wg.Done()
+						}()
+						if err := ResolveOrigins(txid); err != nil {
+							log.Println()
+							failed <- txid
+						}
+					}(txid)
+				} else {
+					wg.Done()
+				}
+			case txid := <-failed:
+				delete(processed, txid)
 			}
 		}
 	}()
@@ -105,8 +112,15 @@ func ResolveOrigins(txid string) (err error) {
 		Parse: true,
 		Save:  true,
 	}); err != nil {
-		log.Panic(err)
+		log.Println("ingest-err", txid, err)
+		// if err == jb.ErrMissingTxn {
+		// 	log.Println("resolve missing-txn", txid)
+		// 	return nil
+		// }
+		// log.Panic(err)
 		return err
+	} else if idxCtx == nil {
+		return nil
 	} else {
 		for _, spend := range idxCtx.Spends {
 			if spend.Data[onesat.ORIGIN_TAG] != nil {
@@ -129,6 +143,7 @@ func ResolveOrigins(txid string) (err error) {
 			}
 		}
 		if len(resolved) > 0 {
+			log.Println("Resolved", resolved)
 			if err := store.Delog(ctx, eventKey, resolved...); err != nil {
 				log.Panic(err)
 			}

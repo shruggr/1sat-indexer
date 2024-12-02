@@ -25,7 +25,10 @@ var ctx = context.Background()
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisStore(os.Getenv("REDISTXO"))
+	var err error
+	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	}
 }
 
 var ingest = &idx.IngestCtx{

@@ -116,7 +116,7 @@ func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string, ancestorCfg An
 
 func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
 	idxCtx = NewIndexContext(ctx, cfg.Store, tx, cfg.Indexers, ancestorCfg, cfg.Network)
-	idxCtx.ParseTxn()
+	err = idxCtx.ParseTxn()
 	return
 }
 
@@ -130,6 +130,7 @@ func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg A
 		}
 	}
 	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
+		log.Println("LoadTx error", txid, err)
 		return nil, err
 	} else if tx == nil {
 		return nil, fmt.Errorf("missing-txn %s", txid)

@@ -2,6 +2,7 @@ package jb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +24,9 @@ var JUNGLEBUS string
 var Cache *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
+
+var ErrMissingTxn = errors.New("missing-txn")
+var ErrMalformed = errors.New("malformed")
 
 func init() {
 	wd, _ := os.Getwd()
@@ -66,14 +70,61 @@ func ProofKey(txid string) string {
 
 func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.Transaction, err error) {
 	var rawtx []byte
-	if rawtx, err = LoadRawtx(ctx, txid); err != nil {
-		return
-	} else if len(rawtx) == 0 {
-		fmt.Printf("missing-txn %s\n", txid)
-		return
-	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+	cacheKey := TxKey(txid)
+	rawtx, _ = Cache.Get(ctx, cacheKey).Bytes()
+	fromCache := false
+	if len(rawtx) > 0 {
+		if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+			log.Println("fixing bad cache", txid)
+			Cache.Del(ctx, cacheKey)
+			err = ErrMalformed
+			tx = nil
+		} else {
+			fromCache = true
+		}
+	}
+
+	if tx == nil && JB != nil {
+		if rawtx, err = LoadRemoteRawtx(ctx, txid); err != nil {
+			log.Println("JB Err", txid, err)
+		} else if len(rawtx) > 0 {
+			if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+				log.Println("JB Malformed", txid, err)
+				err = ErrMalformed
+				tx = nil
+			} else {
+				// log.Println("JB Success", txid)
+			}
+		} else {
+			log.Println("JB Missing", txid)
+		}
+	}
+
+	if tx == nil && bit != nil {
+		// log.Println("Requesting tx from node", txid)
+		var r io.ReadCloser
+		if r, err = bit.GetRawTransactionRest(txid); err != nil {
+			log.Println("node error", txid, err)
+		} else if rawtx, err = io.ReadAll(r); err != nil {
+			log.Println("read error", txid, err)
+		} else if len(rawtx) > 0 {
+			if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+				err = ErrMalformed
+			}
+		}
+	}
+	if err != nil {
 		return
 	}
+	if tx == nil {
+		err = ErrMissingTxn
+		return
+	}
+
+	if !fromCache {
+		Cache.Set(ctx, cacheKey, rawtx, 0)
+	}
+
 	if withProof {
 		if proof, err := LoadProof(ctx, txid); err == nil && proof != nil {
 			tx.MerklePath = proof
@@ -92,32 +143,11 @@ var inflightMap = map[string]*InFlight{}
 var inflightM sync.Mutex
 
 func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
-	cacheKey := TxKey(txid)
-	rawtx, _ = Cache.Get(ctx, cacheKey).Bytes()
-
-	if len(rawtx) > 100 {
-		return rawtx, nil
+	if tx, err := LoadTx(ctx, txid, false); err != nil {
+		return nil, err
 	} else {
-		rawtx = []byte{}
-
+		return tx.Bytes(), nil
 	}
-
-	if len(rawtx) == 0 && JB != nil {
-		rawtx, _ = LoadRemoteRawtx(ctx, txid)
-	}
-
-	if len(rawtx) == 0 && bit != nil {
-		// log.Println("Requesting tx from node", txid)
-		if r, err := bit.GetRawTransactionRest(txid); err == nil {
-			rawtx, _ = io.ReadAll(r)
-		}
-	}
-
-	if len(rawtx) > 0 {
-		Cache.Set(ctx, cacheKey, rawtx, 0).Err()
-	}
-
-	return
 }
 
 func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
@@ -138,15 +168,26 @@ func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error)
 		rawtx = inflight.Result
 	} else {
 		// log.Println("Requesting rawtx", txid)
-		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
-			rawtx, _ = io.ReadAll(resp.Body)
-		}
-		inflight.Result = rawtx
-		inflight.Wg.Done()
+		rawtx, err = func() (rawtx []byte, err error) {
+			defer func() {
+				inflight.Result = rawtx
+				inflight.Wg.Done()
 
-		inflightM.Lock()
-		delete(inflightMap, url)
-		inflightM.Unlock()
+				inflightM.Lock()
+				delete(inflightMap, url)
+				inflightM.Unlock()
+			}()
+			if resp, err := http.Get(url); err != nil {
+				return nil, err
+			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
+				return nil, err
+			} else if resp.StatusCode != 200 {
+				return nil, fmt.Errorf("%d %s", resp.StatusCode, rawtx)
+			} else {
+				return rawtx, nil
+			}
+		}()
+
 	}
 	// log.Println("Rawtx", txid, time.Since(start))
 	return

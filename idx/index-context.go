@@ -44,6 +44,9 @@ type IndexContext struct {
 }
 
 func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
+	if tx == nil {
+		return nil
+	}
 	idxCtx := &IndexContext{
 		Tx:             tx,
 		Txid:           tx.TxID(),
@@ -75,12 +78,14 @@ func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transa
 	return idxCtx
 }
 
-func (idxCtx *IndexContext) ParseTxn() {
-	idxCtx.ParseSpends()
-	idxCtx.ParseTxos()
+func (idxCtx *IndexContext) ParseTxn() (err error) {
+	if err = idxCtx.ParseSpends(); err != nil {
+		return
+	}
+	return idxCtx.ParseTxos()
 }
 
-func (idxCtx *IndexContext) ParseSpends() {
+func (idxCtx *IndexContext) ParseSpends() (err error) {
 	if idxCtx.Tx.IsCoinbase() {
 		return
 	}
@@ -89,7 +94,7 @@ func (idxCtx *IndexContext) ParseSpends() {
 		var spend *Txo
 
 		if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
-			log.Panic(err)
+			return err
 		} else {
 			spend = txo
 		}
@@ -101,9 +106,10 @@ func (idxCtx *IndexContext) ParseSpends() {
 		}
 		idxCtx.Spends = append(idxCtx.Spends, spend)
 	}
+	return nil
 }
 
-func (idxCtx *IndexContext) ParseTxos() {
+func (idxCtx *IndexContext) ParseTxos() (err error) {
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
 		outpoint := lib.NewOutpointFromHash(idxCtx.Txid, uint32(vout))
@@ -130,6 +136,7 @@ func (idxCtx *IndexContext) ParseTxos() {
 	for _, indexer := range idxCtx.Indexers {
 		indexer.PreSave(idxCtx)
 	}
+	return nil
 }
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
@@ -150,7 +157,6 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 	} else if idxCtx.ancestorConfig.Parse {
 		parentTxid := outpoint.TxidHex()
 		if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
-			log.Panicln(err)
 			return nil, err
 		} else {
 			spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)

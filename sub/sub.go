@@ -29,7 +29,10 @@ type Sub struct {
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisStore(os.Getenv("REDISTXO"))
+	var err error
+	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	}
 }
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
