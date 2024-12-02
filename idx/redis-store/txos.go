@@ -160,13 +160,10 @@ func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, b
 
 func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, height uint32, blkIdx uint64) error {
 	score := idx.HeightScore(height, blkIdx)
-
-	accounts, err := r.AcctsByOwners(ctx, spend.Owners)
-	if err != nil {
+	if accounts, err := r.AcctsByOwners(ctx, spend.Owners); err != nil {
 		log.Panic(err)
 		return err
-	}
-	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+	} else if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		if err := pipe.HSet(ctx,
 			SpendsKey,
 			spend.Outpoint.String(),

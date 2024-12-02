@@ -3,7 +3,8 @@ CREATE TABLE txos (
     height INT DEFAULT EXTRACT(EPOCH FROM NOW())::integer,
     idx BIGINT DEFAULT 0,
     spend TEXT NOT NULL DEFAULT '',
-    satoshis BIGINT
+    satoshis BIGINT,
+    owners TEXT[],
 );
 CREATE INDEX idx_txos_height_idx ON txos (height, idx);
 CREATE INDEX idx_txos_spend ON txos (spend);
