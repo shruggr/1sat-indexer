@@ -68,11 +68,10 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
 	}
 	if results, err := ingest.Store.SearchTxns(c.Context(), &idx.SearchCfg{
-		Key:     idx.AccountTxosKey(c.Params("account")),
 		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
-	}); err != nil {
+	}, []string{idx.AccountTxosKey(c.Params("account"))}); err != nil {
 		return err
 	} else {
 		return c.JSON(results)

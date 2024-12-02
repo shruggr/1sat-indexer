@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -141,47 +142,104 @@ func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*i
 	return txos, nil
 }
 
-func (p *PGStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns []*lib.TxResult, err error) {
-	results := make([]*lib.TxResult, 0, 1000)
+// func (p *PGStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns []*lib.TxResult, err error) {
+// 	return p.SearchManyTxns(ctx, cfg, []string{cfg.Key})
+// 	results := make([]*lib.TxResult, 0, 1000)
+// 	txMap := make(map[float64]*lib.TxResult)
+// 	if activity, err := p.Search(ctx, cfg); err != nil {
+// 		return nil, err
+// 	} else {
+// 		for _, item := range activity {
+// 			var txid string
+// 			var out *uint32
+// 			if len(item.Member) == 64 {
+// 				txid = item.Member
+// 			} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
+// 				return nil, err
+// 			} else {
+// 				txid = outpoint.TxidHex()
+// 				vout := outpoint.Vout()
+// 				out = &vout
+// 			}
+// 			var result *lib.TxResult
+// 			var ok bool
+// 			if result, ok = txMap[item.Score]; !ok {
+// 				height := uint32(item.Score / 1000000000)
+// 				result = &lib.TxResult{
+// 					Txid:    txid,
+// 					Height:  height,
+// 					Idx:     uint64(item.Score) % 1000000000,
+// 					Outputs: lib.NewOutputMap(),
+// 					Score:   item.Score,
+// 				}
+// 				if cfg.IncludeRawtx {
+// 					if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
+// 						return nil, err
+// 					}
+// 				}
+// 				txMap[item.Score] = result
+// 				results = append(results, result)
+// 			}
+// 			if out != nil {
+// 				result.Outputs[*out] = struct{}{}
+// 			}
+// 		}
+// 	}
+// 	return results, nil
+// }
+
+func (p *PGStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg, keys []string) (txns []*lib.TxResult, err error) {
 	txMap := make(map[float64]*lib.TxResult)
-	if activity, err := p.Search(ctx, cfg); err != nil {
-		return nil, err
-	} else {
-		for _, item := range activity {
-			var txid string
-			var out *uint32
-			if len(item.Member) == 64 {
-				txid = item.Member
-			} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
-				return nil, err
-			} else {
-				txid = outpoint.TxidHex()
-				vout := outpoint.Vout()
-				out = &vout
-			}
-			var result *lib.TxResult
-			var ok bool
-			if result, ok = txMap[item.Score]; !ok {
-				height := uint32(item.Score / 1000000000)
-				result = &lib.TxResult{
-					Txid:    txid,
-					Height:  height,
-					Idx:     uint64(item.Score) % 1000000000,
-					Outputs: lib.NewOutputMap(),
-					Score:   item.Score,
+	scores := make([]float64, 0, 1000)
+
+	for _, key := range keys {
+		cfg.Key = key
+
+		if activity, err := p.Search(ctx, cfg); err != nil {
+			return nil, err
+		} else {
+			for _, item := range activity {
+				var txid string
+				var out *uint32
+				if len(item.Member) == 64 {
+					txid = item.Member
+				} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
+					return nil, err
+				} else {
+					txid = outpoint.TxidHex()
+					vout := outpoint.Vout()
+					out = &vout
 				}
-				if cfg.IncludeRawtx {
-					if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
-						return nil, err
+				var result *lib.TxResult
+				var ok bool
+				if result, ok = txMap[item.Score]; !ok {
+					height := uint32(item.Score / 1000000000)
+					result = &lib.TxResult{
+						Txid:    txid,
+						Height:  height,
+						Idx:     uint64(item.Score) % 1000000000,
+						Outputs: lib.NewOutputMap(),
+						Score:   item.Score,
 					}
+					if cfg.IncludeRawtx {
+						if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
+							return nil, err
+						}
+					}
+					txMap[item.Score] = result
+					scores = append(scores, item.Score)
+					// results = append(results, result)
 				}
-				txMap[item.Score] = result
-				results = append(results, result)
-			}
-			if out != nil {
-				result.Outputs[*out] = struct{}{}
+				if out != nil {
+					result.Outputs[*out] = struct{}{}
+				}
 			}
 		}
+	}
+	slices.Sort(scores)
+	results := make([]*lib.TxResult, 0, len(scores))
+	for _, score := range scores {
+		results = append(results, txMap[score])
 	}
 	return results, nil
 }
