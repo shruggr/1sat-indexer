@@ -10,6 +10,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	feemodel "github.com/bitcoin-sv/go-sdk/transaction/fee_model"
 	"github.com/bitcoin-sv/go-sdk/transaction/template/p2pkh"
+	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -58,7 +59,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 			Change:        true,
 		})
 		if outpoints, err := idxCtx.Store.SearchOutpoints(idxCtx.Ctx, &SearchCfg{
-			Key:         OwnerKey(address.AddressString),
+			Key:         evt.EventKey("p2pkh", &evt.Event{Id: "own", Value: address.AddressString}),
 			Limit:       25,
 			FilterSpent: true,
 		}); err != nil {
