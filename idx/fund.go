@@ -15,7 +15,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
-const SATS_PER_KB = uint64(1)
+const SATS_PER_KB = uint64(10)
 
 func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 	var satsIn, satsOut uint64
@@ -34,7 +34,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 	if fee, err := feeModel.ComputeFee(tx); err != nil {
 		log.Println(err)
 		return err
-	} else if satsIn >= satsOut+uint64(fee) {
+	} else if satsIn >= satsOut+uint64(fee+1) {
 		return nil
 	} else if address, err := script.NewAddressFromPublicKey(priv.PubKey(), true); err != nil {
 		log.Println(err)
@@ -46,7 +46,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 		log.Println(err)
 		return err
 	} else {
-		satsNeeded := satsOut + uint64(fee) - satsIn
+		satsNeeded := satsOut + uint64(fee+1) - satsIn
 		satsIn = 0
 		satsOut = satsNeeded
 		fundTx := transaction.NewTransaction()
@@ -87,10 +87,10 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 						UnlockingScriptTemplate: unlock,
 					})
 					satsIn += *txo.Satoshis
-					if fee, err := feeModel.ComputeFee(tx); err != nil {
+					if fundFee, err := feeModel.ComputeFee(tx); err != nil {
 						log.Println(err)
 						return err
-					} else if satsIn >= satsOut+uint64(fee) {
+					} else if satsIn >= satsOut+uint64(fundFee) {
 						break
 					}
 				}
