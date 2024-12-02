@@ -15,14 +15,14 @@ type RedisStore struct {
 	DB *redis.Client
 }
 
-func NewRedisTxoStore(connString string) *RedisStore {
+func NewRedisStore(connString string) (*RedisStore, error) {
 	r := &RedisStore{}
 	if opts, err := redis.ParseURL(connString); err != nil {
-		panic(err)
+		return nil, err
 	} else {
 		r.DB = redis.NewClient(opts)
+		return r, nil
 	}
-	return r
 }
 
 func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (*idx.Txo, error) {

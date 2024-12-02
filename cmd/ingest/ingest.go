@@ -14,7 +14,7 @@ var QUEUE string
 var TAG string
 
 func init() {
-	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
+	flag.StringVar(&TAG, "tag", "", "Ingest tag")
 	flag.StringVar(&QUEUE, "q", "ingest", "Ingest tag")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")

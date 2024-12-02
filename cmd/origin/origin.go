@@ -15,11 +15,12 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
 
+var MAX_DEPTH uint
 var CONCURRENCY uint
 var ctx = context.Background()
 
-var originIndexer = &onesat.OriginIndexer{}
-var inscIndexer = &onesat.InscriptionIndexer{}
+// var originIndexer = &onesat.OriginIndexer{}
+// var inscIndexer = &onesat.InscriptionIndexer{}
 
 var ingest *idx.IngestCtx
 
@@ -35,10 +36,13 @@ var wg sync.WaitGroup
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	var err error
+	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	}
 	ingest = &idx.IngestCtx{
 		Tag:      "origin",
-		Indexers: []idx.Indexer{inscIndexer, originIndexer},
+		Indexers: config.Indexers,
 		Network:  config.Network,
 		Store:    store,
 	}
@@ -132,3 +136,18 @@ func ResolveOrigins(txid string) (err error) {
 	}
 	return nil
 }
+
+// func ResolveOrigin(outpoint string, depth uint32) (origin *onesat.Origin, err error) {
+// 	var txo *idx.Txo
+// 	if txo, err = store.LoadTxo(ctx, outpoint, []string{onesat.ORIGIN_TAG}); err != nil {
+// 		log.Panic(err)
+// 		return nil, err
+// 	} else if txo == nil {
+// 		log.Panic("Missing txo:", outpoint)
+// 	}
+// 	origin = txo.Data[onesat.ORIGIN_TAG].Data.(*onesat.Origin)
+// 	if origin.Outpoint == nil {
+
+// 	}
+// 	return origin, nil
+// }

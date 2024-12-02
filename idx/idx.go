@@ -41,6 +41,8 @@ func QueueKey(tag string) string {
 	return "que:" + tag
 }
 
+const IngestQueueKey = "que:ingest"
+
 func LogKey(tag string) string {
 	return "log:" + tag
 }

@@ -100,6 +100,11 @@ func (r *RedisStore) SyncOwner(ctx context.Context, tag string, own string, ing 
 					<-limiter
 					wg.Done()
 				}()
+				// score := idx.HeightScore(addTxn.Height, addTxn.Idx)
+				// if err := r.Log(ctx, idx.IngestQueueKey, addTxn.Txid, score); err != nil {
+				// 	log.Panic(err)
+				// }
+				// log.Println("Queued:", addTxn.Txid)
 				if _, err := ing.IngestTxid(ctx, addTxn.Txid, idx.AncestorConfig{
 					Load:  true,
 					Parse: true,

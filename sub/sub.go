@@ -29,7 +29,7 @@ type Sub struct {
 var store *redisstore.RedisStore
 
 func init() {
-	store = redisstore.NewRedisTxoStore(os.Getenv("REDISTXO"))
+	store = redisstore.NewRedisStore(os.Getenv("REDISTXO"))
 }
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {

@@ -122,7 +122,7 @@ func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, 
 
 func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
 	if cfg.Once {
-		if score, err := cfg.Store.LogScore(ctx, cfg.Tag, txid); err != nil {
+		if score, err := cfg.Store.LogScore(ctx, LogKey(cfg.Tag), txid); err != nil {
 			log.Panic(err)
 			return nil, err
 		} else if score > 0 {
@@ -160,10 +160,12 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 		if err = cfg.Store.Log(ctx, LogKey(cfg.Tag), idxCtx.TxidHex, idxCtx.Score); err != nil {
 			log.Panic(err)
 			return
-		} else if err = cfg.Store.Delog(ctx, QueueKey(cfg.Tag), idxCtx.TxidHex); err != nil {
-			log.Panic(err)
-			return
 		}
+		// } else if len(cfg.Key) > 0 {
+		// 	if err = cfg.Store.Delog(ctx, cfg.Key, idxCtx.TxidHex); err != nil {
+		// 		log.Panic(err)
+		// 		return
+		// 	}
 	}
 	return
 }

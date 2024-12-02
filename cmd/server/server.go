@@ -12,10 +12,12 @@ import (
 
 var PORT int
 var CONCURRENCY uint
+var VERBOSE int
 
 func init() {
 	flag.IntVar(&PORT, "p", 8082, "Port to listen on")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
+	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
 }
 
@@ -27,6 +29,7 @@ func main() {
 		Network:     config.Network,
 		Once:        true,
 		Store:       config.Store,
+		Verbose:     VERBOSE > 0,
 	}, config.Broadcaster)
 	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))
