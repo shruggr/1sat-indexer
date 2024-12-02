@@ -23,10 +23,10 @@ func (i *P2PKHIndexer) Tag() string {
 }
 
 func (i *P2PKHIndexer) FromBytes(data []byte) (any, error) {
-	return CosignFromBytes(data)
+	return P2PKHFromBytes(data)
 }
 
-func CosignFromBytes(data []byte) (*P2PKH, error) {
+func P2PKHFromBytes(data []byte) (*P2PKH, error) {
 	obj := &P2PKH{}
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return nil, err
@@ -41,7 +41,9 @@ func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		if add, err := script.NewAddressFromPublicKeyHash((*output.LockingScript)[3:23], true); err == nil {
 			// txo.AddOwner(add.AddressString)
 			return &idx.IndexData{
-				Data: add.AddressString,
+				Data: &P2PKH{
+					Address: add.AddressString,
+				},
 				Events: []*evt.Event{
 					{
 						Id:    "own",
