@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 
 	"github.com/bitcoin-sv/go-sdk/spv"
 	"github.com/bitcoin-sv/go-sdk/transaction"
@@ -65,7 +64,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = err.Error()
 		return
 		// Log Transaction Status as pending
-	} else if err = store.Log(ctx, idx.TxLogTag, response.Txid, -score); err != nil {
+	} else if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
 	}
@@ -74,22 +73,16 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	for vin, spendOutpoint := range spendOutpoints {
 		// spendOutpoint := spend.Outpoint.String()
 		if added, err := store.SetNewSpend(ctx, spendOutpoint, response.Txid); err != nil {
-			if err := rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid); err == nil {
-				store.Delog(ctx, idx.TxLogTag, response.Txid)
-			}
+			rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 			response.Error = err.Error()
 			return
 		} else if !added {
 			if spend, err := store.GetSpend(ctx, spendOutpoint); err != nil {
-				if err := rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid); err == nil {
-					store.Delog(ctx, idx.TxLogTag, response.Txid)
-				}
+				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 				response.Error = err.Error()
 				return
 			} else if spend != response.Txid {
-				if err := rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid); err == nil {
-					store.Delog(ctx, idx.TxLogTag, response.Txid)
-				}
+				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 				response.Status = 409
 				response.Error = fmt.Sprintf("double-spend: %s:%d - %s spent in %s", response.Txid, vin, spendOutpoint, spend)
 				return
@@ -105,7 +98,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = failure.Description
 		return
 	} else {
-		store.Log(ctx, idx.TxLogTag, response.Txid, score)
+		store.Log(ctx, idx.PendingTxLog, response.Txid, score)
 		log.Println("Broadcasted", response.Txid, success)
 		response.Success = true
 		response.Status = 200
@@ -134,43 +127,8 @@ func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string,
 			return err
 		}
 	}
-	if err := store.Delog(ctx, idx.TxLogTag, txid); err != nil {
+	if err := store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 		return err
 	}
 	return nil
-}
-
-func AuditBroadcasts(ctx context.Context, store idx.TxoStore) ([]string, error) {
-	to := float64(0)
-	score := -1 * idx.HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
-	if txids, err := store.SearchMembers(ctx, &idx.SearchCfg{
-		Key:     idx.TxLogTag,
-		From:    &score,
-		To:      &to,
-		Verbose: true,
-	}); err != nil {
-		return nil, err
-	} else {
-		for _, txid := range txids {
-			if rawtx, err := jb.LoadRemoteRawtx(ctx, txid); err != nil {
-				log.Println("Failed to load rawtx for", txid, err)
-			} else if len(rawtx) == 0 {
-				if tx, err := jb.LoadTx(ctx, txid, false); err != nil {
-					log.Println("Failed to load rawtx for", txid, err)
-				} else {
-					spendOutpoints := make([]string, 0, len(tx.Inputs))
-					for _, input := range tx.Inputs {
-						spendOutpoint := lib.NewOutpointFromHash(input.SourceTXID, input.SourceTxOutIndex)
-						spendOutpoints = append(spendOutpoints, spendOutpoint.String())
-					}
-					if err := rollbackSpends(ctx, store, spendOutpoints, txid); err != nil {
-						log.Println("Failed to rollback spends for", txid, err)
-					}
-				}
-			} else if err := store.Log(ctx, idx.TxLogTag, txid, idx.HeightScore(0, 0)); err != nil {
-				log.Println("Failed to log transaction", txid, err)
-			}
-		}
-		return txids, nil
-	}
 }

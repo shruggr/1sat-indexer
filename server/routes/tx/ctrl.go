@@ -3,11 +3,12 @@ package tx
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"log"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
@@ -20,10 +21,10 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	ingest = ingestCtx
 	b = broadcaster
 	r.Post("/", BroadcastTx)
-	r.Get("/audit", AuditTxs)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
+	r.Get("/callback", TxCallback)
 }
 
 func BroadcastTx(c *fiber.Ctx) (err error) {
@@ -145,10 +146,14 @@ func GetProof(c *fiber.Ctx) error {
 	}
 }
 
-func AuditTxs(c *fiber.Ctx) error {
-	if statuses, err := ingest.AuditBroadcasts(c.Context(), config.Broadcaster); err != nil {
+func TxCallback(c *fiber.Ctx) error {
+	l := make(map[string]any)
+	l["headers"] = c.GetReqHeaders()
+	l["body"] = string(c.BodyRaw())
+	if out, err := json.MarshalIndent(l, "", "  "); err != nil {
 		return err
 	} else {
-		return c.JSON(statuses)
+		log.Println("TxCallback", string(out))
+		return c.SendStatus(200)
 	}
 }

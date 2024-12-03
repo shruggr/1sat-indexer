@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/bitcoin-sv/go-sdk/transaction/broadcaster"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
-const TxLogTag = "tx"
+const PendingTxLog = "tx"
+const ImmutableTxLog = "im"
 
 type IngestCtx struct {
 	Tag         string
@@ -154,7 +154,7 @@ func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction,
 
 func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error) {
 	idxCtx.Save()
-	if err = cfg.Store.Log(ctx, TxLogTag, idxCtx.TxidHex, idxCtx.Score); err != nil {
+	if err = cfg.Store.Log(ctx, PendingTxLog, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
 		return
 	} else if len(cfg.Tag) > 0 {
@@ -170,59 +170,3 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 	}
 	return
 }
-
-func (cfg *IngestCtx) AuditBroadcasts(ctx context.Context, bcast *broadcaster.Arc) ([]*broadcaster.ArcResponse, error) {
-	// to := float64(0)
-	// score := -1 * HeightScore(uint32((time.Now().Add(-2*time.Hour)).Unix()), 0)
-	score := float64(5e16)
-	var statuses []*broadcaster.ArcResponse
-	if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
-		Key:  TxLogTag,
-		From: &score,
-		// To:      &to,
-		Verbose: true,
-	}); err != nil {
-		return nil, err
-	} else {
-		statuses = make([]*broadcaster.ArcResponse, 0, len(txids))
-		for _, txid := range txids {
-			if status, err := bcast.Status(txid); err != nil {
-				return statuses, err
-			} else {
-				statuses = append(statuses, status)
-			}
-			// if rawtx, err := jb.LoadRemoteRawtx(ctx, txid); err != nil {
-			// 	log.Println("Failed to load rawtx for", txid, err)
-			// } else if len(rawtx) == 0 {
-			// 	// TODO: Cleanup transaction
-			// } else if proof, err := jb.LoadProof(ctx, txid); err != nil {
-			// 	log.Println("Failed to load proof for", txid, err)
-			// } else if proof == nil {
-			// 	score := HeightScore(uint32(time.Now().Unix()), 0)
-			// 	if err := cfg.Store.Log(ctx, TxLogTag, txid, score); err != nil {
-			// 		log.Println("Failed to log transaction", txid, err)
-			// 	}
-			// } else if tx, err := transaction.NewTransactionFromBytes(rawtx); err != nil {
-			// 	log.Println("Failed to parse transaction", txid, err)
-			// } else {
-			// 	tx.MerklePath = proof
-			// 	if valid, err := tx.MerklePath.Verify(tx.TxID(), (&blk.HeadersClient{})); err != nil {
-			// 		log.Println("Failed to verify transaction", txid, err)
-			// 	} else if !valid {
-			// 		// chain reorg. Retrieve updated proof
-			// 	} else if _, err := cfg.IngestTx(ctx, tx, AncestorConfig{}); err != nil {
-			// 		log.Println("Failed to ingest transaction", txid, err)
-			// 	}
-			// }
-		}
-	}
-	return statuses, nil
-}
-
-// func (cfg *IngestCtx) AuditTransaction(ctx context.Context, txid string, bcast broadcaster.Arc) (*broadcaster.ArcResponse, error) {
-// 	if status, err := bcast.Status(txid); err != nil {
-// 		return nil, err
-// 	} else {
-// 		return status, nil
-// 	}
-// }
