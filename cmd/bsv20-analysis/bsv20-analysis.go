@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -174,9 +176,10 @@ func main() {
 							}
 						}
 						for ticker, txouts := range ticks {
+							var result pgconn.CommandTag
 							id, err := lib.NewOutpointFromString(ticker)
 							if err != nil {
-								_, err = lib.Db.Exec(context.Background(), `
+								result, err = lib.Db.Exec(context.Background(), `
 									INSERT INTO bsv20v1_txns(txid, tick, height, idx, txouts)
 									VALUES($1, $2, $3, $4, $5)
 									ON CONFLICT(txid, tick) DO NOTHING`,
@@ -187,7 +190,7 @@ func main() {
 									txouts,
 								)
 							} else {
-								_, err = lib.Db.Exec(context.Background(), `
+								result, err = lib.Db.Exec(context.Background(), `
 									INSERT INTO bsv20v2_txns(txid, id, height, idx, txouts)
 									VALUES($1, $2, $3, $4, $5)
 									ON CONFLICT(txid, id) DO NOTHING`,
@@ -200,6 +203,8 @@ func main() {
 							}
 							if err != nil {
 								log.Panicln(err)
+							} else if result.RowsAffected() > 0 {
+								log.Println("Inserted", ticker, hex.EncodeToString(txCtx.Txid))
 							}
 						}
 					}(txn)

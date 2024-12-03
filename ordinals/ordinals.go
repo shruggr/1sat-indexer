@@ -294,11 +294,13 @@ func RefreshAddress(ctx context.Context, address string) error {
 	// log.Println("URL:", url)
 	resp, err := http.Get(url)
 	if err != nil {
+		log.Println("Get", err)
 		return err
 	}
 	txns := []*lib.AddressTxn{}
 	err = json.NewDecoder(resp.Body).Decode(&txns)
 	if err != nil {
+		log.Println("Decode", err)
 		return err
 	}
 
@@ -336,7 +338,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 			batch,
 		)
 		if err != nil {
-			log.Println(err)
+			log.Println("Query", err)
 			return err
 		}
 		defer rows.Close()
@@ -345,6 +347,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 			var txid string
 			err := rows.Scan(&txid)
 			if err != nil {
+				log.Println("Scan", err)
 				return err
 			}
 			delete(toIndex, txid)
@@ -380,6 +383,9 @@ func RefreshAddress(ctx context.Context, address string) error {
 		address,
 		height-6,
 	)
+	if err != nil {
+		log.Println("Update", err)
+	}
 	return err
 }
 
