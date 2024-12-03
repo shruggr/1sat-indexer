@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -297,10 +298,16 @@ func RefreshAddress(ctx context.Context, address string) error {
 		log.Println("Get", err)
 		return err
 	}
+	if resp.StatusCode != 200 {
+		log.Println("Status", resp.StatusCode, url)
+		return fmt.Errorf("status-%d", resp.StatusCode)
+	}
 	txns := []*lib.AddressTxn{}
-	err = json.NewDecoder(resp.Body).Decode(&txns)
-	if err != nil {
-		log.Println("Decode", err)
+	if body, err := io.ReadAll(resp.Body); err != nil {
+		log.Println("ReadAll", err)
+		return err
+	} else if err = json.Unmarshal(body, &txns); err != nil {
+		log.Println("Decode", err, string(body))
 		return err
 	}
 
