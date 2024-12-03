@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -57,6 +56,11 @@ func (o *Outpoint) Txid() []byte {
 	return util.ReverseBytes((*o)[:32])
 }
 
+func (o *Outpoint) TxidHash() *chainhash.Hash {
+	hash, _ := chainhash.NewHash((*o)[:32])
+	return hash
+}
+
 func (o *Outpoint) TxidHex() string {
 	return hex.EncodeToString(o.Txid())
 }
@@ -87,14 +91,14 @@ func (o *Outpoint) UnmarshalJSON(data []byte) error {
 }
 
 func (o Outpoint) Value() (driver.Value, error) {
-	return []byte(o), nil
+	return o.String(), nil
 }
 
 func (o *Outpoint) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed")
+	if outpoint, err := NewOutpointFromString(value.(string)); err != nil {
+		return err
+	} else {
+		*o = *outpoint
+		return nil
 	}
-	*o = b
-	return nil
 }

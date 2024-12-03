@@ -11,8 +11,14 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
-	// "github.com/shruggr/1sat-indexer/v5/data"
 )
+
+func HeightScore(height uint32, idx uint64) float64 {
+	if height == 0 {
+		return float64(time.Now().UnixNano())
+	}
+	return float64(uint64(height)*1000000000 + idx)
+}
 
 type AncestorConfig struct {
 	Load  bool
@@ -34,14 +40,19 @@ type IndexContext struct {
 	Network        lib.Network              `json:"-"`
 	tags           []string                 `json:"-"`
 	ancestorConfig AncestorConfig           `json:"-"`
+	Store          TxoStore                 `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
+func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
+	if tx == nil {
+		return nil
+	}
 	idxCtx := &IndexContext{
 		Tx:             tx,
 		Txid:           tx.TxID(),
 		Indexers:       indexers,
 		Ctx:            ctx,
+		Store:          store,
 		ancestorConfig: ancestorConfig,
 	}
 	if len(network) > 0 {
@@ -59,8 +70,6 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 				break
 			}
 		}
-	} else {
-		idxCtx.Height = uint32(time.Now().Unix())
 	}
 	idxCtx.Score = HeightScore(idxCtx.Height, idxCtx.Idx)
 	for _, indexer := range indexers {
@@ -69,12 +78,14 @@ func NewIndexContext(ctx context.Context, tx *transaction.Transaction, indexers 
 	return idxCtx
 }
 
-func (idxCtx *IndexContext) ParseTxn() {
-	idxCtx.ParseSpends()
-	idxCtx.ParseTxos()
+func (idxCtx *IndexContext) ParseTxn() (err error) {
+	if err = idxCtx.ParseSpends(); err != nil {
+		return
+	}
+	return idxCtx.ParseTxos()
 }
 
-func (idxCtx *IndexContext) ParseSpends() {
+func (idxCtx *IndexContext) ParseSpends() (err error) {
 	if idxCtx.Tx.IsCoinbase() {
 		return
 	}
@@ -83,7 +94,7 @@ func (idxCtx *IndexContext) ParseSpends() {
 		var spend *Txo
 
 		if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
-			log.Panic(err)
+			return err
 		} else {
 			spend = txo
 		}
@@ -95,9 +106,10 @@ func (idxCtx *IndexContext) ParseSpends() {
 		}
 		idxCtx.Spends = append(idxCtx.Spends, spend)
 	}
+	return nil
 }
 
-func (idxCtx *IndexContext) ParseTxos() {
+func (idxCtx *IndexContext) ParseTxos() (err error) {
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
 		outpoint := lib.NewOutpointFromHash(idxCtx.Txid, uint32(vout))
@@ -120,15 +132,16 @@ func (idxCtx *IndexContext) ParseTxos() {
 				txo.Data[indexer.Tag()] = data
 			}
 		}
-		for _, indexer := range idxCtx.Indexers {
-			indexer.PreSave(idxCtx)
-		}
 	}
+	for _, indexer := range idxCtx.Indexers {
+		indexer.PreSave(idxCtx)
+	}
+	return nil
 }
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
-	if txo, err = LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
+	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if txo != nil {
@@ -144,10 +157,9 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 	} else if idxCtx.ancestorConfig.Parse {
 		parentTxid := outpoint.TxidHex()
 		if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
-			log.Panicln(err)
 			return nil, err
 		} else {
-			spendCtx := NewIndexContext(idxCtx.Ctx, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
+			spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]
 			if idxCtx.ancestorConfig.Save {
@@ -175,7 +187,7 @@ func (idxCtx *IndexContext) Save() error {
 
 func (idxCtx *IndexContext) SaveTxos() error {
 	for _, txo := range idxCtx.Txos {
-		if err := txo.Save(idxCtx.Ctx, idxCtx.Height, idxCtx.Idx); err != nil {
+		if err := idxCtx.Store.SaveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err
 		}
 	}
@@ -184,7 +196,7 @@ func (idxCtx *IndexContext) SaveTxos() error {
 
 func (idxCtx *IndexContext) SaveSpends() error {
 	for _, spend := range idxCtx.Spends {
-		if err := spend.SaveSpend(idxCtx.Ctx, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
+		if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, spend, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
 			return err
 		}
 	}

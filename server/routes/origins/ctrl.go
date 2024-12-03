@@ -7,7 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/onesat"
+	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
 
 var ingest *idx.IngestCtx
@@ -27,7 +27,7 @@ func OriginHistory(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key: evt.EventKey("origin", &evt.Event{
 			Id:    "outpoint",
 			Value: outpoint,
@@ -58,7 +58,7 @@ func OriginsHistory(c *fiber.Ctx) error {
 
 	history := make([]*idx.Txo, 0, len(outpoints))
 	for _, outpoint := range outpoints {
-		if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 			Key: evt.EventKey("origin", &evt.Event{
 				Id:    "outpoint",
 				Value: outpoint,
@@ -83,18 +83,18 @@ func OriginAncestors(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	if data, err := idx.TxoDB.HGet(c.Context(), idx.TxoDataKey(outpoint), "origin").Result(); err != nil {
+	if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 		return err
 	} else {
 		origin := onesat.Origin{}
-		if err := json.Unmarshal([]byte(data), &origin); err != nil {
+		if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
 			return err
 		}
 		outpoint = origin.Outpoint.String()
 	}
 
 	ancestors := make([]*idx.Txo, 0)
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key: evt.EventKey("origin", &evt.Event{
 			Id:    "outpoint",
 			Value: outpoint,
@@ -131,11 +131,11 @@ func OriginsAncestors(c *fiber.Ctx) error {
 	outpointMap := make(map[string]struct{}, len(outpoints))
 	for _, outpoint := range outpoints {
 		outpointMap[outpoint] = struct{}{}
-		if data, err := idx.TxoDB.HGet(c.Context(), idx.TxoDataKey(outpoint), "origin").Result(); err != nil {
+		if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 			return err
 		} else {
 			origin := onesat.Origin{}
-			if err := json.Unmarshal([]byte(data), &origin); err != nil {
+			if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
 				return err
 			}
 			origins = append(origins, origin.Outpoint.String())
@@ -144,7 +144,7 @@ func OriginsAncestors(c *fiber.Ctx) error {
 
 	ancestors := make([]*idx.Txo, 0, len(origins))
 	for _, outpoint := range origins {
-		if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 			Key: evt.EventKey("origin", &evt.Event{
 				Id:    "outpoint",
 				Value: outpoint,
@@ -162,5 +162,6 @@ func OriginsAncestors(c *fiber.Ctx) error {
 			}
 		}
 	}
+
 	return c.JSON(ancestors)
 }

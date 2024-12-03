@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -16,14 +17,16 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 }
 
 func TxosByTag(c *fiber.Ctx) error {
+
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
 
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	from := c.QueryFloat("from", 0)
+	if txos, err := config.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           evt.TagKey(c.Params("tag")),
-		From:          c.QueryFloat("from", 0),
+		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),

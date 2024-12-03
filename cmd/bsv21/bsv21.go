@@ -4,13 +4,14 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/onesat"
+	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
+	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 	"github.com/shruggr/1sat-indexer/v5/sub"
 )
 
@@ -21,6 +22,14 @@ var TOPIC string
 var VERBOSE uint
 
 var ctx = context.Background()
+var store *redisstore.RedisStore
+
+func init() {
+	var err error
+	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	}
+}
 
 var ingest = &idx.IngestCtx{
 	Tag: TAG,
@@ -46,7 +55,7 @@ func main() {
 		go subscribe()
 	}
 	go categorize()
-	if tokenIds, err := idx.SearchOutpoints(ctx, &idx.SearchCfg{
+	if tokenIds, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
 		Key: evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    "issue",
 			Value: "",
@@ -72,7 +81,7 @@ func main() {
 }
 
 func processToken(tokenId string) (err error) {
-	if tokenTxo, err := idx.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}); err != nil {
+	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}); err != nil {
 		log.Println("Error loading token", tokenId, err)
 		return err
 	} else if tokenTxo == nil {
@@ -83,10 +92,7 @@ func processToken(tokenId string) (err error) {
 		return err
 	} else {
 		bsv21 := bsv21Data.Data.(*onesat.Bsv21)
-		idx.AcctDB.ZAddNX(ctx, idx.OwnerSyncKey, redis.Z{
-			Score:  0,
-			Member: bsv21.FundAddress,
-		})
+		store.LogOnce(ctx, idx.OwnerSyncKey, bsv21.FundAddress, 0)
 		// pendingKey := evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 		// 	Id:    onesat.PendingEvent,
 		// 	Value: bsv21.Id,
@@ -98,25 +104,28 @@ func processToken(tokenId string) (err error) {
 		// 	return nil
 		// }
 
-		if balance, err := idx.Balance(ctx, idx.OwnerTxosKey(bsv21.FundAddress)); err != nil {
+		if balance, err := store.Balance(ctx, idx.OwnerTxosKey(bsv21.FundAddress)); err != nil {
 			log.Println("Error getting balance", tokenId, bsv21.FundAddress, err)
 			return err
-		} else if validCount, err := idx.TxoDB.ZCard(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{
+		} else if validCount, err := store.CountMembers(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    onesat.ValidEvent,
 			Value: bsv21.Id,
-		})).Uint64(); err != nil {
+		})); err != nil {
 			log.Println("Error counting valid", tokenId, bsv21.FundAddress, err)
 			return err
-		} else if invalidCount, err := idx.TxoDB.ZCard(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{
+		} else if invalidCount, err := store.CountMembers(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    onesat.InvalidEvent,
 			Value: bsv21.Id,
-		})).Uint64(); err != nil {
+		})); err != nil {
 			log.Println("Error counting invalid", tokenId, bsv21.FundAddress, err)
 			return err
 		} else {
 			validationCount := int64(validCount + invalidCount)
 			for balance = balance - (validationCount * onesat.BSV21_INDEX_FEE); balance > 0; {
-				if items, err := idx.QueueDB.ZRange(ctx, idx.QueueKey(tokenId), 0, 0).Result(); err != nil {
+				if items, err := store.Search(ctx, &idx.SearchCfg{
+					Key:   idx.QueueKey(tokenId),
+					Limit: 1,
+				}); err != nil {
 					log.Println("Error getting queue", tokenId, err)
 					return err
 				} else if len(items) == 0 {
@@ -199,11 +208,9 @@ func subscribe() {
 }
 
 func categorize() {
-	if txids, err := idx.QueueDB.ZRangeArgs(ctx, redis.ZRangeArgs{
-		Key:   queueKey,
-		Start: 0,
-		Stop:  -1,
-	}).Result(); err != nil {
+	if txids, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
+		Key: queueKey,
+	}); err != nil {
 		log.Panic(err)
 	} else {
 		limiter := make(chan struct{}, CONCURRENCY)
@@ -224,19 +231,16 @@ func categorize() {
 						if bsv21Data, ok := txo.Data[onesat.BSV21_TAG]; ok {
 							bsv21 := bsv21Data.Data.(*onesat.Bsv21)
 							if bsv21.Op == "deploy+mint" {
-								if err = txo.Save(ctx, idxCtx.Height, idxCtx.Idx); err != nil {
+								if err = store.SaveTxo(ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
 									panic(err)
 								}
 							} else {
-								idx.AcctDB.ZAddNX(ctx, idx.QueueKey(bsv21.Id), redis.Z{
-									Score:  0,
-									Member: txo.Outpoint.TxidHex(),
-								})
+								store.LogOnce(ctx, idx.QueueKey(bsv21.Id), txo.Outpoint.TxidHex(), 0)
 							}
 						}
 					}
 
-					if err = idx.QueueDB.ZRem(ctx, queueKey, txid).Err(); err != nil {
+					if err = store.Delog(ctx, queueKey, txid); err != nil {
 						log.Panic(err)
 					}
 				}

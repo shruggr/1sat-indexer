@@ -3,10 +3,10 @@ package onesat
 import (
 	"encoding/json"
 
-	"github.com/shruggr/1sat-indexer/v5/bitcom"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
+	"github.com/shruggr/1sat-indexer/v5/mod/bitcom"
 )
 
 const ORIGIN_TAG = "origin"

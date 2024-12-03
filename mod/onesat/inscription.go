@@ -9,10 +9,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/v5/bitcom"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
+	"github.com/shruggr/1sat-indexer/v5/mod/bitcom"
 )
 
 var INSC_TAG = "insc"
@@ -46,7 +46,7 @@ func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
 
 func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
-	if idxCtx.Height < TRIGGER || txo.Satoshis == nil || *txo.Satoshis != 1 {
+	if (idxCtx.Height > 0 && idxCtx.Height < TRIGGER) || txo.Satoshis == nil || *txo.Satoshis != 1 {
 		return nil
 	}
 	scr := idxCtx.Tx.Outputs[vout].LockingScript

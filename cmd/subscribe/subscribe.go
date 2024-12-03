@@ -5,7 +5,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/v5/onesat"
+	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 	"github.com/shruggr/1sat-indexer/v5/sub"
 )
 

@@ -29,9 +29,9 @@ func RegisterAccount(c *fiber.Ctx) error {
 		return c.SendStatus(400)
 	}
 
-	if _, err := idx.UpdateAccount(c.Context(), account, owners); err != nil {
+	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
 		return err
-	} else if err := idx.SyncAcct(c.Context(), TAG, account, ingest); err != nil {
+	} else if err := ingest.Store.SyncAcct(c.Context(), TAG, account, ingest); err != nil {
 		return err
 	}
 
@@ -45,9 +45,10 @@ func AccountUtxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
+	from := c.QueryFloat("from", 0)
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 		Key:           idx.AccountTxosKey(account),
-		From:          c.QueryFloat("from", 0),
+		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),
@@ -66,12 +67,11 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 	if from == 0 {
 		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
 	}
-	if results, err := idx.SearchTxns(c.Context(), &idx.SearchCfg{
-		Key:     idx.AccountTxosKey(c.Params("account")),
-		From:    from,
+	if results, err := ingest.Store.SearchTxns(c.Context(), &idx.SearchCfg{
+		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 0)),
-	}); err != nil {
+	}, []string{idx.AccountTxosKey(c.Params("account"))}); err != nil {
 		return err
 	} else {
 		return c.JSON(results)

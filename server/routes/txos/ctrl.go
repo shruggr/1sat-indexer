@@ -19,7 +19,7 @@ func GetTxo(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txo, err := idx.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
+	if txo, err := ingest.Store.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
 		return err
 	} else if txo == nil {
 		return c.SendStatus(404)
@@ -41,7 +41,7 @@ func GetTxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := idx.LoadTxos(c.Context(), outpoints, tags); err != nil {
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags); err != nil {
 		return err
 	} else {
 		if c.Query("script") == "true" {

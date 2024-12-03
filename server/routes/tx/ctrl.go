@@ -7,6 +7,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
@@ -19,6 +20,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	ingest = ingestCtx
 	b = broadcaster
 	r.Post("/", BroadcastTx)
+	r.Get("/audit", AuditTxs)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
@@ -52,7 +54,7 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 		return c.SendStatus(400)
 	}
 
-	response := broadcast.Broadcast(c.Context(), tx, b)
+	response := broadcast.Broadcast(c.Context(), ingest.Store, tx, b)
 	if response.Success {
 		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
 	}
@@ -140,5 +142,13 @@ func GetProof(c *fiber.Ctx) error {
 			c.Set("Content-Type", "application/octet-stream")
 			return c.Send(proof.Bytes())
 		}
+	}
+}
+
+func AuditTxs(c *fiber.Ctx) error {
+	if statuses, err := ingest.AuditBroadcasts(c.Context(), config.Broadcaster); err != nil {
+		return err
+	} else {
+		return c.JSON(statuses)
 	}
 }

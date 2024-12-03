@@ -15,16 +15,16 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 }
 
 func OwnerUtxos(c *fiber.Ctx) error {
-	address := c.Params("address")
+	owner := c.Params("owner")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	c.ParamsInt("from", 0)
-	if txos, err := idx.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key:           idx.OwnerTxosKey(address),
-		From:          c.QueryFloat("from", 0),
+	from := c.QueryFloat("from", 0)
+	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
+		Key:           idx.OwnerTxosKey(owner),
+		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),

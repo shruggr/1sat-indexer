@@ -10,11 +10,10 @@ type HeadersClient struct {
 	Ctx context.Context
 }
 
-func (c *HeadersClient) IsValidRootForHeight(root *chainhash.Hash, height uint32) bool {
+func (c *HeadersClient) IsValidRootForHeight(root *chainhash.Hash, height uint32) (bool, error) {
 	if header, err := BlockByHeight(c.Ctx, height); err != nil {
-
-		return false
+		return false, err
 	} else {
-		return header.Hash.Equal(*root)
+		return header.Hash.Equal(*root), nil
 	}
 }

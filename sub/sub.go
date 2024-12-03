@@ -6,12 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
@@ -27,6 +26,15 @@ type Sub struct {
 	Verbose      bool
 }
 
+var store *redisstore.RedisStore
+
+func init() {
+	var err error
+	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
+		panic(err)
+	}
+}
+
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	errors := make(chan error)
 
@@ -38,10 +46,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
 			// }
 			if status.StatusCode == 200 {
-				if err := idx.QueueDB.ZAdd(ctx, ProgressKey, redis.Z{
-					Score:  float64(status.Block),
-					Member: cfg.Tag,
-				}).Err(); err != nil {
+				if err := store.Log(ctx, ProgressKey, cfg.Tag, float64(status.Block)); err != nil {
 					errors <- err
 				}
 			} else if status.StatusCode == 999 {
@@ -62,7 +67,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
+			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
 				errors <- err
 			}
 		}
@@ -72,13 +77,13 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := idx.Enqueue(ctx, cfg.Queue, txn.Id, idx.HeightScore(uint32(time.Now().Unix()), 0)); err != nil {
+			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(0, 0)); err != nil {
 				errors <- err
 			}
 		}
 	}
 
-	if progress, err := idx.QueueDB.ZScore(ctx, ProgressKey, cfg.Tag).Result(); err != nil && err != redis.Nil {
+	if progress, err := store.LogScore(ctx, ProgressKey, cfg.Tag); err != nil {
 		log.Panic(err)
 	} else if progress > 6 {
 		cfg.FromBlock = uint(progress) - 5
