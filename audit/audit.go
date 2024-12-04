@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bitcoin-sv/go-sdk/transaction/broadcaster"
 	"github.com/shruggr/1sat-indexer/v5/blk"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
@@ -16,9 +16,11 @@ var ctx = context.Background()
 var headers = &blk.HeadersClient{Ctx: ctx}
 var ingest *idx.IngestCtx
 var immutableScore float64
+var arc *broadcaster.Arc
 
-func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx) {
+func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc) {
 	ingest = ingestCtx
+	arc = bcast
 	if tip, chaintips, err := blk.StartChaintipSub(ctx); err != nil {
 		log.Panic(err)
 	} else {
@@ -43,7 +45,7 @@ func AuditTransactions(ctx context.Context) {
 	to := 0.0
 	cfg.From = &from
 	cfg.To = &to
-	if items, err := config.Store.Search(ctx, cfg); err != nil {
+	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Panic(err)
 	} else {
 		log.Println("Audit pending txs", len(items))
@@ -58,7 +60,7 @@ func AuditTransactions(ctx context.Context) {
 	from = 0.0
 	cfg.From = &from
 	cfg.To = &immutableScore
-	if items, err := config.Store.Search(ctx, cfg); err != nil {
+	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Panic(err)
 	} else {
 		log.Println("Audit mined txs", len(items))
@@ -75,7 +77,7 @@ func AuditTransactions(ctx context.Context) {
 	until := time.Now().Add(-time.Hour)
 	to = float64(until.UnixNano())
 	cfg.To = &to
-	if items, err := config.Store.Search(ctx, cfg); err != nil {
+	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Panic(err)
 	} else {
 		log.Println("Audit mempool txs", len(items))
@@ -100,7 +102,7 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 	}
 	if tx.MerklePath == nil {
 		log.Println("Fetching status for", hexid)
-		if status, err := config.Broadcaster.Status(hexid); err != nil {
+		if status, err := arc.Status(hexid); err != nil {
 			return err
 		} else if status.Status == 404 {
 			log.Println("Status not found", hexid)
@@ -159,9 +161,9 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 
 	if newScore < immutableScore {
 		log.Println("Archive Immutable", hexid, newScore)
-		if err := config.Store.Log(ctx, idx.ImmutableTxLog, hexid, newScore); err != nil {
+		if err := ingest.Store.Log(ctx, idx.ImmutableTxLog, hexid, newScore); err != nil {
 			log.Panicln("Log error", hexid, err)
-		} else if err := config.Store.Delog(ctx, idx.PendingTxLog, hexid); err != nil {
+		} else if err := ingest.Store.Delog(ctx, idx.PendingTxLog, hexid); err != nil {
 			log.Panicln("Delog error", hexid, err)
 		}
 	}
