@@ -14,6 +14,6 @@ func (c *HeadersClient) IsValidRootForHeight(root *chainhash.Hash, height uint32
 	if header, err := BlockByHeight(c.Ctx, height); err != nil {
 		return false, err
 	} else {
-		return header.Hash.Equal(*root), nil
+		return header.MerkleRoot.Equal(*root), nil
 	}
 }

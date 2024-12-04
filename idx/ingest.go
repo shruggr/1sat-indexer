@@ -13,7 +13,8 @@ import (
 )
 
 const PendingTxLog = "tx"
-const ImmutableTxLog = "im"
+const ImmutableTxLog = "immutable"
+const RejectedTxLog = "rejected"
 
 type IngestCtx struct {
 	Tag         string

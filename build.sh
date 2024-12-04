@@ -1,3 +1,4 @@
+go build -o audit.run cmd/audit/audit.go
 go build -o blocks.run cmd/block-sync/block-sync.go
 go build -o bsv21.run cmd/bsv21/bsv21.go
 go build -o ingest.run cmd/ingest/ingest.go
