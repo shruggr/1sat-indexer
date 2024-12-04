@@ -2,13 +2,10 @@ package audit
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/joho/godotenv"
 	"github.com/shruggr/1sat-indexer/v5/blk"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -20,19 +17,8 @@ var headers = &blk.HeadersClient{Ctx: ctx}
 var ingest *idx.IngestCtx
 var immutableScore float64
 
-func init() {
-	wd, _ := os.Getwd()
-	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
-
-	ingest = &idx.IngestCtx{
-		Indexers: config.Indexers,
-		Network:  config.Network,
-		Store:    config.Store,
-	}
-}
-
-func StartTxAudit(ctx context.Context) {
+func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	if tip, chaintips, err := blk.StartChaintipSub(ctx); err != nil {
 		log.Panic(err)
 	} else {
