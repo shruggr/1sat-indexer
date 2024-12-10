@@ -77,7 +77,7 @@ func (p *PGStore) UpdateAccount(ctx context.Context, account string, owners []st
 		} else if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
 			SELECT $1, member, score
 			FROM logs
-			WHERE searchKey=$2
+			WHERE search_key=$2
 			ON CONFLICT (search_key, member) DO NOTHING`,
 			idx.AccountKey(account),
 			idx.OwnerKey(owner),
