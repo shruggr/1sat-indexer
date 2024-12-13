@@ -25,6 +25,8 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
 	r.Get("/callback", TxCallback)
+	r.Get("/:txid/parse")
+	r.Get("/:txid/ingest")
 }
 
 func BroadcastTx(c *fiber.Ctx) (err error) {
@@ -156,4 +158,30 @@ func TxCallback(c *fiber.Ctx) error {
 		log.Println("TxCallback", string(out))
 		return c.SendStatus(200)
 	}
+}
+
+func ParseTx(c *fiber.Ctx) error {
+	txid := c.Params("txid")
+	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+		return err
+	} else if tx == nil {
+		return c.SendStatus(404)
+	} else {
+		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
+		return c.SendStatus(200)
+	}
+}
+
+func IngestTx(c *fiber.Ctx) error {
+	txid := c.Params("txid")
+	ingest.IngestTxid(c.Context(), txid, idx.AncestorConfig{Load: true, Parse: true})
+	return c.SendStatus(200)
+	// if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+	// 	return err
+	// } else if tx == nil {
+	// 	return c.SendStatus(404)
+	// } else {
+	// 	ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
+	// 	return c.SendStatus(200)
+	// }
 }

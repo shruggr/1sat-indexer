@@ -15,6 +15,7 @@ import (
 var ctx = context.Background()
 var headers = &blk.HeadersClient{Ctx: ctx}
 var ingest *idx.IngestCtx
+var mempoolScore = idx.HeightScore(50000000, 0)
 var immutableScore float64
 var arc *broadcaster.Arc
 
@@ -72,8 +73,7 @@ func AuditTransactions(ctx context.Context) {
 	}
 
 	// Process mempool txs
-	from = 50000000.0
-	cfg.From = &from
+	cfg.From = &mempoolScore
 	until := time.Now().Add(-time.Hour)
 	to = float64(until.UnixNano())
 	cfg.To = &to
@@ -119,7 +119,12 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 		}
 	}
 	if score < 0 {
-
+		log.Println("Un-broadcasted", hexid)
+	} else if score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano()) {
+		log.Println("Un-mined", hexid)
+		if err = ingest.Rollback(ctx, hexid); err != nil {
+			log.Panicln("Rollback error", hexid, err)
+		}
 	}
 	if tx.MerklePath == nil {
 		return nil

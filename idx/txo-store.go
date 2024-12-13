@@ -33,7 +33,9 @@ type TxoStore interface {
 	LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, error)
 	LoadData(ctx context.Context, outpoint string, tags []string) (IndexDataMap, error)
 	SaveTxo(ctx context.Context, txo *Txo, height uint32, idx uint64) error
+	RollbackTxo(ctx context.Context, txo *Txo) error
 	SaveSpend(ctx context.Context, spend *Txo, txid string, height uint32, idx uint64) error
+	RollbackSpend(ctx context.Context, spend *Txo, txid string) error
 	GetSpend(ctx context.Context, outpoint string) (string, error)
 	GetSpends(ctx context.Context, outpoints []string) ([]string, error)
 	SetNewSpend(ctx context.Context, outpoint string, spend string) (bool, error)

@@ -138,7 +138,9 @@ func OriginsAncestors(c *fiber.Ctx) error {
 			if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
 				return err
 			}
-			origins = append(origins, origin.Outpoint.String())
+			if origin.Outpoint != nil {
+				origins = append(origins, origin.Outpoint.String())
+			}
 		}
 	}
 

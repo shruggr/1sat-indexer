@@ -8,10 +8,13 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/spv"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
+
+const MIN_SAT_PER_KB = 1.0
 
 type BroadcaseResponse struct {
 	Success bool   `json:"success"`
@@ -48,7 +51,18 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 
 	log.Println("Load Spends", response.Txid)
-
+	rawtx := tx.Bytes()
+	if fees, err := tx.GetFee(); err != nil {
+		response.Error = err.Error()
+		return
+	} else {
+		feeRate := float64(fees) / (float64(len(rawtx)) / 1024.0)
+		if feeRate < MIN_SAT_PER_KB {
+			response.Status = fiber.StatusPaymentRequired
+			response.Error = "fee-too-low"
+			return
+		}
+	}
 	score := idx.HeightScore(0, 0)
 
 	// TODO: Verify Fees

@@ -36,7 +36,7 @@ func NewPGStore(connString string) (*PGStore, error) {
 
 func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (*idx.Txo, error) {
 	row := p.DB.QueryRow(ctx, `SELECT outpoint, height, idx, satoshis, owners
-		FROM txos WHERE outpoint = $1`,
+		FROM txos WHERE outpoint = $1 AND satoshis IS NOT NULL`,
 		outpoint,
 	)
 	txo := &idx.Txo{}
@@ -240,6 +240,41 @@ func (p *PGStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, he
 	return nil
 }
 
+func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
+	if accounts, err := p.AcctsByOwners(ctx, spend.Owners); err != nil {
+		log.Panic(err)
+		return err
+	} else if _, err := p.DB.Exec(ctx, `UPDATE txos
+		SET spend = ''
+		WHERE outpoint = $1`,
+		spend.Outpoint.String(),
+	); err != nil {
+		log.Panic(err)
+		return err
+	} else {
+		keys := make([]string, 0, len(spend.Owners)+len(accounts))
+		for _, owner := range spend.Owners {
+			if owner == "" {
+				continue
+			}
+			keys = append(keys, idx.OwnerKey(owner))
+		}
+		for _, acct := range accounts {
+			keys = append(keys, idx.AccountKey(acct))
+		}
+		if _, err := p.DB.Exec(ctx, `DELETE FROM logs
+				WHERE search_key = ANY($1) AND member = $2`,
+			keys,
+			txid,
+		); err != nil {
+			log.Panic(err)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (p *PGStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
 	if len(txo.Data) == 0 {
 		return nil
@@ -345,6 +380,62 @@ func (p *PGStore) UnsetSpends(ctx context.Context, outpoints []string) error {
 	); err != nil {
 		log.Panic(err)
 		return err
+	}
+	return nil
+}
+
+func (p *PGStore) RollbackTxo(ctx context.Context, txo *idx.Txo) error {
+	outpoint := txo.Outpoint.String()
+	if accounts, err := p.AcctsByOwners(ctx, txo.Owners); err != nil {
+		log.Panic(err)
+		return err
+	} else if t, err := p.DB.Begin(ctx); err != nil {
+		log.Panic(err)
+		return err
+	} else {
+		defer t.Rollback(ctx)
+		keys := make([]string, 0, len(txo.Owners)+len(accounts))
+		for _, owner := range txo.Owners {
+			if owner == "" {
+				continue
+			}
+			keys = append(keys, idx.OwnerKey(owner))
+		}
+		for _, acct := range accounts {
+			keys = append(keys, idx.AccountKey(acct))
+		}
+		for tag, data := range txo.Data {
+			keys = append(keys, evt.TagKey(tag))
+			for _, event := range data.Events {
+				keys = append(keys, evt.EventKey(tag, event))
+			}
+		}
+
+		if _, err = t.Exec(ctx, `DELETE FROM logs
+			WHERE search_key = ANY($1) AND member = $2`,
+			keys,
+			outpoint,
+		); err != nil {
+			log.Panic(err)
+			return err
+		} else if _, err = t.Exec(ctx, `DELETE FROM txo_data
+			WHERE outpoint = $1`,
+			outpoint,
+		); err != nil {
+			log.Panic(err)
+			return err
+		} else if _, err = t.Exec(ctx, `DELETE FROM txos
+			WHERE outpoint = $1`,
+			outpoint,
+		); err != nil {
+			log.Panic(err)
+			return err
+		}
+
+		if err = t.Commit(ctx); err != nil {
+			log.Panic(err)
+			return err
+		}
 	}
 	return nil
 }

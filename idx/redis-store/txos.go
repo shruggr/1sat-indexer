@@ -206,6 +206,38 @@ func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string,
 	return nil
 }
 
+func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
+	if accounts, err := r.AcctsByOwners(ctx, spend.Owners); err != nil {
+		log.Panic(err)
+		return err
+	} else if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		if err := pipe.HDel(ctx,
+			SpendsKey,
+			spend.Outpoint.String(),
+		).Err(); err != nil {
+			return err
+		}
+		for _, owner := range spend.Owners {
+			if owner == "" {
+				continue
+			} else if err := pipe.ZRem(ctx, idx.OwnerTxosKey(owner), txid).Err(); err != nil {
+				return err
+			}
+		}
+		for _, account := range accounts {
+			if err := pipe.ZRem(ctx, idx.AccountTxosKey(account), txid).Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Panic(err)
+		return err
+	}
+
+	return nil
+}
+
 func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
 	if len(txo.Data) == 0 {
 		return nil
@@ -285,4 +317,64 @@ func (r *RedisStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bo
 
 func (r *RedisStore) UnsetSpends(ctx context.Context, outpoints []string) error {
 	return r.DB.HDel(ctx, SpendsKey, outpoints...).Err()
+}
+
+func (r *RedisStore) RollbackTxo(ctx context.Context, txo *idx.Txo) error {
+	outpoint := txo.Outpoint.String()
+	accounts, err := r.AcctsByOwners(ctx, txo.Owners)
+	if err != nil {
+		log.Panic(err)
+		return err
+	}
+
+	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) (err error) {
+		for _, owner := range txo.Owners {
+			if owner == "" {
+				continue
+			}
+			if err := pipe.ZRem(ctx, idx.OwnerTxosKey(owner), outpoint).Err(); err != nil {
+				log.Println("ZRem Owner", err)
+				log.Panic(err)
+				return err
+			}
+		}
+		for _, acct := range accounts {
+			if err := pipe.ZRem(ctx, idx.AccountTxosKey(acct), outpoint).Err(); err != nil {
+				log.Println("ZRem Account", err)
+				log.Panic(err)
+				return err
+			}
+		}
+		for tag, data := range txo.Data {
+			tagKey := evt.TagKey(tag)
+			if err := pipe.ZRem(ctx, tagKey, outpoint).Err(); err != nil {
+				log.Println("ZRem Tag", tagKey, err)
+				log.Panic(err)
+				return err
+			}
+			for _, event := range data.Events {
+				eventKey := evt.EventKey(tag, event)
+				if err := pipe.ZRem(ctx, eventKey, outpoint).Err(); err != nil {
+					log.Panic(err)
+					log.Println("ZADD Event", eventKey, err)
+					return err
+				}
+			}
+		}
+
+		if err := pipe.HDel(ctx, TxosKey, outpoint).Err(); err != nil {
+			log.Println("HDEL Txo", err)
+			log.Panic(err)
+			return err
+		} else if err := pipe.Del(ctx, TxoDataKey(outpoint)).Err(); err != nil {
+			log.Println("HDEL TxoData", err)
+			log.Panic(err)
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Panic(err)
+		return err
+	}
+	return nil
 }
