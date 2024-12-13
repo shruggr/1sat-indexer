@@ -18,7 +18,7 @@ var TAG string
 var store idx.TxoStore
 
 func init() {
-	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
+	flag.StringVar(&TAG, "tag", idx.IngestTag, "Ingest tag")
 	flag.IntVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
 	store = config.Store

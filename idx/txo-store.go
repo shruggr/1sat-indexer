@@ -31,6 +31,7 @@ type TxoStore interface {
 	UpdateAccount(ctx context.Context, account string, owners []string) error
 	LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error)
 	LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, error)
+	LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*Txo, error)
 	LoadData(ctx context.Context, outpoint string, tags []string) (IndexDataMap, error)
 	SaveTxo(ctx context.Context, txo *Txo, height uint32, idx uint64) error
 	RollbackTxo(ctx context.Context, txo *Txo) error

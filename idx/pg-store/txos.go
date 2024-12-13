@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -77,6 +78,36 @@ func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []strin
 	}
 	defer rows.Close()
 	txos := make([]*idx.Txo, 0, len(outpoints))
+	for rows.Next() {
+		txo := &idx.Txo{}
+		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &txo.Owners); err != nil {
+			log.Panic(err)
+			return nil, err
+		}
+		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
+		if txo.Data, err = p.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
+			log.Panic(err)
+			return nil, err
+		} else if txo.Data == nil {
+			txo.Data = make(idx.IndexDataMap)
+		}
+		txos = append(txos, txo)
+	}
+	return txos, nil
+}
+
+func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*idx.Txo, error) {
+	rows, err := p.DB.Query(ctx, `SELECT outpoint, height, idx, satoshis, owners
+		FROM txos 
+		WHERE outpoint LIKE $1`,
+		fmt.Sprintf("%s%%", txid),
+	)
+	if err != nil {
+		log.Panic(err)
+		return nil, err
+	}
+	defer rows.Close()
+	txos := make([]*idx.Txo, 0)
 	for rows.Next() {
 		txo := &idx.Txo{}
 		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &txo.Owners); err != nil {

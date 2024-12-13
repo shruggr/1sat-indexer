@@ -118,10 +118,8 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 
 		}
 	}
-	if score < 0 {
-		log.Println("Un-broadcasted", hexid)
-	} else if score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano()) {
-		log.Println("Un-mined", hexid)
+	if score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
+		log.Println("Rollback", hexid)
 		if err = ingest.Rollback(ctx, hexid); err != nil {
 			log.Panicln("Rollback error", hexid, err)
 		}

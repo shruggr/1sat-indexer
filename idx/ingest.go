@@ -62,15 +62,19 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			log.Println("Error", err)
 			return err
 		default:
-			if cfg.Verbose {
-				log.Println("Loading", cfg.PageSize, "transactions to ingest")
-			}
+			// if cfg.Verbose {
+			// 	log.Println("Loading", cfg.PageSize, "transactions to ingest")
+			// }
 			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
 				Key:   cfg.Key,
 				Limit: cfg.PageSize,
 			}); err != nil {
 				log.Panic(err)
 			} else {
+				if len(txids) == 0 {
+					// log.Println("No transactions to ingest")
+					time.Sleep(time.Second)
+				}
 				for _, txid := range txids {
 					if _, ok := inflight[txid]; !ok {
 						txcount++
@@ -103,10 +107,6 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 							}
 						}(txid)
 					}
-				}
-				if len(txids) == 0 {
-					// log.Println("No transactions to ingest")
-					time.Sleep(time.Second)
 				}
 			}
 		}

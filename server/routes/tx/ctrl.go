@@ -25,8 +25,9 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
 	r.Get("/callback", TxCallback)
-	r.Get("/:txid/parse")
-	r.Get("/:txid/ingest")
+	r.Get("/:txid/parse", ParseTx)
+	r.Post("/parse", ParseTx)
+	r.Post("/:txid/ingest", IngestTx)
 }
 
 func BroadcastTx(c *fiber.Ctx) (err error) {
@@ -160,28 +161,53 @@ func TxCallback(c *fiber.Ctx) error {
 	}
 }
 
-func ParseTx(c *fiber.Ctx) error {
+func ParseTx(c *fiber.Ctx) (err error) {
 	txid := c.Params("txid")
-	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+	var tx *transaction.Transaction
+	var rawtx []byte
+	if txid != "" {
+		if tx, err = jb.LoadTx(c.Context(), txid, false); err != nil {
+			return
+		} else if tx == nil {
+			return c.SendStatus(404)
+		}
+	} else if err = c.BodyParser(rawtx); err != nil {
+		return
+	} else if len(rawtx) == 0 {
+		return c.SendStatus(400)
+	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+		return
+	}
+	if idxCtx, err := ingest.ParseTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
 		return err
-	} else if tx == nil {
-		return c.SendStatus(404)
 	} else {
-		ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
-		return c.SendStatus(200)
+		return c.JSON(idxCtx)
 	}
 }
 
 func IngestTx(c *fiber.Ctx) error {
 	txid := c.Params("txid")
-	ingest.IngestTxid(c.Context(), txid, idx.AncestorConfig{Load: true, Parse: true})
-	return c.SendStatus(200)
-	// if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
-	// 	return err
-	// } else if tx == nil {
-	// 	return c.SendStatus(404)
-	// } else {
-	// 	ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true})
-	// 	return c.SendStatus(200)
-	// }
+	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+		return err
+	} else if tx == nil {
+		return c.SendStatus(404)
+	} else if idxCtx, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+		return err
+	} else {
+		return c.JSON(idxCtx)
+	}
+}
+
+func TxosByTxid(c *fiber.Ctx) error {
+	txid := c.Params("txid")
+
+	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+		return err
+	} else if tx == nil {
+		return c.SendStatus(404)
+	} else if idxCtx, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+		return err
+	} else {
+		return c.JSON(idxCtx)
+	}
 }

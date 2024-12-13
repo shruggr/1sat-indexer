@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 
+	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 	"github.com/shruggr/1sat-indexer/v5/sub"
 )
@@ -23,7 +24,7 @@ var BLOCK bool
 
 func init() {
 	flag.StringVar(&TAG, "tag", "", "(REQUIRED) Subscription Tag")
-	flag.StringVar(&QUEUE, "q", "ingest", "Queue")
+	flag.StringVar(&QUEUE, "q", idx.IngestTag, "Queue")
 	flag.StringVar(&TOPIC, "t", "", "(REQUIRED) Junglebus SubscriptionID")
 	flag.UintVar(&FROM_BLOCK, "s", uint(onesat.TRIGGER), "Start from block")
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
