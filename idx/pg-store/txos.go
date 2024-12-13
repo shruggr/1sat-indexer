@@ -97,7 +97,7 @@ func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []strin
 }
 
 func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*idx.Txo, error) {
-	rows, err := p.DB.Query(ctx, `SELECT outpoint, height, idx, satoshis, owners
+	rows, err := p.DB.Query(ctx, `SELECT outpoint
 		FROM txos 
 		WHERE outpoint LIKE $1`,
 		fmt.Sprintf("%s%%", txid),
@@ -107,23 +107,15 @@ func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string
 		return nil, err
 	}
 	defer rows.Close()
-	txos := make([]*idx.Txo, 0)
+	outpoints := make([]string, 0)
 	for rows.Next() {
-		txo := &idx.Txo{}
-		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &txo.Owners); err != nil {
+		var outpoint string
+		if err = rows.Scan(&outpoint); err != nil {
 			log.Panic(err)
 			return nil, err
 		}
-		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
-		if txo.Data, err = p.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
-			log.Panic(err)
-			return nil, err
-		} else if txo.Data == nil {
-			txo.Data = make(idx.IndexDataMap)
-		}
-		txos = append(txos, txo)
 	}
-	return txos, nil
+	return p.LoadTxos(ctx, outpoints, tags)
 }
 
 func (p *PGStore) LoadData(ctx context.Context, outpoint string, tags []string) (data idx.IndexDataMap, err error) {

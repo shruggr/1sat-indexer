@@ -3,6 +3,7 @@ package redisstore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/redis/go-redis/v9"
@@ -74,6 +75,29 @@ func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []st
 		}
 		return txos, nil
 	}
+}
+
+func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*idx.Txo, error) {
+	// Get all keys matching the pattern txid_*
+	pattern := fmt.Sprintf("%s_*", txid)
+	outpoints := make([]string, 0)
+	
+	// Use HSCAN to find all matching outpoints
+	iter := r.DB.HScan(ctx, TxosKey, 0, pattern, 0).Iterator()
+	for iter.Next(ctx) {
+		// Skip every other value since HSCAN returns key-value pairs
+		outpoint := iter.Val()
+		if iter.Next(ctx) {
+			outpoints = append(outpoints, outpoint)
+		}
+	}
+	if err := iter.Err(); err != nil {
+		log.Panic(err)
+		return nil, err
+	}
+
+	// Use LoadTxos to load the full txo data for matching outpoints
+	return r.LoadTxos(ctx, outpoints, tags)
 }
 
 func (r *RedisStore) LoadData(ctx context.Context, outpoint string, tags []string) (data idx.IndexDataMap, err error) {
