@@ -262,7 +262,6 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 
 func GetSpend(outpoint string) (spend string, err error) {
 	url := fmt.Sprintf("%s/v1/txo/spend/%s", JUNGLEBUS, outpoint)
-	log.Println("Requesting spend", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Println("JB Spend Request", err)
@@ -278,7 +277,6 @@ func GetSpend(outpoint string) (spend string, err error) {
 		return "", err
 	} else {
 		spend := hex.EncodeToString(b)
-		log.Printf("Requesting spend: %s %s\n", outpoint, spend)
 		return spend, nil
 	}
 }
