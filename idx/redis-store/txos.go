@@ -226,16 +226,24 @@ func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string,
 	return nil
 }
 
-func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
+func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) (err error) {
+	prevSpend := ""
+	if prevSpend, err = r.GetSpend(ctx, spend.Outpoint.String()); err != nil {
+		log.Panic(err)
+		return err
+	}
+
 	if accounts, err := r.AcctsByOwners(ctx, spend.Owners); err != nil {
 		log.Panic(err)
 		return err
 	} else if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		if err := pipe.HDel(ctx,
-			SpendsKey,
-			spend.Outpoint.String(),
-		).Err(); err != nil {
-			return err
+		if prevSpend == txid {
+			if err := pipe.HDel(ctx,
+				SpendsKey,
+				spend.Outpoint.String(),
+			).Err(); err != nil {
+				return err
+			}
 		}
 		for _, owner := range spend.Owners {
 			if owner == "" {
@@ -314,7 +322,11 @@ func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) 
 }
 
 func (r *RedisStore) GetSpend(ctx context.Context, outpoint string) (string, error) {
-	return r.DB.HGet(ctx, SpendsKey, outpoint).Result()
+	if spend, err := r.DB.HGet(ctx, SpendsKey, outpoint).Result(); err != nil && err != redis.Nil {
+		return "", err
+	} else {
+		return spend, nil
+	}
 }
 
 func (r *RedisStore) GetSpends(ctx context.Context, outpoints []string) ([]string, error) {

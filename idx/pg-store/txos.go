@@ -269,8 +269,9 @@ func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string
 		return err
 	} else if _, err := p.DB.Exec(ctx, `UPDATE txos
 		SET spend = ''
-		WHERE outpoint = $1`,
+		WHERE outpoint = $1 AND spend = $2`,
 		spend.Outpoint.String(),
+		txid,
 	); err != nil {
 		log.Panic(err)
 		return err

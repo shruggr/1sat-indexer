@@ -53,6 +53,7 @@ func AccountUtxos(c *fiber.Ctx) error {
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
 		FilterSpent:   true,
+		RefreshSpends: c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
 	} else {
