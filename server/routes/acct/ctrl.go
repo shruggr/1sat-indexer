@@ -15,6 +15,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Put("/:account", RegisterAccount)
 	r.Get("/:account", AccountActivity)
 	r.Get("/:account/utxos", AccountUtxos)
+	r.Get("/:account/balance", AccountUtxos)
 	r.Get("/:account/:from", AccountActivity)
 }
 
@@ -58,6 +59,18 @@ func AccountUtxos(c *fiber.Ctx) error {
 		return err
 	} else {
 		return c.JSON(txos)
+	}
+}
+
+func AccountBalance(c *fiber.Ctx) error {
+	account := c.Params("account")
+	if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
+		Key:           idx.AccountTxosKey(account),
+		RefreshSpends: c.QueryBool("refresh", false),
+	}); err != nil {
+		return err
+	} else {
+		return c.JSON(balance)
 	}
 }
 

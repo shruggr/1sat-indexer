@@ -211,6 +211,24 @@ func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos [
 	return txos, nil
 }
 
+func (r *RedisStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (balance uint64, err error) {
+	if outpoints, err := r.SearchOutpoints(ctx, cfg); err != nil {
+		return 0, err
+	} else if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
+		return 0, err
+	} else if txos, err := r.LoadTxos(ctx, outpoints, nil); err != nil {
+		return 0, err
+	} else {
+		for _, txo := range txos {
+			if txo.Satoshis != nil {
+				balance += *txo.Satoshis
+			}
+		}
+	}
+
+	return
+}
+
 func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg, keys []string) (txns []*lib.TxResult, err error) {
 	txMap := make(map[float64]*lib.TxResult)
 	scores := make([]float64, 0, 1000)

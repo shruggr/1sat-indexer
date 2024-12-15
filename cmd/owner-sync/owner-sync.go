@@ -26,9 +26,6 @@ func init() {
 
 func main() {
 	for {
-		store.Search(ctx, &idx.SearchCfg{
-			Key: idx.OwnerSyncKey,
-		})
 		if results, err := store.Search(ctx, &idx.SearchCfg{
 			Key: idx.OwnerSyncKey,
 		}); err != nil {
