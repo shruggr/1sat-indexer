@@ -14,18 +14,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var hexId = "cb8d6af82c3b56c503b451c4136ca3ccf7beeb8eb10d08596333c2181e6afeb8"
+var hexId = "8395796c2d9216cd2bdf4527bbc091e50b7967cc02cbf34e1d588d5fd8da9d4d"
 var ctx = context.Background()
+var ingest = &idx.IngestCtx{
+	Indexers:    config.Indexers,
+	Concurrency: 1,
+	Verbose:     true,
+	Store:       config.Store,
+}
 
 func TestIngest(t *testing.T) {
-	ingest := &idx.IngestCtx{
-		Indexers:    config.Indexers,
-		Concurrency: 1,
-		Verbose:     true,
-		Store:       config.Store,
-	}
-
-	idxCtx, err := ingest.ParseTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true, Save: true})
+	idxCtx, err := ingest.IngestTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true, Save: true})
 	assert.NoError(t, err)
 
 	out, err := json.MarshalIndent(idxCtx, "", "  ")
@@ -46,4 +45,17 @@ func TestNoFeeTx(t *testing.T) {
 	tx := transaction.NewTransaction()
 	resp := broadcast.Broadcast(context.Background(), config.Store, tx, config.Broadcaster)
 	assert.Equal(t, int(resp.Status), fiber.StatusPaymentRequired)
+}
+
+func TestUtxos(t *testing.T) {
+	account := "1AjdTTSvxTde1FtMjwSuyNqvwiwjmBAjD1"
+	txos, err := ingest.Store.SearchTxos(ctx, &idx.SearchCfg{
+		Key:         idx.AccountTxosKey(account),
+		FilterSpent: true,
+	})
+	assert.NoError(t, err)
+
+	out, err := json.MarshalIndent(txos, "", "  ")
+	assert.NoError(t, err)
+	log.Println(string(out))
 }

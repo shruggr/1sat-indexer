@@ -62,6 +62,14 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 			if err = rows.Scan(&result.Member, &result.Score); err != nil {
 				return nil, err
 			}
+			if cfg.RefreshSpends {
+				if spend, err := jb.GetSpend(result.Member); err != nil {
+					return nil, err
+				} else if spend != "" {
+					p.SetNewSpend(ctx, result.Member, spend)
+					continue
+				}
+			}
 			results = append(results, &result)
 		}
 	}

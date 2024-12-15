@@ -62,9 +62,6 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			log.Println("Error", err)
 			return err
 		default:
-			// if cfg.Verbose {
-			// 	log.Println("Loading", cfg.PageSize, "transactions to ingest")
-			// }
 			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
 				Key:   cfg.Key,
 				Limit: cfg.PageSize,

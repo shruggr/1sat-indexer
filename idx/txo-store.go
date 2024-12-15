@@ -17,6 +17,7 @@ type SearchCfg struct {
 	IncludeTags   []string
 	IncludeRawtx  bool
 	FilterSpent   bool
+	RefreshSpends bool
 	Verbose       bool
 }
 

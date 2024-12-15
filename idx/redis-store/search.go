@@ -67,24 +67,32 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []
 	return
 }
 
-func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string) ([]string, error) {
+func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	if len(outpoints) == 0 {
 		return outpoints, nil
 	}
+	unspent := make([]string, 0, len(outpoints))
 	if spends, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
-		unspent := make([]string, 0, len(outpoints))
 		for i, outpoint := range outpoints {
 			if len(outpoint) < 65 {
 				continue
 			}
 			if spends[i] == nil {
+				if refresh {
+					if spend, err := jb.GetSpend(outpoint); err != nil {
+						return nil, err
+					} else if spend != "" {
+						r.SetNewSpend(ctx, outpoint, spend)
+						continue
+					}
+				}
 				unspent = append(unspent, outpoint)
 			}
 		}
-		return unspent, nil
 	}
+	return unspent, nil
 }
 
 func (r *RedisStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
@@ -115,40 +123,45 @@ func (r *RedisStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (r
 }
 
 func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
-	if cfg.IncludeTxo {
-		var outpoints []string
-		if outpoints, err = r.SearchOutpoints(ctx, cfg); err != nil {
+	results, err := r.search(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	outpoints := make([]string, 0, len(results))
+	for _, result := range results {
+		outpoint := result.Member.(string)
+		if len(outpoint) < 65 {
+			continue
+		}
+		outpoints = append(outpoints, outpoint)
+	}
+	if cfg.FilterSpent {
+		if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
 			return nil, err
 		}
-		if cfg.FilterSpent {
-			if outpoints, err = r.filterSpent(ctx, outpoints); err != nil {
-				return nil, err
-			}
-		}
+	}
+
+	if cfg.IncludeTxo {
 		if txos, err = r.LoadTxos(ctx, outpoints, nil); err != nil {
 			return nil, err
 		}
 	} else {
-		if results, err := r.search(ctx, cfg); err != nil {
-			return nil, err
-		} else {
-			txos = make([]*idx.Txo, 0, len(results))
-			for _, result := range results {
-				outpoint := result.Member.(string)
-				if len(outpoint) < 65 {
-					continue
-				}
-				txo := &idx.Txo{
-					Height: uint32(result.Score / 1000000000),
-					Idx:    uint64(result.Score) % 1000000000,
-					Score:  result.Score,
-					Data:   make(map[string]*idx.IndexData),
-				}
-				if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
-					return nil, err
-				}
-				txos = append(txos, txo)
+		txos = make([]*idx.Txo, 0, len(results))
+		for _, result := range results {
+			outpoint := result.Member.(string)
+			if len(outpoint) < 65 {
+				continue
 			}
+			txo := &idx.Txo{
+				Height: uint32(result.Score / 1000000000),
+				Idx:    uint64(result.Score) % 1000000000,
+				Score:  result.Score,
+				Data:   make(map[string]*idx.IndexData),
+			}
+			if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
+				return nil, err
+			}
+			txos = append(txos, txo)
 		}
 	}
 	if len(cfg.IncludeTags) > 0 {
