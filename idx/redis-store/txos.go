@@ -78,14 +78,11 @@ func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []st
 }
 
 func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*idx.Txo, error) {
-	// Get all keys matching the pattern txid_*
 	pattern := fmt.Sprintf("%s_*", txid)
 	outpoints := make([]string, 0)
-	
-	// Use HSCAN to find all matching outpoints
+
 	iter := r.DB.HScan(ctx, TxosKey, 0, pattern, 0).Iterator()
 	for iter.Next(ctx) {
-		// Skip every other value since HSCAN returns key-value pairs
 		outpoint := iter.Val()
 		if iter.Next(ctx) {
 			outpoints = append(outpoints, outpoint)
@@ -96,7 +93,6 @@ func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []str
 		return nil, err
 	}
 
-	// Use LoadTxos to load the full txo data for matching outpoints
 	return r.LoadTxos(ctx, outpoints, tags)
 }
 
