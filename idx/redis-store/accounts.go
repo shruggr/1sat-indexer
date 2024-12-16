@@ -37,31 +37,62 @@ func (r *RedisStore) AcctOwners(ctx context.Context, account string) ([]string, 
 
 func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
 	accountKey := idx.AccountKey(account)
-	for _, owner := range owners {
-		if owner == "" {
-			continue
-		}
-		if added, err := r.DB.ZAddNX(ctx, idx.OwnerSyncKey, redis.Z{
-			Score:  0,
-			Member: owner,
-		}).Result(); err != nil {
-			return err
-		} else if added == 0 {
-			continue
-		} else if err := r.DB.HSet(ctx, idx.OwnerAccountKey, owner, account).Err(); err != nil {
-			return err
-		} else if r.DB.SAdd(ctx, accountKey, owner).Err() != nil {
-			return err
-		} else if err = r.DB.ZRangeStore(ctx, idx.AccountTxosKey(account), redis.ZRangeArgs{
-			Key:   idx.OwnerTxosKey(owner),
-			Start: 0,
-			Stop:  -1,
-		}).Err(); err != nil {
-			return err
+	accountTxosKey := idx.AccountTxosKey(account)
+	ownerTxoKeys := make([]string, 0, len(owners))
+	current := make(map[string]struct{})
+	if currOwners, err := r.DB.SMembers(ctx, idx.AccountKey(account)).Result(); err != nil {
+		return err
+	} else {
+		for _, owner := range currOwners {
+			current[owner] = struct{}{}
 		}
 	}
+	_, err := r.DB.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		unionOwners := false
+		for _, owner := range owners {
+			if owner == "" {
+				continue
+			}
+			ownerTxoKeys = append(ownerTxoKeys, idx.OwnerTxosKey(owner))
+			if _, exists := current[owner]; exists {
+				log.Println("Owner already exists:", owner)
+				// continue
+			}
+			unionOwners = true
+			if err := pipe.ZAddNX(ctx, idx.OwnerSyncKey, redis.Z{
+				Score:  0,
+				Member: owner,
+			}).Err(); err != nil {
+				return err
+			}
+		}
 
-	return nil
+		if unionOwners {
+			if txoCount, err := pipe.ZUnionStore(ctx, accountTxosKey, &redis.ZStore{
+				Keys:      ownerTxoKeys,
+				Aggregate: "MIN",
+			}).Result(); err != nil {
+				return err
+			} else {
+				log.Println("Added", txoCount, "txos to", accountTxosKey)
+			}
+		}
+
+		for _, owner := range owners {
+			if owner == "" {
+				continue
+			}
+
+			if err := pipe.SAdd(ctx, accountKey, owner).Err(); err != nil {
+				return err
+			} else if err := pipe.HSet(ctx, idx.OwnerAccountKey, owner, account).Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	return err
 }
 
 func (r *RedisStore) SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) error {
