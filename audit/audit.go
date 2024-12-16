@@ -27,7 +27,7 @@ func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcas
 	} else {
 		chaintip := tip
 		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-		AuditTransactions(ctx)
+		// AuditTransactions(ctx)
 		for chaintip = range chaintips {
 			log.Println("Chaintip", chaintip.Height, chaintip.Hash)
 			immutableScore = idx.HeightScore(chaintip.Height-10, 0)
@@ -118,7 +118,7 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 
 		}
 	}
-	if score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
+	if score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-3*time.Hour).UnixNano())) {
 		log.Println("Rollback", hexid)
 		if err = ingest.Rollback(ctx, hexid); err != nil {
 			log.Panicln("Rollback error", hexid, err)
