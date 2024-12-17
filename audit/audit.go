@@ -19,7 +19,7 @@ var mempoolScore = idx.HeightScore(50000000, 0)
 var immutableScore float64
 var arc *broadcaster.Arc
 
-func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc) {
+func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc, rollback bool) {
 	ingest = ingestCtx
 	arc = bcast
 	if tip, chaintips, err := blk.StartChaintipSub(ctx); err != nil {
@@ -27,16 +27,16 @@ func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcas
 	} else {
 		chaintip := tip
 		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-		// AuditTransactions(ctx)
+		// AuditTransactions(ctx, rollback)
 		for chaintip = range chaintips {
 			log.Println("Chaintip", chaintip.Height, chaintip.Hash)
 			immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-			AuditTransactions(ctx)
+			AuditTransactions(ctx, rollback)
 		}
 	}
 }
 
-func AuditTransactions(ctx context.Context) {
+func AuditTransactions(ctx context.Context, rollback bool) {
 	cfg := &idx.SearchCfg{
 		Key: idx.PendingTxLog,
 	}
@@ -51,7 +51,7 @@ func AuditTransactions(ctx context.Context) {
 	} else {
 		log.Println("Audit pending txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score); err != nil {
+			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
 				log.Panic(err)
 			}
 		}
@@ -66,7 +66,7 @@ func AuditTransactions(ctx context.Context) {
 	} else {
 		log.Println("Audit mined txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score); err != nil {
+			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
 				log.Panic(err)
 			}
 		}
@@ -82,14 +82,14 @@ func AuditTransactions(ctx context.Context) {
 	} else {
 		log.Println("Audit mempool txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score); err != nil {
+			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
 				log.Panic(err)
 			}
 		}
 	}
 }
 
-func AuditTransaction(ctx context.Context, hexid string, score float64) error {
+func AuditTransaction(ctx context.Context, hexid string, score float64, rollback bool) error {
 	// log.Println("Auditing", hexid)
 	tx, err := jb.LoadTx(ctx, hexid, true)
 	if err != nil {
@@ -118,7 +118,7 @@ func AuditTransaction(ctx context.Context, hexid string, score float64) error {
 
 		}
 	}
-	if score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-3*time.Hour).UnixNano())) {
+	if rollback && score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
 		log.Println("Rollback", hexid)
 		if err = ingest.Rollback(ctx, hexid); err != nil {
 			log.Panicln("Rollback error", hexid, err)

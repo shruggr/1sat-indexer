@@ -23,5 +23,5 @@ func main() {
 		Indexers: config.Indexers,
 		Network:  config.Network,
 		Store:    config.Store,
-	}, config.Broadcaster)
+	}, config.Broadcaster, true)
 }
