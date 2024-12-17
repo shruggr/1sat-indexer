@@ -12,6 +12,7 @@ var ingest *idx.IngestCtx
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
 	r.Get("/:owner/utxos", OwnerUtxos)
+	r.Get("/:owner/balance", OwnerBalance)
 }
 
 func OwnerUtxos(c *fiber.Ctx) error {
@@ -31,9 +32,22 @@ func OwnerUtxos(c *fiber.Ctx) error {
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
 		FilterSpent:   true,
+		RefreshSpends: c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)
+	}
+}
+
+func OwnerBalance(c *fiber.Ctx) error {
+	owner := c.Params("owner")
+	if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
+		Key:           idx.OwnerTxosKey(owner),
+		RefreshSpends: c.QueryBool("refresh", false),
+	}); err != nil {
+		return err
+	} else {
+		return c.JSON(balance)
 	}
 }

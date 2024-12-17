@@ -35,6 +35,7 @@ func TxosByEvent(c *fiber.Ctx) error {
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
+		FilterSpent:   c.QueryBool("unspent", false),
 	}); err != nil {
 		return err
 	} else {

@@ -3,6 +3,7 @@ package redisstore
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -67,24 +68,60 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []
 	return
 }
 
-func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string) ([]string, error) {
+func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	if len(outpoints) == 0 {
 		return outpoints, nil
 	}
+	unspent := make([]string, 0, len(outpoints))
+	// if refresh {
+	// 	for _, outpoint := range outpoints {
+	// 		log.Println("Checking", outpoint)
+	// 		if len(outpoint) < 65 {
+	// 			continue
+	// 		}
+
+	// 		if spend, err := jb.GetSpend(outpoint); err != nil {
+	// 			return nil, err
+	// 		} else if spend != "" {
+	// 			if _, err := r.SetNewSpend(ctx, outpoint, spend); err != nil {
+	// 				return nil, err
+	// 			}
+	// 			log.Println("Spent from JB", outpoint, spend)
+	// 		} else {
+	// 			log.Println("Unspent", outpoint, spend)
+	// 			unspent = append(unspent, outpoint)
+	// 		}
+	// 		// } else {
+	// 		// 	log.Println("Spent", outpoint, spends[i])
+	// 		// }
+	// 	}
+	// } else {
 	if spends, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
-		unspent := make([]string, 0, len(outpoints))
 		for i, outpoint := range outpoints {
 			if len(outpoint) < 65 {
 				continue
 			}
 			if spends[i] == nil {
+				if refresh {
+					if spend, err := jb.GetSpend(outpoint); err != nil {
+						return nil, err
+					} else if spend != "" {
+						if _, err := r.SetNewSpend(ctx, outpoint, spend); err != nil {
+							return nil, err
+						}
+						log.Println("Spent from JB", outpoint, spend)
+						continue
+					}
+				}
 				unspent = append(unspent, outpoint)
 			}
 		}
-		return unspent, nil
 	}
+	// }
+
+	return unspent, nil
 }
 
 func (r *RedisStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
@@ -115,40 +152,44 @@ func (r *RedisStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (r
 }
 
 func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
-	if cfg.IncludeTxo {
-		var outpoints []string
-		if outpoints, err = r.SearchOutpoints(ctx, cfg); err != nil {
+	results, err := r.search(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	outpoints := make([]string, 0, len(results))
+	resultMap := make(map[string]*redis.Z, len(results))
+	for _, result := range results {
+		outpoint := result.Member.(string)
+		if len(outpoint) < 65 {
+			continue
+		}
+		resultMap[outpoint] = &result
+		outpoints = append(outpoints, outpoint)
+	}
+	if cfg.FilterSpent {
+		if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
 			return nil, err
 		}
-		if cfg.FilterSpent {
-			if outpoints, err = r.filterSpent(ctx, outpoints); err != nil {
-				return nil, err
-			}
-		}
+	}
+
+	if cfg.IncludeTxo {
 		if txos, err = r.LoadTxos(ctx, outpoints, nil); err != nil {
 			return nil, err
 		}
 	} else {
-		if results, err := r.search(ctx, cfg); err != nil {
-			return nil, err
-		} else {
-			txos = make([]*idx.Txo, 0, len(results))
-			for _, result := range results {
-				outpoint := result.Member.(string)
-				if len(outpoint) < 65 {
-					continue
-				}
-				txo := &idx.Txo{
-					Height: uint32(result.Score / 1000000000),
-					Idx:    uint64(result.Score) % 1000000000,
-					Score:  result.Score,
-					Data:   make(map[string]*idx.IndexData),
-				}
-				if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
-					return nil, err
-				}
-				txos = append(txos, txo)
+		txos = make([]*idx.Txo, 0, len(results))
+		for _, outpoint := range outpoints {
+			result := resultMap[outpoint]
+			txo := &idx.Txo{
+				Height: uint32(result.Score / 1000000000),
+				Idx:    uint64(result.Score) % 1000000000,
+				Score:  result.Score,
+				Data:   make(map[string]*idx.IndexData),
 			}
+			if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
+				return nil, err
+			}
+			txos = append(txos, txo)
 		}
 	}
 	if len(cfg.IncludeTags) > 0 {
@@ -168,6 +209,24 @@ func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos [
 		}
 	}
 	return txos, nil
+}
+
+func (r *RedisStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (balance uint64, err error) {
+	if outpoints, err := r.SearchOutpoints(ctx, cfg); err != nil {
+		return 0, err
+	} else if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
+		return 0, err
+	} else if txos, err := r.LoadTxos(ctx, outpoints, nil); err != nil {
+		return 0, err
+	} else {
+		for _, txo := range txos {
+			if txo.Satoshis != nil {
+				balance += *txo.Satoshis
+			}
+		}
+	}
+
+	return
 }
 
 func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg, keys []string) (txns []*lib.TxResult, err error) {

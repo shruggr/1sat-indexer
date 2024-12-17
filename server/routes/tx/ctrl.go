@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"strings"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
@@ -24,7 +25,11 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
+	r.Get("/:txid/txos", TxosByTxid)
 	r.Get("/callback", TxCallback)
+	r.Get("/:txid/parse", ParseTx)
+	r.Post("/parse", ParseTx)
+	r.Post("/:txid/ingest", IngestTx)
 }
 
 func BroadcastTx(c *fiber.Ctx) (err error) {
@@ -155,5 +160,56 @@ func TxCallback(c *fiber.Ctx) error {
 	} else {
 		log.Println("TxCallback", string(out))
 		return c.SendStatus(200)
+	}
+}
+
+func ParseTx(c *fiber.Ctx) (err error) {
+	txid := c.Params("txid")
+	var tx *transaction.Transaction
+	var rawtx []byte
+	if txid != "" {
+		if tx, err = jb.LoadTx(c.Context(), txid, false); err != nil {
+			return
+		} else if tx == nil {
+			return c.SendStatus(404)
+		}
+	} else if err = c.BodyParser(rawtx); err != nil {
+		return
+	} else if len(rawtx) == 0 {
+		return c.SendStatus(400)
+	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+		return
+	}
+	if idxCtx, err := ingest.ParseTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
+		return err
+	} else {
+		return c.JSON(idxCtx)
+	}
+}
+
+func IngestTx(c *fiber.Ctx) error {
+	txid := c.Params("txid")
+	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+		return err
+	} else if tx == nil {
+		return c.SendStatus(404)
+	} else if idxCtx, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+		return err
+	} else {
+		return c.JSON(idxCtx)
+	}
+}
+
+func TxosByTxid(c *fiber.Ctx) error {
+	txid := c.Params("txid")
+
+	tags := strings.Split(c.Query("tags", ""), ",")
+	if len(tags) > 0 && tags[0] == "*" {
+		tags = ingest.IndexedTags()
+	}
+	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags); err != nil {
+		return err
+	} else {
+		return c.JSON(txos)
 	}
 }

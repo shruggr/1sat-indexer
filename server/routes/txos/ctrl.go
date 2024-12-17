@@ -10,6 +10,7 @@ import (
 var ingest *idx.IngestCtx
 
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	r.Get("/:outpoint", GetTxo)
 	r.Post("/", GetTxos)
 }

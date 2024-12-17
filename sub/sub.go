@@ -37,7 +37,7 @@ func init() {
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	errors := make(chan error)
-
+	queueKey := idx.QueueKey(cfg.Queue)
 	var sub *junglebus.Subscription
 
 	eventHandler := junglebus.EventHandler{
@@ -67,7 +67,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
+			if err := store.Log(ctx, queueKey, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
 				errors <- err
 			}
 		}
@@ -77,7 +77,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(0, 0)); err != nil {
+			if err := store.Log(ctx, queueKey, txn.Id, idx.HeightScore(0, 0)); err != nil {
 				errors <- err
 			}
 		}

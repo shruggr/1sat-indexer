@@ -2,6 +2,7 @@ package jb
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -152,7 +153,7 @@ func LoadRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 
 func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error) {
 	// start := time.Now()
-	url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
+	url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", JUNGLEBUS, txid)
 	// fmt.Println("Requesting:", url)
 	inflightM.Lock()
 	inflight, ok := inflightMap[url]
@@ -198,7 +199,7 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	prf, _ := Cache.Get(ctx, cacheKey).Bytes()
 	if len(prf) == 0 && JB != nil {
 		// start := time.Now()
-		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", os.Getenv("JUNGLEBUS"), txid)
+		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", JUNGLEBUS, txid)
 		inflightM.Lock()
 		inflight, ok := inflightMap[url]
 		if !ok {
@@ -259,17 +260,23 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 // 	return
 // }
 
-// func GetSpend(outpoint *Outpoint) (spend []byte, err error) {
-// 	resp, err := http.Get(fmt.Sprintf("%s/v1/txo/spend/%s", os.Getenv("JUNGLEBUS"), outpoint.String()))
-// 	if err != nil {
-// 		log.Println("JB Spend Request", err)
-// 		return
-// 	}
-// 	defer resp.Body.Close()
+func GetSpend(outpoint string) (spend string, err error) {
+	url := fmt.Sprintf("%s/v1/txo/spend/%s", JUNGLEBUS, outpoint)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Println("JB Spend Request", err)
+		return
+	}
+	defer resp.Body.Close()
 
-// 	if resp.StatusCode >= 300 {
-// 		err = fmt.Errorf("missing-spend-%s", outpoint.String())
-// 		return
-// 	}
-// 	return io.ReadAll(resp.Body)
-// }
+	if resp.StatusCode >= 300 {
+		err = fmt.Errorf("missing-spend-%s", outpoint)
+		return
+	}
+	if b, err := io.ReadAll(resp.Body); err != nil {
+		return "", err
+	} else {
+		spend := hex.EncodeToString(b)
+		return spend, nil
+	}
+}

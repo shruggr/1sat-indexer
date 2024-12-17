@@ -8,8 +8,6 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
-var TAG string
-
 var ingest *idx.IngestCtx
 
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
@@ -17,6 +15,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Put("/:account", RegisterAccount)
 	r.Get("/:account", AccountActivity)
 	r.Get("/:account/utxos", AccountUtxos)
+	r.Get("/:account/balance", AccountUtxos)
 	r.Get("/:account/:from", AccountActivity)
 }
 
@@ -31,7 +30,7 @@ func RegisterAccount(c *fiber.Ctx) error {
 
 	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
 		return err
-	} else if err := ingest.Store.SyncAcct(c.Context(), TAG, account, ingest); err != nil {
+	} else if err := ingest.Store.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
 		return err
 	}
 
@@ -55,10 +54,23 @@ func AccountUtxos(c *fiber.Ctx) error {
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
 		FilterSpent:   true,
+		RefreshSpends: c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)
+	}
+}
+
+func AccountBalance(c *fiber.Ctx) error {
+	account := c.Params("account")
+	if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
+		Key:           idx.AccountTxosKey(account),
+		RefreshSpends: c.QueryBool("refresh", false),
+	}); err != nil {
+		return err
+	} else {
+		return c.JSON(balance)
 	}
 }
 

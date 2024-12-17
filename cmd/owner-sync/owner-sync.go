@@ -18,7 +18,7 @@ var TAG string
 var store idx.TxoStore
 
 func init() {
-	flag.StringVar(&TAG, "tag", "ingest", "Ingest tag")
+	flag.StringVar(&TAG, "tag", idx.IngestTag, "Ingest tag")
 	flag.IntVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.Parse()
 	store = config.Store
@@ -26,9 +26,6 @@ func init() {
 
 func main() {
 	for {
-		store.Search(ctx, &idx.SearchCfg{
-			Key: idx.OwnerSyncKey,
-		})
 		if results, err := store.Search(ctx, &idx.SearchCfg{
 			Key: idx.OwnerSyncKey,
 		}); err != nil {
@@ -39,17 +36,18 @@ func main() {
 		} else {
 			for _, result := range results {
 				lastHeight := int(result.Score)
+				log.Println("Owner", result.Member, "lastHeight", lastHeight)
 				if addTxns, err := jb.FetchOwnerTxns(result.Member, lastHeight); err != nil {
 					log.Panic(err)
 				} else {
 					for _, addTxn := range addTxns {
-						if score, err := store.LogScore(ctx, TAG, addTxn.Txid); err != nil && err != redis.Nil {
+						if score, err := store.LogScore(ctx, idx.LogKey(TAG), addTxn.Txid); err != nil && err != redis.Nil {
 							log.Panic(err)
 						} else if score > 0 {
 							continue
 						}
 						score := idx.HeightScore(addTxn.Height, addTxn.Idx)
-						if err := store.Log(ctx, idx.LogKey(TAG), addTxn.Txid, score); err != nil {
+						if err := store.Log(ctx, idx.QueueKey(TAG), addTxn.Txid, score); err != nil {
 							log.Panic(err)
 						}
 						log.Println("Ingesting", addTxn.Txid, score)
