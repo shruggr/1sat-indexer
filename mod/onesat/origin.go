@@ -44,7 +44,7 @@ func NewOriginFromBytes(data []byte) (*Origin, error) {
 func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	txo := idxCtx.Txos[vout]
 
-	if *txo.Satoshis != 1 || idxCtx.Height < TRIGGER {
+	if *txo.Satoshis != 1 || (idxCtx.Height < TRIGGER && idxCtx.Height != 0) {
 		return nil
 	}
 

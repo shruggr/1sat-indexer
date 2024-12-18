@@ -130,7 +130,6 @@ func OriginsAncestors(c *fiber.Ctx) error {
 	origins := make([]string, 0, len(outpoints))
 	outpointMap := make(map[string]struct{}, len(outpoints))
 	for _, outpoint := range outpoints {
-		outpointMap[outpoint] = struct{}{}
 		if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 			return err
 		} else {
@@ -158,7 +157,9 @@ func OriginsAncestors(c *fiber.Ctx) error {
 			return err
 		} else {
 			for _, txo := range txos {
-				if _, ok := outpointMap[txo.Outpoint.String()]; !ok {
+				op := txo.Outpoint.String()
+				if _, ok := outpointMap[op]; !ok {
+					outpointMap[op] = struct{}{}
 					ancestors = append(ancestors, txo)
 				}
 			}
