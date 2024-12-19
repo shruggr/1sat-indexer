@@ -95,7 +95,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		0,
 		eventHandler,
 		&junglebus.SubscribeOptions{
-			QueueSize: 1000,
+			QueueSize: 1000000,
 			LiteMode:  true,
 		},
 	); err != nil {
