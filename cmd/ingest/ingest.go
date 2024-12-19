@@ -31,6 +31,7 @@ func main() {
 		Indexers:    config.Indexers,
 		Network:     config.Network,
 		Concurrency: CONCURRENCY,
+		// Once:        true,
 		// Verbose:     VERBOSE > 0,
 		Verbose: true,
 		Store:   config.Store,

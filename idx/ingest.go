@@ -130,6 +130,7 @@ func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg A
 			log.Panic(err)
 			return nil, err
 		} else if score > 0 {
+			log.Println("[INGEST] Skipping", txid)
 			return nil, nil
 		}
 	}
