@@ -35,7 +35,7 @@ func NewPGStore(connString string) (*PGStore, error) {
 	return &PGStore{DB: db}, nil
 }
 
-func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (*idx.Txo, error) {
+func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool) (*idx.Txo, error) {
 	row := p.DB.QueryRow(ctx, `SELECT outpoint, height, idx, satoshis, owners
 		FROM txos WHERE outpoint = $1 AND satoshis IS NOT NULL`,
 		outpoint,
@@ -59,11 +59,16 @@ func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string) (
 		} else if txo.Data == nil {
 			txo.Data = make(idx.IndexDataMap)
 		}
+		if script {
+			if err = txo.LoadScript(ctx); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return txo, nil
 }
 
-func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*idx.Txo, error) {
+func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool) ([]*idx.Txo, error) {
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
@@ -91,12 +96,17 @@ func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []strin
 		} else if txo.Data == nil {
 			txo.Data = make(idx.IndexDataMap)
 		}
+		if script {
+			if err = txo.LoadScript(ctx); err != nil {
+				return nil, err
+			}
+		}
 		txos = append(txos, txo)
 	}
 	return txos, nil
 }
 
-func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*idx.Txo, error) {
+func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool) ([]*idx.Txo, error) {
 	rows, err := p.DB.Query(ctx, `SELECT outpoint
 		FROM txos 
 		WHERE outpoint LIKE $1`,
@@ -115,7 +125,7 @@ func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string
 			return nil, err
 		}
 	}
-	return p.LoadTxos(ctx, outpoints, tags)
+	return p.LoadTxos(ctx, outpoints, tags, script)
 }
 
 func (p *PGStore) LoadData(ctx context.Context, outpoint string, tags []string) (data idx.IndexDataMap, err error) {
@@ -152,11 +162,7 @@ func (p *PGStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 	outpoint := txo.Outpoint.String()
 	score := idx.HeightScore(height, blkIdx)
 
-	accounts, err := p.AcctsByOwners(ctx, txo.Owners)
-	if err != nil {
-		log.Panic(err)
-		return err
-	} else if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+	if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (outpoint) DO UPDATE SET height = $2, idx = $3, satoshis = $4, owners = $5`,
 		outpoint,
@@ -183,18 +189,6 @@ func (p *PGStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 				return err
 			}
 		}
-		for _, acct := range accounts {
-			if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-				VALUES ($1, $2, $3)
-				ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-				idx.AccountKey(acct),
-				outpoint,
-				score,
-			); err != nil {
-				log.Panic(err)
-				return err
-			}
-		}
 	}
 
 	if err := p.SaveTxoData(ctx, txo); err != nil {
@@ -205,18 +199,12 @@ func (p *PGStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 	// for _, owner := range txo.Owners {
 	// 	evt.Publish(ctx, OwnerKey(owner), outpoint)
 	// }
-	// for _, account := range accounts {
-	// 	evt.Publish(ctx, AccountKey(account), outpoint)
-	// }
 	return nil
 }
 
 func (p *PGStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, height uint32, blkIdx uint64) error {
 	score := idx.HeightScore(height, blkIdx)
-	if accounts, err := p.AcctsByOwners(ctx, spend.Owners); err != nil {
-		log.Panic(err)
-		return err
-	} else if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, spend)
+	if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, spend)
 		VALUES ($1, $2)
 		ON CONFLICT (outpoint) DO UPDATE SET spend = $2`,
 		spend.Outpoint.String(),
@@ -240,34 +228,16 @@ func (p *PGStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, he
 				return err
 			}
 		}
-		for _, acct := range accounts {
-			if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-				VALUES ($1, $2, $3)
-				ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-				idx.AccountKey(acct),
-				txid,
-				score,
-			); err != nil {
-				log.Panic(err)
-				return err
-			}
-		}
 	}
 	// for _, owner := range spend.Owners {
 	// 	evt.Publish(ctx, OwnerKey(owner), txid)
-	// }
-	// for _, account := range accounts {
-	// 	evt.Publish(ctx, AccountKey(account), txid)
 	// }
 
 	return nil
 }
 
 func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
-	if accounts, err := p.AcctsByOwners(ctx, spend.Owners); err != nil {
-		log.Panic(err)
-		return err
-	} else if _, err := p.DB.Exec(ctx, `UPDATE txos
+	if _, err := p.DB.Exec(ctx, `UPDATE txos
 		SET spend = ''
 		WHERE outpoint = $1 AND spend = $2`,
 		spend.Outpoint.String(),
@@ -276,19 +246,9 @@ func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string
 		log.Panic(err)
 		return err
 	} else {
-		keys := make([]string, 0, len(spend.Owners)+len(accounts))
-		for _, owner := range spend.Owners {
-			if owner == "" {
-				continue
-			}
-			keys = append(keys, idx.OwnerKey(owner))
-		}
-		for _, acct := range accounts {
-			keys = append(keys, idx.AccountKey(acct))
-		}
 		if _, err := p.DB.Exec(ctx, `DELETE FROM logs
 				WHERE search_key = ANY($1) AND member = $2`,
-			keys,
+			spend.Owners,
 			txid,
 		); err != nil {
 			log.Panic(err)

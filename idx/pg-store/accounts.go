@@ -62,25 +62,13 @@ func (p *PGStore) UpdateAccount(ctx context.Context, account string, owners []st
 		if owner == "" {
 			continue
 		}
-		if result, err := p.DB.Exec(ctx, `INSERT INTO owner_accounts(owner, account)
+		if _, err := p.DB.Exec(ctx, `INSERT INTO owner_accounts(owner, account)
 			VALUES ($1, $2)
 			ON CONFLICT(owner) DO UPDATE 
 				SET account=$2
 				WHERE owner_accounts.account!=$2`,
 			owner,
 			account,
-		); err != nil {
-			log.Panic(err)
-			return err
-		} else if result.RowsAffected() == 0 {
-			continue
-		} else if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-			SELECT $1, member, score
-			FROM logs
-			WHERE search_key=$2
-			ON CONFLICT (search_key, member) DO NOTHING`,
-			idx.AccountKey(account),
-			idx.OwnerKey(owner),
 		); err != nil {
 			log.Panic(err)
 			return err

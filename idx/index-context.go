@@ -141,7 +141,7 @@ func (idxCtx *IndexContext) ParseTxos() (err error) {
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
-	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags); err != nil {
+	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if txo != nil {

@@ -25,10 +25,10 @@ func TxosByEvent(c *fiber.Ctx) error {
 	decodedValue, _ := url.QueryUnescape(c.Params("value"))
 	from := c.QueryFloat("from", 0)
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key: evt.EventKey(c.Params("tag"), &evt.Event{
+		Keys: []string{evt.EventKey(c.Params("tag"), &evt.Event{
 			Id:    c.Params("id"),
 			Value: decodedValue,
-		}),
+		})},
 		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),

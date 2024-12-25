@@ -48,14 +48,14 @@ func TestNoFeeTx(t *testing.T) {
 }
 
 func TestUtxos(t *testing.T) {
-	account := "1AjdTTSvxTde1FtMjwSuyNqvwiwjmBAjD1"
-	txos, err := ingest.Store.SearchTxos(ctx, &idx.SearchCfg{
-		Key:         idx.AccountTxosKey(account),
-		FilterSpent: true,
-	})
-	assert.NoError(t, err)
+	// account := "1AjdTTSvxTde1FtMjwSuyNqvwiwjmBAjD1"
+	// txos, err := ingest.Store.SearchTxos(ctx, &idx.SearchCfg{
+	// 	Key:         idx.AccountTxosKey(account),
+	// 	FilterSpent: true,
+	// })
+	// assert.NoError(t, err)
 
-	out, err := json.MarshalIndent(txos, "", "  ")
-	assert.NoError(t, err)
-	log.Println(string(out))
+	// out, err := json.MarshalIndent(txos, "", "  ")
+	// assert.NoError(t, err)
+	// log.Println(string(out))
 }

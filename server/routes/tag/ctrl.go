@@ -25,7 +25,7 @@ func TxosByTag(c *fiber.Ctx) error {
 
 	from := c.QueryFloat("from", 0)
 	if txos, err := config.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key:           evt.TagKey(c.Params("tag")),
+		Keys:          []string{evt.TagKey(c.Params("tag"))},
 		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),

@@ -28,10 +28,10 @@ func OriginHistory(c *fiber.Ctx) error {
 	}
 
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key: evt.EventKey("origin", &evt.Event{
+		Keys: []string{evt.EventKey("origin", &evt.Event{
 			Id:    "outpoint",
 			Value: outpoint,
-		}),
+		})},
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
@@ -59,10 +59,10 @@ func OriginsHistory(c *fiber.Ctx) error {
 	history := make([]*idx.Txo, 0, len(outpoints))
 	for _, outpoint := range outpoints {
 		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-			Key: evt.EventKey("origin", &evt.Event{
+			Keys: []string{evt.EventKey("origin", &evt.Event{
 				Id:    "outpoint",
 				Value: outpoint,
-			}),
+			})},
 			IncludeTxo:    c.QueryBool("txo", false),
 			IncludeTags:   tags,
 			IncludeScript: c.QueryBool("script", false),
@@ -95,10 +95,10 @@ func OriginAncestors(c *fiber.Ctx) error {
 
 	ancestors := make([]*idx.Txo, 0)
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Key: evt.EventKey("origin", &evt.Event{
+		Keys: []string{evt.EventKey("origin", &evt.Event{
 			Id:    "outpoint",
 			Value: outpoint,
-		}),
+		})},
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
@@ -146,10 +146,10 @@ func OriginsAncestors(c *fiber.Ctx) error {
 	ancestors := make([]*idx.Txo, 0, len(origins))
 	for _, outpoint := range origins {
 		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-			Key: evt.EventKey("origin", &evt.Event{
+			Keys: []string{evt.EventKey("origin", &evt.Event{
 				Id:    "outpoint",
 				Value: outpoint,
-			}),
+			})},
 			IncludeTxo:    c.QueryBool("txo", false),
 			IncludeTags:   tags,
 			IncludeScript: c.QueryBool("script", false),

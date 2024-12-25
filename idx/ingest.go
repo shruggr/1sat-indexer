@@ -63,7 +63,7 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			return err
 		default:
 			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
-				Key:   cfg.Key,
+				Keys:  []string{cfg.Key},
 				Limit: cfg.PageSize,
 			}); err != nil {
 				log.Panic(err)

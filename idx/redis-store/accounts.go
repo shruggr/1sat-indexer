@@ -37,7 +37,6 @@ func (r *RedisStore) AcctOwners(ctx context.Context, account string) ([]string, 
 
 func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
 	accountKey := idx.AccountKey(account)
-	accountTxosKey := idx.AccountTxosKey(account)
 	ownerTxoKeys := make([]string, 0, len(owners))
 	current := make(map[string]struct{})
 	if currOwners, err := r.DB.SMembers(ctx, idx.AccountKey(account)).Result(); err != nil {
@@ -48,7 +47,6 @@ func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners [
 		}
 	}
 	_, err := r.DB.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		unionOwners := false
 		for _, owner := range owners {
 			if owner == "" {
 				continue
@@ -58,23 +56,11 @@ func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners [
 				log.Println("Owner already exists:", owner)
 				// continue
 			}
-			unionOwners = true
 			if err := pipe.ZAddNX(ctx, idx.OwnerSyncKey, redis.Z{
 				Score:  0,
 				Member: owner,
 			}).Err(); err != nil {
 				return err
-			}
-		}
-
-		if unionOwners {
-			if txoCount, err := pipe.ZUnionStore(ctx, accountTxosKey, &redis.ZStore{
-				Keys:      ownerTxoKeys,
-				Aggregate: "MIN",
-			}).Result(); err != nil {
-				return err
-			} else {
-				log.Println("Added", txoCount, "txos to", accountTxosKey)
 			}
 		}
 

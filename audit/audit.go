@@ -38,7 +38,7 @@ func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcas
 
 func AuditTransactions(ctx context.Context, rollback bool) {
 	cfg := &idx.SearchCfg{
-		Key: idx.PendingTxLog,
+		Keys: []string{idx.PendingTxLog},
 	}
 
 	// all pending transaction older than 2 minutes

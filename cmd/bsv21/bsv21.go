@@ -56,10 +56,10 @@ func main() {
 	}
 	go categorize()
 	if tokenIds, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
-		Key: evt.EventKey(onesat.BSV21_TAG, &evt.Event{
+		Keys: []string{evt.EventKey(onesat.BSV21_TAG, &evt.Event{
 			Id:    "issue",
 			Value: "",
-		}),
+		})},
 		Limit: 0,
 	}); err != nil {
 		log.Panic(err)
@@ -81,7 +81,7 @@ func main() {
 }
 
 func processToken(tokenId string) (err error) {
-	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}); err != nil {
+	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}, false); err != nil {
 		log.Println("Error loading token", tokenId, err)
 		return err
 	} else if tokenTxo == nil {
@@ -123,7 +123,7 @@ func processToken(tokenId string) (err error) {
 			validationCount := int64(validCount + invalidCount)
 			for balance = balance - (validationCount * onesat.BSV21_INDEX_FEE); balance > 0; {
 				if items, err := store.Search(ctx, &idx.SearchCfg{
-					Key:   idx.QueueKey(tokenId),
+					Keys:  []string{idx.QueueKey(tokenId)},
 					Limit: 1,
 				}); err != nil {
 					log.Println("Error getting queue", tokenId, err)
@@ -209,7 +209,7 @@ func subscribe() {
 
 func categorize() {
 	if txids, err := store.SearchOutpoints(ctx, &idx.SearchCfg{
-		Key: queueKey,
+		Keys: []string{queueKey},
 	}); err != nil {
 		log.Panic(err)
 	} else {

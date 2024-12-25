@@ -7,18 +7,21 @@ import (
 )
 
 type SearchCfg struct {
-	Key           string
-	From          *float64
-	To            *float64
-	Limit         uint32
-	Reverse       bool
-	IncludeTxo    bool
-	IncludeScript bool
-	IncludeTags   []string
-	IncludeRawtx  bool
-	FilterSpent   bool
-	RefreshSpends bool
-	Verbose       bool
+	Keys           []string
+	From           *float64
+	To             *float64
+	Limit          uint32
+	ExcludeMined   bool
+	ExcludeMempool bool
+	Reverse        bool
+	IncludeTxo     bool
+	IncludeScript  bool
+	IncludeTags    []string
+	IncludeRawtx   bool
+	OutpointsOnly  bool
+	FilterSpent    bool
+	RefreshSpends  bool
+	Verbose        bool
 }
 
 type SearchResult struct {
@@ -30,9 +33,9 @@ type TxoStore interface {
 	AcctsByOwners(ctx context.Context, owners []string) ([]string, error)
 	AcctOwners(ctx context.Context, acct string) ([]string, error)
 	UpdateAccount(ctx context.Context, account string, owners []string) error
-	LoadTxo(ctx context.Context, outpoint string, tags []string) (*Txo, error)
-	LoadTxos(ctx context.Context, outpoints []string, tags []string) ([]*Txo, error)
-	LoadTxosByTxid(ctx context.Context, txid string, tags []string) ([]*Txo, error)
+	LoadTxo(ctx context.Context, outpoint string, tags []string, script bool) (*Txo, error)
+	LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool) ([]*Txo, error)
+	LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool) ([]*Txo, error)
 	LoadData(ctx context.Context, outpoint string, tags []string) (IndexDataMap, error)
 	SaveTxo(ctx context.Context, txo *Txo, height uint32, idx uint64) error
 	RollbackTxo(ctx context.Context, txo *Txo) error
@@ -47,7 +50,7 @@ type TxoStore interface {
 	SearchMembers(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchOutpoints(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchTxos(ctx context.Context, cfg *SearchCfg) ([]*Txo, error)
-	SearchTxns(ctx context.Context, cfg *SearchCfg, keys []string) ([]*lib.TxResult, error)
+	SearchTxns(ctx context.Context, cfg *SearchCfg) ([]*lib.TxResult, error)
 	SearchBalance(ctx context.Context, cfg *SearchCfg) (uint64, error)
 	CountMembers(ctx context.Context, key string) (uint64, error)
 	SyncAcct(ctx context.Context, tag, acct string, ingest *IngestCtx) error
