@@ -33,8 +33,9 @@ func main() {
 		Concurrency: CONCURRENCY,
 		// Once:        true,
 		// Verbose:     VERBOSE > 0,
-		Verbose: true,
-		Store:   config.Store,
+		Verbose:  true,
+		Store:    config.Store,
+		PageSize: 10000,
 	}).Exec(ctx); err != nil {
 		log.Println("Ingest error", err)
 	}
