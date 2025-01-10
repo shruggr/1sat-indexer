@@ -24,7 +24,7 @@ type SearchCfg struct {
 	Verbose        bool
 }
 
-type SearchResult struct {
+type Log struct {
 	Member string
 	Score  float64
 }
@@ -46,7 +46,7 @@ type TxoStore interface {
 	SetNewSpend(ctx context.Context, outpoint string, spend string) (bool, error)
 	UnsetSpends(ctx context.Context, outpoints []string) error
 	SaveTxoData(ctx context.Context, txo *Txo) error
-	Search(ctx context.Context, cfg *SearchCfg) ([]*SearchResult, error)
+	Search(ctx context.Context, cfg *SearchCfg) ([]*Log, error)
 	SearchMembers(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchOutpoints(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchTxos(ctx context.Context, cfg *SearchCfg) ([]*Txo, error)
@@ -56,6 +56,7 @@ type TxoStore interface {
 	SyncAcct(ctx context.Context, tag, acct string, ingest *IngestCtx) error
 	SyncOwner(ctx context.Context, tag, owner string, ingest *IngestCtx) error
 	Log(ctx context.Context, key string, id string, score float64) error
+	LogMany(ctx context.Context, key string, logs []Log) error
 	LogOnce(ctx context.Context, key string, id string, score float64) (bool, error)
 	Delog(ctx context.Context, key string, ids ...string) error
 	LogScore(ctx context.Context, key string, id string) (float64, error)

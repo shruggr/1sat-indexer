@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 func (r *RedisStore) Delog(ctx context.Context, key string, members ...string) error {
@@ -19,6 +20,17 @@ func (r *RedisStore) Log(ctx context.Context, key string, member string, score f
 		Score:  score,
 		Member: member,
 	}).Err()
+}
+
+func (r *RedisStore) LogMany(ctx context.Context, key string, logs []idx.Log) error {
+	zs := make([]redis.Z, len(logs))
+	for i, l := range logs {
+		zs[i] = redis.Z{
+			Score:  l.Score,
+			Member: l.Member,
+		}
+	}
+	return r.DB.ZAdd(ctx, key, zs...).Err()
 }
 
 func (r *RedisStore) LogOnce(ctx context.Context, key string, member string, score float64) (bool, error) {

@@ -31,11 +31,11 @@ func main() {
 		Indexers:    config.Indexers,
 		Network:     config.Network,
 		Concurrency: CONCURRENCY,
-		// Once:        true,
+		Once:        true,
 		// Verbose:     VERBOSE > 0,
 		Verbose:  true,
 		Store:    config.Store,
-		PageSize: 10000,
+		PageSize: 100000,
 	}).Exec(ctx); err != nil {
 		log.Println("Ingest error", err)
 	}

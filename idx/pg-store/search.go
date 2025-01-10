@@ -12,7 +12,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
-func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.SearchResult, err error) {
+func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.Log, err error) {
 	var sqlBuilder strings.Builder
 	args := make([]interface{}, 0, 3)
 	sqlBuilder.WriteString(`SELECT logs.member, logs.score FROM logs `)
@@ -56,9 +56,9 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		return nil, err
 	} else {
 		defer rows.Close()
-		results = make([]*idx.SearchResult, 0, cfg.Limit)
+		results = make([]*idx.Log, 0, cfg.Limit)
 		for rows.Next() {
-			var result idx.SearchResult
+			var result idx.Log
 			if err = rows.Scan(&result.Member, &result.Score); err != nil {
 				return nil, err
 			}

@@ -21,6 +21,7 @@ var TAG string
 var QUEUE string
 var MEMOOOL bool
 var BLOCK bool
+var REWIND bool
 
 func init() {
 	flag.StringVar(&TAG, "tag", "", "(REQUIRED) Subscription Tag")
@@ -30,6 +31,7 @@ func init() {
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")
+	flag.BoolVar(&REWIND, "r", false, "Reorg Rewind")
 	flag.Parse()
 
 	if TAG == "" {
@@ -49,6 +51,7 @@ func main() {
 		IndexBlocks:  BLOCK,
 		IndexMempool: MEMOOOL,
 		Verbose:      VERBOSE > 0,
+		ReorgRewind:  REWIND,
 	}).Exec(ctx); err != nil {
 		log.Panic(err)
 	}

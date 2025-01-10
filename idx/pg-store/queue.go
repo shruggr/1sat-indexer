@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 func (p *PGStore) Delog(ctx context.Context, key string, members ...string) error {
@@ -24,6 +25,24 @@ func (p *PGStore) Log(ctx context.Context, key string, member string, score floa
 		score,
 	)
 	return
+}
+
+func (p *PGStore) LogMany(ctx context.Context, key string, logs []idx.Log) error {
+	batch := &pgx.Batch{}
+	for _, l := range logs {
+		batch.Queue(`INSERT INTO logs(search_key, member, score)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
+			key,
+			l.Member,
+			l.Score,
+		)
+	}
+
+	br := p.DB.SendBatch(context.Background(), batch)
+	defer br.Close()
+	_, err := br.Exec()
+	return err
 }
 
 func (p *PGStore) LogOnce(ctx context.Context, key string, member string, score float64) (bool, error) {

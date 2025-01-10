@@ -44,10 +44,10 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 	return query
 }
 
-func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []*idx.SearchResult, err error) {
+func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []*idx.Log, err error) {
 	query := BuildQuery(cfg)
 	outpointSet := make(map[float64]struct{})
-	records = make([]*idx.SearchResult, 0, len(cfg.Keys)*int(cfg.Limit))
+	records = make([]*idx.Log, 0, len(cfg.Keys)*int(cfg.Limit))
 	for _, key := range cfg.Keys {
 		var results []redis.Z
 		if cfg.Reverse {
@@ -66,7 +66,7 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []
 					continue
 				}
 				outpointSet[result.Score] = struct{}{}
-				records = append(records, &idx.SearchResult{
+				records = append(records, &idx.Log{
 					Score:  result.Score,
 					Member: outpoint,
 				})
@@ -75,7 +75,7 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []
 	}
 
 	if len(cfg.Keys) > 1 {
-		slices.SortFunc(records, func(a, b *idx.SearchResult) int {
+		slices.SortFunc(records, func(a, b *idx.Log) int {
 			if cfg.Reverse {
 				if a.Score > b.Score {
 					return -1
@@ -159,7 +159,7 @@ func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos [
 		return nil, err
 	}
 	outpoints := make([]string, 0, len(results))
-	resultMap := make(map[string]*idx.SearchResult, len(results))
+	resultMap := make(map[string]*idx.Log, len(results))
 	for _, result := range results {
 		resultMap[result.Member] = result
 		outpoints = append(outpoints, result.Member)

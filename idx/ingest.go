@@ -97,7 +97,7 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 									errors <- err
 								}
 							} else if len(cfg.Key) > 0 {
-								if err = cfg.Store.Delog(ctx, cfg.Key, idxCtx.TxidHex); err != nil {
+								if err = cfg.Store.Delog(ctx, cfg.Key, txid); err != nil {
 									log.Panic(err)
 									return
 								}
