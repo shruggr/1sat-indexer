@@ -46,7 +46,7 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 
 func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []*idx.Log, err error) {
 	query := BuildQuery(cfg)
-	outpointSet := make(map[float64]struct{})
+	outpointSet := make(map[string]struct{})
 	records = make([]*idx.Log, 0, len(cfg.Keys)*int(cfg.Limit))
 	for _, key := range cfg.Keys {
 		var results []redis.Z
@@ -60,12 +60,12 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []
 			}
 		}
 		for _, result := range results {
-			if _, exists := outpointSet[result.Score]; !exists {
+			if _, exists := outpointSet[result.Member.(string)]; !exists {
 				outpoint := result.Member.(string)
 				if len(outpoint) < 65 && (cfg.OutpointsOnly || cfg.FilterSpent) {
 					continue
 				}
-				outpointSet[result.Score] = struct{}{}
+				outpointSet[result.Member.(string)] = struct{}{}
 				records = append(records, &idx.Log{
 					Score:  result.Score,
 					Member: outpoint,
