@@ -44,10 +44,17 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 	return query
 }
 
+type record struct {
+	count int
+	score float64
+}
+
 func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []*idx.Log, err error) {
 	query := BuildQuery(cfg)
-	outpointSet := make(map[string]struct{})
-	records = make([]*idx.Log, 0, len(cfg.Keys)*int(cfg.Limit))
+	// outpointCounts := make(map[string]int)
+	outpointSet := make(map[string]*record)
+	keyCount := len(cfg.Keys)
+	records = make([]*idx.Log, 0, keyCount*int(cfg.Limit))
 	for _, key := range cfg.Keys {
 		var results []redis.Z
 		if cfg.Reverse {
@@ -60,21 +67,36 @@ func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []
 			}
 		}
 		for _, result := range results {
-			if _, exists := outpointSet[result.Member.(string)]; !exists {
-				outpoint := result.Member.(string)
-				if len(outpoint) < 65 && (cfg.OutpointsOnly || cfg.FilterSpent) {
-					continue
+			outpoint := result.Member.(string)
+			if len(outpoint) < 65 && (cfg.OutpointsOnly || cfg.FilterSpent) {
+				continue
+			}
+			if keyCount > 1 {
+				if _, exists := outpointSet[outpoint]; !exists {
+					outpointSet[outpoint] = &record{
+						score: result.Score,
+						count: 0,
+					}
 				}
-				outpointSet[result.Member.(string)] = struct{}{}
+				outpointSet[outpoint].count++
+			} else {
 				records = append(records, &idx.Log{
-					Score:  result.Score,
 					Member: outpoint,
+					Score:  result.Score,
 				})
 			}
 		}
 	}
-
-	if len(cfg.Keys) > 1 {
+	if keyCount > 1 {
+		for outpoint, record := range outpointSet {
+			if cfg.ComparisonType == idx.ComparisonAND && record.count != keyCount {
+				continue
+			}
+			records = append(records, &idx.Log{
+				Member: outpoint,
+				Score:  record.score,
+			})
+		}
 		slices.SortFunc(records, func(a, b *idx.Log) int {
 			if cfg.Reverse {
 				if a.Score > b.Score {

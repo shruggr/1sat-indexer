@@ -15,7 +15,11 @@ import (
 func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.Log, err error) {
 	var sqlBuilder strings.Builder
 	args := make([]interface{}, 0, 3)
-	sqlBuilder.WriteString(`SELECT logs.member, logs.score FROM logs `)
+	if cfg.ComparisonType == idx.ComparisonAND && len(cfg.Keys) > 1 {
+		sqlBuilder.WriteString(`SELECT logs.member, min(logs.score) as score FROM logs `)
+	} else {
+		sqlBuilder.WriteString(`SELECT logs.member, logs.score FROM logs `)
+	}
 	if cfg.FilterSpent {
 		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
 	}
@@ -40,6 +44,13 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		} else {
 			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", param))
 		}
+	}
+
+	if cfg.ComparisonType == idx.ComparisonAND && len(cfg.Keys) > 1 {
+		args = append(args, len(cfg.Keys))
+		param := len(args)
+		sqlBuilder.WriteString("GROUP BY logs.member ")
+		sqlBuilder.WriteString(fmt.Sprintf("HAVING COUNT(1) = $%d ", param))
 	}
 
 	if cfg.Reverse {

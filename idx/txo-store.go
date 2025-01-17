@@ -6,11 +6,19 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
+type ComparisonType int
+
+var (
+	ComparisonOR  = ComparisonType(0)
+	ComparisonAND = ComparisonType(1)
+)
+
 type SearchCfg struct {
 	Keys           []string
 	From           *float64
 	To             *float64
 	Limit          uint32
+	ComparisonType ComparisonType
 	ExcludeMined   bool
 	ExcludeMempool bool
 	Reverse        bool
