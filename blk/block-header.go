@@ -33,7 +33,7 @@ func FetchBlockHeaders(fromBlock uint64, pageSize uint) (blocks []*BlockHeader, 
 	url := fmt.Sprintf("%s/v1/block_header/list/%d?limit=%d", JUNGLEBUS, fromBlock, pageSize)
 	log.Printf("Requesting %d blocks from height %d\n", pageSize, fromBlock)
 	if resp, err := http.Get(url); err != nil {
-		log.Panicln("Failed to get blocks from junglebus", resp.StatusCode, err)
+		log.Panicln("Failed to get blocks from junglebus", err)
 	} else if resp.StatusCode != http.StatusOK {
 		log.Panicln("Failed to get blocks from junglebus", resp.StatusCode)
 	} else {
