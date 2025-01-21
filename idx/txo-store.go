@@ -49,8 +49,8 @@ type TxoStore interface {
 	RollbackTxo(ctx context.Context, txo *Txo) error
 	SaveSpend(ctx context.Context, spend *Txo, txid string, height uint32, idx uint64) error
 	RollbackSpend(ctx context.Context, spend *Txo, txid string) error
-	GetSpend(ctx context.Context, outpoint string) (string, error)
-	GetSpends(ctx context.Context, outpoints []string) ([]string, error)
+	GetSpend(ctx context.Context, outpoint string, refresh bool) (string, error)
+	GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error)
 	SetNewSpend(ctx context.Context, outpoint string, spend string) (bool, error)
 	UnsetSpends(ctx context.Context, outpoints []string) error
 	SaveTxoData(ctx context.Context, txo *Txo) error

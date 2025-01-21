@@ -18,6 +18,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/server/routes/evt"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/origins"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/own"
+	"github.com/shruggr/1sat-indexer/v5/server/routes/spend"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/sse"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tag"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tx"
@@ -48,6 +49,7 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 	tag.RegisterRoutes(v5.Group("/tag"), ingestCtx)
 	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx, broadcaster)
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
+	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 type PGStore struct {
@@ -306,8 +307,7 @@ func (p *PGStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
 	return nil
 }
 
-func (p *PGStore) GetSpend(ctx context.Context, outpoint string) (string, error) {
-	var spend string
+func (p *PGStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
 	if err := p.DB.QueryRow(ctx, `SELECT spend FROM txos 
 		WHERE outpoint = $1`,
 		outpoint,
@@ -315,12 +315,21 @@ func (p *PGStore) GetSpend(ctx context.Context, outpoint string) (string, error)
 		log.Panic(err)
 		return spend, err
 	}
+	if spend == "" && refresh {
+		if spend, err = jb.GetSpend(outpoint); err != nil {
+			return
+		} else if spend != "" {
+			if _, err = p.SetNewSpend(ctx, outpoint, spend); err != nil {
+				return
+			}
+		}
+	}
 	return spend, nil
 }
 
-func (p *PGStore) GetSpends(ctx context.Context, outpoints []string) ([]string, error) {
+func (p *PGStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
-	if rows, err := p.DB.Query(ctx, `SELECT spend FROM txos 
+	if rows, err := p.DB.Query(ctx, `SELECT outpoint, spend FROM txos 
 		WHERE outpoint = ANY($1)`,
 		outpoints,
 	); err != nil {
@@ -329,10 +338,20 @@ func (p *PGStore) GetSpends(ctx context.Context, outpoints []string) ([]string, 
 	} else {
 		defer rows.Close()
 		for rows.Next() {
+			var outpoint string
 			var spend string
-			if err = rows.Scan(&spend); err != nil {
+			if err = rows.Scan(&outpoint, &spend); err != nil {
 				log.Panic(err)
 				return nil, err
+			}
+			if spend == "" && refresh {
+				if spend, err = jb.GetSpend(outpoint); err != nil {
+					return nil, err
+				} else if spend != "" {
+					if _, err = p.SetNewSpend(ctx, outpoint, spend); err != nil {
+						return nil, err
+					}
+				}
 			}
 			spends = append(spends, spend)
 		}

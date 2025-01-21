@@ -91,7 +91,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			response.Error = err.Error()
 			return
 		} else if !added {
-			if spend, err := store.GetSpend(ctx, spendOutpoint); err != nil {
+			if spend, err := store.GetSpend(ctx, spendOutpoint, false); err != nil {
 				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 				response.Error = err.Error()
 				return
@@ -127,7 +127,7 @@ func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string,
 		return nil
 	}
 	deletes := make([]string, 0, len(outpoints))
-	if spends, err := store.GetSpends(ctx, outpoints); err != nil {
+	if spends, err := store.GetSpends(ctx, outpoints, false); err != nil {
 		return err
 	} else {
 		for i, spend := range spends {
