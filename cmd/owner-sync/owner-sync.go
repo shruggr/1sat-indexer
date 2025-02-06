@@ -24,6 +24,8 @@ func init() {
 	store = config.Store
 }
 
+var mempoolScore = idx.HeightScore(50000000, 0)
+
 func main() {
 	for {
 		if results, err := store.Search(ctx, &idx.SearchCfg{
@@ -37,13 +39,19 @@ func main() {
 			for _, result := range results {
 				lastHeight := int(result.Score)
 				log.Println("Owner", result.Member, "lastHeight", lastHeight)
+				start := time.Now()
 				if addTxns, err := jb.FetchOwnerTxns(result.Member, lastHeight); err != nil {
 					log.Panic(err)
 				} else {
+					log.Println("Fetched", len(addTxns), "txns in", time.Since(start))
 					for _, addTxn := range addTxns {
+						if addTxn.Height > uint32(lastHeight) {
+							lastHeight = int(addTxn.Height)
+						}
 						if score, err := store.LogScore(ctx, idx.LogKey(TAG), addTxn.Txid); err != nil && err != redis.Nil {
 							log.Panic(err)
-						} else if score > 0 {
+						} else if score > 0 && score <= mempoolScore {
+							log.Println("Skipping", addTxn.Txid, score)
 							continue
 						}
 						score := idx.HeightScore(addTxn.Height, addTxn.Idx)
@@ -51,10 +59,6 @@ func main() {
 							log.Panic(err)
 						}
 						log.Println("Ingesting", addTxn.Txid, score)
-
-						if addTxn.Height > uint32(lastHeight) {
-							lastHeight = int(addTxn.Height)
-						}
 					}
 
 					if err := store.Log(ctx, idx.OwnerSyncKey, result.Member, float64(lastHeight)); err != nil {

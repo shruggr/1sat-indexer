@@ -180,10 +180,12 @@ func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error)
 			}()
 			if resp, err := http.Get(url); err != nil {
 				return nil, err
-			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
-				return nil, err
+			} else if resp.StatusCode == 404 {
+				return nil, ErrMissingTxn
 			} else if resp.StatusCode != 200 {
 				return nil, fmt.Errorf("%d %s", resp.StatusCode, rawtx)
+			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
+				return nil, err
 			} else {
 				return rawtx, nil
 			}
