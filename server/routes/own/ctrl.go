@@ -24,7 +24,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 	}
 	from := c.QueryFloat("from", 0)
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Keys:          []string{idx.OwnerTxosKey(owner)},
+		Keys:          []string{idx.OwnerKey(owner)},
 		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
@@ -43,7 +43,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 func OwnerBalance(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
-		Keys:          []string{idx.OwnerTxosKey(owner)},
+		Keys:          []string{idx.OwnerKey(owner)},
 		RefreshSpends: c.QueryBool("refresh", false),
 	}); err != nil {
 		return err

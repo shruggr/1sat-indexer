@@ -197,9 +197,9 @@ func (p *PGStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 		return err
 	}
 
-	// for _, owner := range txo.Owners {
-	// 	evt.Publish(ctx, OwnerKey(owner), outpoint)
-	// }
+	for _, owner := range txo.Owners {
+		evt.Publish(ctx, idx.OwnerKey(owner), outpoint)
+	}
 	return nil
 }
 
@@ -230,9 +230,9 @@ func (p *PGStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, he
 			}
 		}
 	}
-	// for _, owner := range spend.Owners {
-	// 	evt.Publish(ctx, OwnerKey(owner), txid)
-	// }
+	for _, owner := range spend.Owners {
+		evt.Publish(ctx, idx.OwnerKey(owner), txid)
+	}
 
 	return nil
 }

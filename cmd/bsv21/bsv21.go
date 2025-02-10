@@ -104,7 +104,7 @@ func processToken(tokenId string) (err error) {
 		// 	return nil
 		// }
 
-		if balance, err := store.Balance(ctx, idx.OwnerTxosKey(bsv21.FundAddress)); err != nil {
+		if balance, err := store.Balance(ctx, idx.OwnerKey(bsv21.FundAddress)); err != nil {
 			log.Println("Error getting balance", tokenId, bsv21.FundAddress, err)
 			return err
 		} else if validCount, err := store.CountMembers(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{

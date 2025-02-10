@@ -145,7 +145,7 @@ func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, b
 			if owner == "" {
 				continue
 			}
-			if err := pipe.ZAdd(ctx, idx.OwnerTxosKey(owner), redis.Z{
+			if err := pipe.ZAdd(ctx, idx.OwnerKey(owner), redis.Z{
 				Score:  score,
 				Member: outpoint,
 			}).Err(); err != nil {
@@ -185,7 +185,7 @@ func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string,
 			if owner == "" {
 				continue
 			}
-			if err := pipe.ZAdd(ctx, idx.OwnerTxosKey(owner), redis.Z{
+			if err := pipe.ZAdd(ctx, idx.OwnerKey(owner), redis.Z{
 				Score:  score,
 				Member: txid,
 			}).Err(); err != nil {
@@ -220,7 +220,7 @@ func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid str
 		for _, owner := range spend.Owners {
 			if owner == "" {
 				continue
-			} else if err := pipe.ZRem(ctx, idx.OwnerTxosKey(owner), txid).Err(); err != nil {
+			} else if err := pipe.ZRem(ctx, idx.OwnerKey(owner), txid).Err(); err != nil {
 				return err
 			}
 		}
@@ -343,7 +343,7 @@ func (r *RedisStore) RollbackTxo(ctx context.Context, txo *idx.Txo) error {
 			if owner == "" {
 				continue
 			}
-			if err := pipe.ZRem(ctx, idx.OwnerTxosKey(owner), outpoint).Err(); err != nil {
+			if err := pipe.ZRem(ctx, idx.OwnerKey(owner), outpoint).Err(); err != nil {
 				log.Println("ZRem Owner", err)
 				log.Panic(err)
 				return err

@@ -51,7 +51,7 @@ func (r *RedisStore) UpdateAccount(ctx context.Context, account string, owners [
 			if owner == "" {
 				continue
 			}
-			ownerTxoKeys = append(ownerTxoKeys, idx.OwnerTxosKey(owner))
+			ownerTxoKeys = append(ownerTxoKeys, idx.OwnerKey(owner))
 			if _, exists := current[owner]; exists {
 				log.Println("Owner already exists:", owner)
 				// continue

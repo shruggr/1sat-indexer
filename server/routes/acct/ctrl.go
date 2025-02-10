@@ -53,7 +53,7 @@ func AccountUtxos(c *fiber.Ctx) error {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 			Keys:          keys,
@@ -82,7 +82,7 @@ func AccountBalance(c *fiber.Ctx) error {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
 			Keys:          keys,
@@ -108,7 +108,7 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if results, err := ingest.Store.SearchTxns(c.Context(), &idx.SearchCfg{
 			Keys:    keys,

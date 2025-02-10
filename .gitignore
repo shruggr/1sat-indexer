@@ -4,3 +4,5 @@ app.yaml
 
 *.run
 config/config.go
+redis.sh
+settings.json

@@ -4,7 +4,7 @@ CREATE TABLE txos (
     idx BIGINT DEFAULT 0,
     spend TEXT NOT NULL DEFAULT '',
     satoshis BIGINT,
-    owners TEXT[],
+    owners TEXT[]
 );
 CREATE INDEX idx_txos_height_idx ON txos (height, idx);
 CREATE INDEX idx_txos_spend ON txos (spend);
@@ -24,6 +24,7 @@ CREATE TABLE logs (
 );
 CREATE INDEX idx_logs_score ON logs (search_key text_pattern_ops, score)
     INCLUDE (member);
+CREATE INDEX idx_logs_member ON logs (member);
 
 CREATE TABLE owner_accounts (
     owner TEXT PRIMARY KEY,
@@ -32,7 +33,7 @@ CREATE TABLE owner_accounts (
 );
 CREATE INDEX idx_owner_accounts_account ON owner_accounts (account);
 
-CREATE TABLE progress (
-    member TEXT PRIMARY KEY,
-    score DOUBLE PRECISION
-);
+-- CREATE TABLE progress (
+--     member TEXT PRIMARY KEY,
+--     score DOUBLE PRECISION
+-- );
