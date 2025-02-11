@@ -49,7 +49,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		ticker := time.NewTicker(1 * time.Minute)
 		for range ticker.C {
 			if time.Since(lastActivity) > 15*time.Minute {
-				log.Println("No activity for 15 minutes seconds, exiting...")
+				log.Println("No activity for 15 minutes, exiting...")
 				os.Exit(0)
 			}
 		}
