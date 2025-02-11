@@ -6,6 +6,8 @@
     "configurations": [
 
 
+
+
         {
             "name": "Launch file",
             "type": "go",
@@ -13,6 +15,9 @@
             "mode": "debug",
             "program": "${file}",
             "cwd": "${fileDirname}",
+            "env": {
+                "PORT": "8083"
+            },
             "args": [
                 // "-tag=insc",
                 // "-t=b1d6decfecfebadec22c9e98109aad3e58f7e4ac799024d1e5bf3afe3b95d0f2",

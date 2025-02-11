@@ -16,6 +16,7 @@ const PendingTxLog = "tx"
 const RollbackTxLog = "rollback"
 const ImmutableTxLog = "immutable"
 const RejectedTxLog = "rejected"
+const MissingTxLog = "missing"
 
 type IngestCtx struct {
 	Tag         string

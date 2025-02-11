@@ -127,9 +127,28 @@ func (r *RedisStore) LoadData(ctx context.Context, outpoint string, tags []strin
 	return
 }
 
-func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkIdx uint64) error {
+func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkIdx uint64) (err error) {
 	outpoint := txo.Outpoint.String()
 	score := idx.HeightScore(height, blkIdx)
+
+	txo.Events = make([]string, 0, 100)
+	datas := make(map[string]any, len(txo.Data))
+	for tag, data := range txo.Data {
+		txo.Events = append(txo.Events, evt.TagKey(tag))
+		for _, event := range data.Events {
+			txo.Events = append(txo.Events, evt.EventKey(tag, event))
+		}
+		if datas[tag], err = data.MarshalJSON(); err != nil {
+			log.Panic(err)
+			return err
+		}
+	}
+	for _, owner := range txo.Owners {
+		if owner == "" {
+			continue
+		}
+		txo.Events = append(txo.Events, idx.OwnerKey(owner))
+	}
 
 	if mp, err := msgpack.Marshal(txo); err != nil {
 		log.Println("Marshal Txo", err)
@@ -141,31 +160,32 @@ func (r *RedisStore) SaveTxo(ctx context.Context, txo *idx.Txo, height uint32, b
 			log.Panic(err)
 			return err
 		}
-		for _, owner := range txo.Owners {
-			if owner == "" {
-				continue
+
+		if len(datas) > 0 {
+			if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
+				log.Panic(err)
+				log.Println("HSET TxoData", err)
+				return err
 			}
-			if err := pipe.ZAdd(ctx, idx.OwnerTxosKey(owner), redis.Z{
+		}
+		for _, event := range txo.Events {
+			if err := pipe.ZAdd(ctx, event, redis.Z{
 				Score:  score,
 				Member: outpoint,
 			}).Err(); err != nil {
-				log.Println("ZADD Owner", err)
+				log.Println("ZADD Event", event, err)
 				log.Panic(err)
 				return err
 			}
 		}
-
 		return nil
 	}); err != nil {
 		log.Panic(err)
 		return err
-	} else if err = r.SaveTxoData(ctx, txo); err != nil {
-		log.Panic(err)
-		return err
 	}
 
-	for _, owner := range txo.Owners {
-		evt.Publish(ctx, idx.OwnerKey(owner), outpoint)
+	for _, event := range txo.Events {
+		evt.Publish(ctx, event, outpoint)
 	}
 
 	return nil
@@ -233,60 +253,60 @@ func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid str
 	return nil
 }
 
-func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
-	if len(txo.Data) == 0 {
-		return nil
-	}
+// func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
+// 	if len(txo.Data) == 0 {
+// 		return nil
+// 	}
 
-	outpoint := txo.Outpoint.String()
-	score := idx.HeightScore(txo.Height, txo.Idx)
-	datas := make(map[string]any, len(txo.Data))
-	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		for tag, data := range txo.Data {
-			tagKey := evt.TagKey(tag)
-			if err := pipe.ZAdd(ctx, tagKey, redis.Z{
-				Score:  score,
-				Member: outpoint,
-			}).Err(); err != nil {
-				log.Println("ZADD Tag", tagKey, err)
-				log.Panic(err)
-				return err
-			}
-			for _, event := range data.Events {
-				eventKey := evt.EventKey(tag, event)
-				if err := pipe.ZAdd(ctx, eventKey, redis.Z{
-					Score:  score,
-					Member: outpoint,
-				}).Err(); err != nil {
-					log.Panic(err)
-					log.Println("ZADD Event", eventKey, err)
-					return err
-				}
-			}
-			if datas[tag], err = data.MarshalJSON(); err != nil {
-				log.Panic(err)
-				return err
-			}
-		}
-		if len(datas) > 0 {
-			if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
-				log.Panic(err)
-				log.Println("HSET TxoData", err)
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		log.Panic(err)
-		return err
-	}
-	for tag, data := range txo.Data {
-		for _, event := range data.Events {
-			evt.Publish(ctx, evt.EventKey(tag, event), outpoint)
-		}
-	}
-	return nil
-}
+// 	outpoint := txo.Outpoint.String()
+// 	score := idx.HeightScore(txo.Height, txo.Idx)
+// 	datas := make(map[string]any, len(txo.Data))
+// 	if _, err := r.DB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+// 		for tag, data := range txo.Data {
+// 			tagKey := evt.TagKey(tag)
+// 			if err := pipe.ZAdd(ctx, tagKey, redis.Z{
+// 				Score:  score,
+// 				Member: outpoint,
+// 			}).Err(); err != nil {
+// 				log.Println("ZADD Tag", tagKey, err)
+// 				log.Panic(err)
+// 				return err
+// 			}
+// 			for _, event := range data.Events {
+// 				eventKey := evt.EventKey(tag, event)
+// 				if err := pipe.ZAdd(ctx, eventKey, redis.Z{
+// 					Score:  score,
+// 					Member: outpoint,
+// 				}).Err(); err != nil {
+// 					log.Panic(err)
+// 					log.Println("ZADD Event", eventKey, err)
+// 					return err
+// 				}
+// 			}
+// 			if datas[tag], err = data.MarshalJSON(); err != nil {
+// 				log.Panic(err)
+// 				return err
+// 			}
+// 		}
+// 		if len(datas) > 0 {
+// 			if err := pipe.HSet(ctx, TxoDataKey(outpoint), datas).Err(); err != nil {
+// 				log.Panic(err)
+// 				log.Println("HSET TxoData", err)
+// 				return err
+// 			}
+// 		}
+// 		return nil
+// 	}); err != nil {
+// 		log.Panic(err)
+// 		return err
+// 	}
+// 	for tag, data := range txo.Data {
+// 		for _, event := range data.Events {
+// 			evt.Publish(ctx, evt.EventKey(tag, event), outpoint)
+// 		}
+// 	}
+// 	return nil
+// }
 
 func (r *RedisStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
 	if spend, err = r.DB.HGet(ctx, SpendsKey, outpoint).Result(); err != nil && err != redis.Nil {

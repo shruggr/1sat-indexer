@@ -53,7 +53,7 @@ type TxoStore interface {
 	GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error)
 	SetNewSpend(ctx context.Context, outpoint string, spend string) (bool, error)
 	UnsetSpends(ctx context.Context, outpoints []string) error
-	SaveTxoData(ctx context.Context, txo *Txo) error
+	// SaveTxoData(ctx context.Context, txo *Txo) error
 	Search(ctx context.Context, cfg *SearchCfg) ([]*Log, error)
 	SearchMembers(ctx context.Context, cfg *SearchCfg) ([]string, error)
 	SearchOutpoints(ctx context.Context, cfg *SearchCfg) ([]string, error)

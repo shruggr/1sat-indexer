@@ -122,15 +122,21 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	// log.Println("Auditing", hexid)
 	tx, err := jb.LoadTx(ctx, hexid, true)
 	if err == jb.ErrMissingTxn {
-		log.Println("Missing tx", hexid)
+		// log.Println("Missing tx", hexid)
+		log.Println("Archive Missing", hexid)
+		if err := ingest.Store.Log(ctx, idx.MissingTxLog, hexid, score); err != nil {
+			log.Panicln("Log error", hexid, err)
+		} else if err := ingest.Store.Delog(ctx, idx.PendingTxLog, hexid); err != nil {
+			log.Panicln("Delog error", hexid, err)
+		}
 		return nil
 	} else if err != nil {
 		log.Panicln("LoadTx error", hexid, err)
-	} else if tx == nil {
-		// TODO: Handle missing tx
-		// Something bad has heppened if we get here
-		log.Println("Missing tx", hexid)
-		return nil
+		// } else if tx == nil {
+		// 	// TODO: Handle missing tx
+		// 	// Something bad has heppened if we get here
+		// 	log.Println("Missing tx", hexid)
+		// 	return nil
 	}
 	if tx.MerklePath == nil {
 		log.Println("Fetching status for", hexid)
