@@ -28,6 +28,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
 	r.Get("/:txid/txos", TxosByTxid)
+	r.Get("/:txid/beef", GetTxBEEF)
 	r.Post("/callback", TxCallback)
 	r.Get("/:txid/parse", ParseTx)
 	r.Post("/parse", ParseTx)
@@ -78,6 +79,21 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 	c.Status(int(response.Status))
 	return c.JSON(response)
 
+}
+
+func GetTxBEEF(c *fiber.Ctx) error {
+	if tx, err := jb.BuildTxBEEF(c.Context(), c.Params("txid")); err != nil {
+		if err == jb.ErrMissingTxn {
+			return c.SendStatus(404)
+		} else {
+			return err
+		}
+	} else if beef, err := tx.AtomicBEEF(true); err != nil {
+		return err
+	} else {
+		c.Set("Content-Type", "application/octet-stream")
+		return c.Send(beef)
+	}
 }
 
 func GetTxWithProof(c *fiber.Ctx) error {
