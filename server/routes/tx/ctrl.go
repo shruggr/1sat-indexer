@@ -99,6 +99,9 @@ func GetTxBEEF(c *fiber.Ctx) error {
 func GetTxWithProof(c *fiber.Ctx) error {
 	txid := c.Params("txid")
 	if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
+		if err == jb.ErrMissingTxn {
+			return c.SendStatus(404)
+		}
 		return err
 	} else if len(rawtx) == 0 {
 		return c.SendStatus(404)
