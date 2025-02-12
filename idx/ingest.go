@@ -171,27 +171,27 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 	return
 }
 
-func (cfg *IngestCtx) Rollback(ctx context.Context, txid string) error {
-	if idxCtx, err := cfg.ParseTxid(ctx, txid, AncestorConfig{Load: true, Parse: true}); err != nil {
-		return err
-	} else {
-		for _, spend := range idxCtx.Spends {
-			if err = cfg.Store.RollbackSpend(ctx, spend, txid); err != nil {
-				return err
-			}
-		}
+// func (cfg *IngestCtx) Rollback(ctx context.Context, txid string) error {
+// 	if idxCtx, err := cfg.ParseTxid(ctx, txid, AncestorConfig{Load: true, Parse: true}); err != nil {
+// 		return err
+// 	} else {
+// 		for _, spend := range idxCtx.Spends {
+// 			if err = cfg.Store.RollbackSpend(ctx, spend, txid); err != nil {
+// 				return err
+// 			}
+// 		}
 
-		for _, txo := range idxCtx.Txos {
-			if err = cfg.Store.RollbackTxo(ctx, txo); err != nil {
-				return err
-			}
-		}
+// 		for _, txo := range idxCtx.Txos {
+// 			if err = cfg.Store.RollbackTxo(ctx, txo); err != nil {
+// 				return err
+// 			}
+// 		}
 
-		// if err = cfg.Store.Log(ctx, RollbackTxLog, txid, float64(time.Now().UnixNano())); err != nil {
-		// 	return err
-		// } else if err = cfg.Store.Delog(ctx, PendingTxLog, txid); err != nil {
-		// 	return err
-		// }
-	}
-	return nil
-}
+// 		// if err = cfg.Store.Log(ctx, RollbackTxLog, txid, float64(time.Now().UnixNano())); err != nil {
+// 		// 	return err
+// 		// } else if err = cfg.Store.Delog(ctx, PendingTxLog, txid); err != nil {
+// 		// 	return err
+// 		// }
+// 	}
+// 	return nil
+// }

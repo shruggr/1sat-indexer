@@ -1,11 +1,15 @@
 package acct
 
 import (
+	"context"
+	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var ingest *idx.IngestCtx
@@ -30,7 +34,7 @@ func RegisterAccount(c *fiber.Ctx) error {
 
 	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
 		return err
-	} else if err := ingest.Store.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+	} else if err := SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
 		return err
 	}
 
@@ -121,4 +125,54 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 			return c.JSON(results)
 		}
 	}
+}
+
+func SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) error {
+	if owners, err := ingest.Store.AcctOwners(ctx, acct); err != nil {
+		return err
+	} else {
+		for _, own := range owners {
+			log.Println("Syncing:", own)
+			if lastHeight, err := ingest.Store.LogScore(ctx, idx.OwnerSyncKey, own); err != nil {
+				return err
+			} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
+				log.Panic(err)
+			} else {
+				limiter := make(chan struct{}, ing.Concurrency)
+				var wg sync.WaitGroup
+				for _, addTxn := range addTxns {
+					if score, err := ingest.Store.LogScore(ctx, tag, addTxn.Txid); err != nil {
+						log.Panic(err)
+						return err
+					} else if score > 0 {
+						continue
+					}
+					wg.Add(1)
+					limiter <- struct{}{}
+					go func(addTxn *jb.AddressTxn) {
+						defer func() {
+							<-limiter
+							wg.Done()
+						}()
+						if _, err := ing.IngestTxid(ctx, addTxn.Txid, idx.AncestorConfig{
+							Load:  true,
+							Parse: true,
+							Save:  true,
+						}); err != nil {
+							log.Panic(err)
+						}
+					}(addTxn)
+
+					if addTxn.Height > uint32(lastHeight) {
+						lastHeight = float64(addTxn.Height)
+					}
+				}
+				wg.Wait()
+				if err := ingest.Store.Log(ctx, idx.OwnerSyncKey, own, lastHeight); err != nil {
+					log.Panic(err)
+				}
+			}
+		}
+	}
+	return nil
 }

@@ -122,17 +122,15 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	// log.Println("Auditing", hexid)
 	tx, err := jb.LoadTx(ctx, hexid, true)
 	if err == jb.ErrMissingTxn {
-		log.Println("Missing tx", hexid)
-		return nil
+		log.Println("Archive Missing", hexid)
+		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
+			log.Panicln("Rollback error", hexid, err)
+		} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
+			log.Panicln("Delog error", hexid, err)
+		}
 	} else if err != nil {
 		log.Panicln("LoadTx error", hexid, err)
-	} else if tx == nil {
-		// TODO: Handle missing tx
-		// Something bad has heppened if we get here
-		log.Println("Missing tx", hexid)
-		return nil
-	}
-	if tx.MerklePath == nil {
+	} else if tx.MerklePath == nil {
 		log.Println("Fetching status for", hexid)
 		if status, err := arc.Status(hexid); err != nil {
 			return err
@@ -152,8 +150,10 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	}
 	if rollback && score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
 		log.Println("Rollback", hexid)
-		if err = ingest.Rollback(ctx, hexid); err != nil {
+		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
 			log.Panicln("Rollback error", hexid, err)
+		} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
+			log.Panicln("Delog error", hexid, err)
 		}
 	}
 	if tx.MerklePath == nil {

@@ -58,7 +58,7 @@ func main() {
 						if err := store.Log(ctx, idx.QueueKey(TAG), addTxn.Txid, score); err != nil {
 							log.Panic(err)
 						}
-						log.Println("Ingesting", addTxn.Txid, score)
+						log.Println("Queuing", addTxn.Txid, score)
 					}
 
 					if err := store.Log(ctx, idx.OwnerSyncKey, result.Member, float64(lastHeight)); err != nil {

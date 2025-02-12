@@ -282,3 +282,27 @@ func GetSpend(outpoint string) (spend string, err error) {
 		return spend, nil
 	}
 }
+
+func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
+	loadedTransactions := map[string]*transaction.Transaction{}
+	if tx, err = LoadTx(ctx, txid, true); err != nil {
+		return nil, err
+	} else if tx.MerklePath == nil {
+		for _, in := range tx.Inputs {
+			if in.SourceTransaction == nil {
+				sourceTxid := in.SourceTXID.String()
+				if sourceTx, ok := loadedTransactions[sourceTxid]; !ok {
+					if sourceTx, err = LoadTx(ctx, sourceTxid, false); err != nil {
+						return nil, err
+					} else {
+						loadedTransactions[sourceTxid] = sourceTx
+						in.SourceTransaction = sourceTx
+					}
+				} else {
+					in.SourceTransaction = sourceTx
+				}
+			}
+		}
+	}
+	return tx, nil
+}
