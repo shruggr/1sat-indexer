@@ -11,11 +11,12 @@ var ingest *idx.IngestCtx
 
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
-	r.Get("/:owner/utxos", OwnerUtxos)
+	r.Get("/:owner/txos", OwnerTxos)
+	r.Get("/:owner/utxos", OwnerTxos)
 	r.Get("/:owner/balance", OwnerBalance)
 }
 
-func OwnerUtxos(c *fiber.Ctx) error {
+func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
@@ -31,7 +32,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
-		FilterSpent:   true,
+		FilterSpent:   c.QueryBool("unspent", true),
 		RefreshSpends: false, //c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
