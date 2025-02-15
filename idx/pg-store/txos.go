@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -34,6 +36,26 @@ func NewPGStore(connString string) (*PGStore, error) {
 	}
 
 	return &PGStore{DB: db}, nil
+}
+
+func (p *PGStore) insert(ctx context.Context, sql string, args ...interface{}) (resp pgconn.CommandTag, err error) {
+	for i := range 3 {
+		if resp, err = p.DB.Exec(ctx, sql, args...); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				if pgErr.Code == "23505" {
+					log.Println("Conflict. Retrying:", i, err)
+					time.Sleep(10 * time.Millisecond)
+					continue
+				}
+			}
+			log.Panicln("insTxo Err:", err)
+			break
+		} else {
+			break
+		}
+	}
+	return
 }
 
 func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool) (*idx.Txo, error) {
@@ -196,42 +218,43 @@ func (p *PGStore) saveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 		txo.Events = append(txo.Events, idx.OwnerKey(owner))
 	}
 
-	if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (outpoint) DO UPDATE SET height = $2, idx = $3, satoshis = $4, owners = $5`,
+	if _, err := p.insert(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (outpoint)
+			DO UPDATE SET height = $2, idx = $3, satoshis = $4, owners = $5`,
 		outpoint,
 		height,
 		blkIdx,
 		*txo.Satoshis,
 		txo.Owners,
 	); err != nil {
-		log.Panic(err)
+		log.Panicln("insTxo Err:", err)
 		return err
-	} else {
-		if len(txo.Events) > 0 {
-			if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-				SELECT search_key, $2, $3
-				FROM unnest($1::text[]) search_key
-				ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-				txo.Events,
-				outpoint,
-				score,
-			); err != nil {
-				log.Panic(err)
-				return err
-			}
+	}
+
+	if len(txo.Events) > 0 {
+		if _, err := p.insert(ctx, `INSERT INTO logs(search_key, member, score)
+			SELECT search_key, $2, $3
+			FROM unnest($1::text[]) search_key
+			ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
+			txo.Events,
+			outpoint,
+			score,
+		); err != nil {
+			log.Panicln("insTxo Err:", err)
+			return err
 		}
-		for tag, data := range datas {
-			if _, err := p.DB.Exec(ctx, `INSERT INTO txo_data(outpoint, tag, data)
+	}
+	for tag, data := range datas {
+		if _, err := p.insert(ctx, `INSERT INTO txo_data(outpoint, tag, data)
 				VALUES ($1, $2, $3)
 				ON CONFLICT (outpoint, tag) DO UPDATE SET data = $3`,
-				outpoint,
-				tag,
-				data,
-			); err != nil {
-				log.Panic(err)
-				return err
-			}
+			outpoint,
+			tag,
+			data,
+		); err != nil {
+			log.Panic(err)
+			return err
 		}
 	}
 
@@ -258,7 +281,7 @@ func (p *PGStore) SaveSpends(idxCtx *idx.IndexContext) error {
 			}
 		}
 	}
-	if _, err := p.DB.Exec(idxCtx.Ctx, `INSERT INTO txos(outpoint, spend)
+	if _, err := p.insert(idxCtx.Ctx, `INSERT INTO txos(outpoint, spend)
 		SELECT outpoint, $2
 		FROM unnest($1::text[]) outpoint
 		ON CONFLICT (outpoint) DO UPDATE SET spend = $2`,
@@ -267,7 +290,7 @@ func (p *PGStore) SaveSpends(idxCtx *idx.IndexContext) error {
 	); err != nil {
 		log.Panic(err)
 		return err
-	} else if _, err := p.DB.Exec(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
+	} else if _, err := p.insert(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
 		SELECT search_key, $2, $3
 		FROM unnest($1::text[]) search_key
 		ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
@@ -284,40 +307,6 @@ func (p *PGStore) SaveSpends(idxCtx *idx.IndexContext) error {
 	}
 	return nil
 }
-
-// func (p *PGStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string, height uint32, blkIdx uint64) error {
-// 	score := idx.HeightScore(height, blkIdx)
-// 	if _, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, spend)
-// 		VALUES ($1, $2)
-// 		ON CONFLICT (outpoint) DO UPDATE SET spend = $2`,
-// 		spend.Outpoint.String(),
-// 		txid,
-// 	); err != nil {
-// 		log.Panic(err)
-// 		return err
-// 	} else {
-// 		for _, owner := range spend.Owners {
-// 			if owner == "" {
-// 				continue
-// 			}
-// 			if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-// 				VALUES ($1, $2, $3)
-// 				ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-// 				idx.OwnerKey(owner),
-// 				txid,
-// 				score,
-// 			); err != nil {
-// 				log.Panic(err)
-// 				return err
-// 			}
-// 		}
-// 	}
-// 	for _, owner := range spend.Owners {
-// 		evt.Publish(ctx, idx.OwnerKey(owner), txid)
-// 	}
-
-// 	return nil
-// }
 
 func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
 	if _, err := p.DB.Exec(ctx, `UPDATE txos
@@ -340,53 +329,6 @@ func (p *PGStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string
 
 	return nil
 }
-
-// func (p *PGStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) {
-// 	if len(txo.Data) == 0 {
-// 		return nil
-// 	}
-// 	outpoint := txo.Outpoint.String()
-// 	score := idx.HeightScore(txo.Height, txo.Idx)
-// 	for tag, data := range txo.Data {
-// 		if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-// 			VALUES ($1, $2, $3)
-// 			ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-// 			evt.TagKey(tag),
-// 			outpoint,
-// 			score,
-// 		); err != nil {
-// 			log.Panic(err)
-// 			return err
-// 		}
-// 		for _, event := range data.Events {
-// 			if _, err := p.DB.Exec(ctx, `INSERT INTO logs(search_key, member, score)
-// 				VALUES ($1, $2, $3)
-// 				ON CONFLICT (search_key, member) DO UPDATE SET score = $3`,
-// 				evt.EventKey(tag, event),
-// 				outpoint,
-// 				score,
-// 			); err != nil {
-// 				log.Panic(err)
-// 				return err
-// 			}
-// 		}
-// 		if idxData, err := data.MarshalJSON(); err != nil {
-// 			log.Panic(err)
-// 			return err
-// 		} else if _, err := p.DB.Exec(ctx, `INSERT INTO txo_data(outpoint, tag, data)
-// 			VALUES ($1, $2, $3)
-// 			ON CONFLICT (outpoint, tag) DO UPDATE SET data = $3`,
-// 			outpoint,
-// 			tag,
-// 			idxData,
-// 		); err != nil {
-// 			log.Panic(err)
-// 			return err
-// 		}
-
-// 	}
-// 	return nil
-// }
 
 func (p *PGStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
 	if err := p.DB.QueryRow(ctx, `SELECT spend FROM txos 
@@ -441,7 +383,7 @@ func (p *PGStore) GetSpends(ctx context.Context, outpoints []string, refresh boo
 }
 
 func (p *PGStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
-	if result, err := p.DB.Exec(ctx, `INSERT INTO txos(outpoint, spend)
+	if result, err := p.insert(ctx, `INSERT INTO txos(outpoint, spend)
 		VALUES ($1, $2)
 		ON CONFLICT (outpoint) DO UPDATE 
 			SET spend = $2 
@@ -449,7 +391,7 @@ func (p *PGStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool,
 		outpoint,
 		txid,
 	); err != nil {
-		log.Panic(err)
+		log.Panicln("insTxo Err:", err)
 		return false, err
 	} else {
 		return result.RowsAffected() > 0, nil
@@ -457,7 +399,7 @@ func (p *PGStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool,
 }
 
 func (p *PGStore) UnsetSpends(ctx context.Context, outpoints []string) error {
-	if _, err := p.DB.Exec(ctx, `UPDATE txos 
+	if _, err := p.insert(ctx, `UPDATE txos 
 		SET spend = ''
 		WHERE outpoint = ANY($1)`,
 		outpoints,

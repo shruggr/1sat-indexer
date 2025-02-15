@@ -35,7 +35,7 @@ func main() {
 		// Verbose:     VERBOSE > 0,
 		Verbose:  true,
 		Store:    config.Store,
-		PageSize: 100000,
+		PageSize: 10000,
 	}
 
 	if err := (ingest).Exec(ctx); err != nil {

@@ -26,7 +26,8 @@ var Cache *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-var ErrMissingTxn = errors.New("missing-txn")
+var ErrNotFound = errors.New("not-found")
+var ErrBadRequest = errors.New("bad-request")
 var ErrMalformed = errors.New("malformed")
 
 func init() {
@@ -118,7 +119,7 @@ func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.T
 		return
 	}
 	if tx == nil {
-		err = ErrMissingTxn
+		err = ErrNotFound
 		return
 	}
 
@@ -181,7 +182,7 @@ func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error)
 			if resp, err := http.Get(url); err != nil {
 				return nil, err
 			} else if resp.StatusCode == 404 {
-				return nil, ErrMissingTxn
+				return nil, ErrNotFound
 			} else if resp.StatusCode != 200 {
 				return nil, fmt.Errorf("%d %s", resp.StatusCode, rawtx)
 			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {

@@ -83,7 +83,7 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 
 func GetTxBEEF(c *fiber.Ctx) error {
 	if tx, err := jb.BuildTxBEEF(c.Context(), c.Params("txid")); err != nil {
-		if err == jb.ErrMissingTxn {
+		if err == jb.ErrNotFound {
 			return c.SendStatus(404)
 		} else {
 			return err
@@ -99,7 +99,7 @@ func GetTxBEEF(c *fiber.Ctx) error {
 func GetTxWithProof(c *fiber.Ctx) error {
 	txid := c.Params("txid")
 	if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
-		if err == jb.ErrMissingTxn {
+		if err == jb.ErrNotFound {
 			return c.SendStatus(404)
 		}
 		return err

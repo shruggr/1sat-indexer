@@ -63,13 +63,14 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			return err
 		default:
 			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
-				Keys:  []string{cfg.Key},
-				Limit: cfg.PageSize,
+				Keys:    []string{cfg.Key},
+				Limit:   cfg.PageSize,
+				Verbose: cfg.Verbose,
 			}); err != nil {
 				log.Panic(err)
 			} else {
 				if len(txids) == 0 {
-					// log.Println("No transactions to ingest")
+					log.Println("No transactions to ingest")
 					time.Sleep(time.Second)
 				}
 				for _, txid := range txids {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
@@ -24,33 +25,35 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
 	}
 
-	args = append(args, cfg.Keys)
-	sqlBuilder.WriteString(`WHERE search_key=ANY($1) `)
+	if len(cfg.Keys) == 1 {
+		args = append(args, cfg.Keys[0])
+		sqlBuilder.WriteString(`WHERE search_key=$1 `)
+	} else {
+		args = append(args, cfg.Keys)
+		sqlBuilder.WriteString(`WHERE search_key=ANY($1) `)
+	}
 	if cfg.From != nil {
 		args = append(args, *cfg.From)
-		param := len(args)
 		if cfg.Reverse {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", param))
+			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", len(args)))
 		} else {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", param))
+			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", len(args)))
 		}
 	}
 
 	if cfg.To != nil {
 		args = append(args, *cfg.To)
-		param := len(args)
 		if cfg.Reverse {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", param))
+			sqlBuilder.WriteString(fmt.Sprintf("AND score > $%d ", len(args)))
 		} else {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", param))
+			sqlBuilder.WriteString(fmt.Sprintf("AND score < $%d ", len(args)))
 		}
 	}
 
 	if cfg.ComparisonType == idx.ComparisonAND && len(cfg.Keys) > 1 {
 		args = append(args, len(cfg.Keys))
-		param := len(args)
 		sqlBuilder.WriteString("GROUP BY logs.member ")
-		sqlBuilder.WriteString(fmt.Sprintf("HAVING COUNT(1) = $%d ", param))
+		sqlBuilder.WriteString(fmt.Sprintf("HAVING COUNT(1) = $%d ", len(args)))
 	}
 
 	if cfg.Reverse {
@@ -59,13 +62,24 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 		sqlBuilder.WriteString("ORDER BY score ASC ")
 	}
 
+	if cfg.Limit > 0 {
+		args = append(args, cfg.Limit)
+		sqlBuilder.WriteString(fmt.Sprintf("LIMIT $%d ", len(args)))
+	}
+
 	sql := sqlBuilder.String()
+	var start time.Time
 	if cfg.Verbose {
 		log.Println(sql, args)
+		start = time.Now()
+
 	}
 	if rows, err := p.DB.Query(ctx, sql, args...); err != nil {
 		return nil, err
 	} else {
+		if cfg.Verbose {
+			log.Println("Query time", time.Since(start))
+		}
 		defer rows.Close()
 		results = make([]*idx.Log, 0, cfg.Limit)
 		for rows.Next() {
@@ -74,6 +88,7 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 				return nil, err
 			}
 			if cfg.RefreshSpends {
+				log.Println("Refreshing spends", result.Member)
 				if spend, err := jb.GetSpend(result.Member); err != nil {
 					return nil, err
 				} else if spend != "" {
@@ -83,6 +98,9 @@ func (p *PGStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*id
 			}
 			results = append(results, &result)
 		}
+	}
+	if cfg.Verbose {
+		log.Println("Results", len(results))
 	}
 	return results, nil
 }

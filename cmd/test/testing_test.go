@@ -46,16 +46,3 @@ func TestNoFeeTx(t *testing.T) {
 	resp := broadcast.Broadcast(context.Background(), config.Store, tx, config.Broadcaster)
 	assert.Equal(t, int(resp.Status), fiber.StatusPaymentRequired)
 }
-
-func TestUtxos(t *testing.T) {
-	// account := "1AjdTTSvxTde1FtMjwSuyNqvwiwjmBAjD1"
-	// txos, err := ingest.Store.SearchTxos(ctx, &idx.SearchCfg{
-	// 	Key:         idx.AccountTxosKey(account),
-	// 	FilterSpent: true,
-	// })
-	// assert.NoError(t, err)
-
-	// out, err := json.MarshalIndent(txos, "", "  ")
-	// assert.NoError(t, err)
-	// log.Println(string(out))
-}

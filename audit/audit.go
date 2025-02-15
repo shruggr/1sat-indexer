@@ -121,7 +121,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 func AuditTransaction(ctx context.Context, hexid string, score float64, rollback bool) error {
 	// log.Println("Auditing", hexid)
 	tx, err := jb.LoadTx(ctx, hexid, true)
-	if err == jb.ErrMissingTxn {
+	if err == jb.ErrNotFound {
 		log.Println("Archive Missing", hexid)
 		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
 			log.Panicln("Rollback error", hexid, err)
