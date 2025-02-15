@@ -81,7 +81,7 @@ func main() {
 }
 
 func processToken(tokenId string) (err error) {
-	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}, false); err != nil {
+	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}, false, false); err != nil {
 		log.Println("Error loading token", tokenId, err)
 		return err
 	} else if tokenTxo == nil {

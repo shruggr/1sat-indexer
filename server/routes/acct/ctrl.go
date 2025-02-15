@@ -18,8 +18,9 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
 	r.Put("/:account", RegisterAccount)
 	r.Get("/:account", AccountActivity)
-	r.Get("/:account/utxos", AccountUtxos)
-	r.Get("/:account/balance", AccountUtxos)
+	r.Get("/:account/txos", AccountTxos)
+	r.Get("/:account/utxos", AccountTxos)
+	r.Get("/:account/balance", AccountTxos)
 	r.Get("/:account/:from", AccountActivity)
 }
 
@@ -41,7 +42,7 @@ func RegisterAccount(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-func AccountUtxos(c *fiber.Ctx) error {
+func AccountTxos(c *fiber.Ctx) error {
 	account := c.Params("account")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
@@ -67,7 +68,8 @@ func AccountUtxos(c *fiber.Ctx) error {
 			IncludeTxo:    c.QueryBool("txo", false),
 			IncludeTags:   tags,
 			IncludeScript: c.QueryBool("script", false),
-			FilterSpent:   true,
+			IncludeSpend:  c.QueryBool("spend", false),
+			FilterSpent:   c.QueryBool("unspent", true),
 			RefreshSpends: c.QueryBool("refresh", false),
 		}); err != nil {
 			return err

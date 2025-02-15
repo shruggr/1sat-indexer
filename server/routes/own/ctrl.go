@@ -32,6 +32,7 @@ func OwnerTxos(c *fiber.Ctx) error {
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
+		IncludeSpend:  c.QueryBool("spend", false),
 		FilterSpent:   c.QueryBool("unspent", true),
 		RefreshSpends: false, //c.QueryBool("refresh", false),
 	}); err != nil {

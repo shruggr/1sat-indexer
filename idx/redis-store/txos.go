@@ -27,7 +27,7 @@ func NewRedisStore(connString string) (*RedisStore, error) {
 	}
 }
 
-func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool) (*idx.Txo, error) {
+func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
 	if result, err := r.DB.HGet(ctx, TxosKey, outpoint).Bytes(); err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -45,6 +45,11 @@ func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string
 		} else if txo.Data == nil {
 			txo.Data = make(idx.IndexDataMap)
 		}
+		if spend {
+			if txo.Spend, err = r.GetSpend(ctx, outpoint, false); err != nil {
+				return nil, err
+			}
+		}
 		if script {
 			if err = txo.LoadScript(ctx); err != nil {
 				return nil, err
@@ -54,7 +59,7 @@ func (r *RedisStore) LoadTxo(ctx context.Context, outpoint string, tags []string
 	}
 }
 
-func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool) ([]*idx.Txo, error) {
+func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
@@ -84,11 +89,20 @@ func (r *RedisStore) LoadTxos(ctx context.Context, outpoints []string, tags []st
 			}
 			txos = append(txos, txo)
 		}
+		if spend {
+			if spends, err := r.GetSpends(ctx, outpoints, false); err != nil {
+				return nil, err
+			} else {
+				for i, spend := range spends {
+					txos[i].Spend = spend
+				}
+			}
+		}
 		return txos, nil
 	}
 }
 
-func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool) ([]*idx.Txo, error) {
+func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
 	pattern := fmt.Sprintf("%s_*", txid)
 	outpoints := make([]string, 0)
 
@@ -104,7 +118,7 @@ func (r *RedisStore) LoadTxosByTxid(ctx context.Context, txid string, tags []str
 		return nil, err
 	}
 
-	return r.LoadTxos(ctx, outpoints, tags, script)
+	return r.LoadTxos(ctx, outpoints, tags, script, spend)
 }
 
 func (r *RedisStore) LoadData(ctx context.Context, outpoint string, tags []string) (data idx.IndexDataMap, err error) {
@@ -354,7 +368,7 @@ func (r *RedisStore) Rollback(ctx context.Context, txid string) error {
 	if outpoints, err := r.DB.SMembers(ctx, InputsKey(txid)).Result(); err != nil {
 		log.Panic(err)
 		return err
-	} else if txos, err := r.LoadTxosByTxid(ctx, txid, nil, false); err != nil {
+	} else if txos, err := r.LoadTxosByTxid(ctx, txid, nil, false, false); err != nil {
 		log.Panic(err)
 		return err
 	} else {

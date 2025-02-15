@@ -237,7 +237,7 @@ func TxosByTxid(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("script", false)); err != nil {
+	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("script", false), c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)

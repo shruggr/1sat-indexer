@@ -20,6 +20,7 @@ type Txo struct {
 	Events   []string              `json:"events,omitempty"`
 	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
 	Score    float64               `json:"score,omitempty" msgpack:"-"`
+	Spend    string                `json:"spend,omitempty" msgpack:"-"`
 }
 
 func (t *Txo) AddOwner(owner string) {

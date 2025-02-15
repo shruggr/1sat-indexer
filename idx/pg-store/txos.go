@@ -65,12 +65,16 @@ func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string, s
 	)
 	txo := &idx.Txo{}
 	var sats sql.NullInt64
-	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &sats, &txo.Owners); err == pgx.ErrNoRows {
+	var spendTxid string
+	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &sats, &txo.Owners, &spendTxid); err == pgx.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)
 		return nil, err
 	} else {
+		if spend {
+			txo.Spend = spendTxid
+		}
 		if sats.Valid {
 			satoshis := uint64(sats.Int64)
 			txo.Satoshis = &satoshis
@@ -91,11 +95,11 @@ func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string, s
 	return txo, nil
 }
 
-func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool) ([]*idx.Txo, error) {
+func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
-	rows, err := p.DB.Query(ctx, `SELECT outpoint, height, idx, satoshis, owners
+	rows, err := p.DB.Query(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
 		FROM txos 
 		WHERE outpoint = ANY($1)`,
 		outpoints,
@@ -108,9 +112,13 @@ func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []strin
 	txos := make([]*idx.Txo, 0, len(outpoints))
 	for rows.Next() {
 		txo := &idx.Txo{}
-		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &txo.Owners); err != nil {
+		var spendTxid string
+		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &txo.Owners, &spendTxid); err != nil {
 			log.Panic(err)
 			return nil, err
+		}
+		if spend {
+			txo.Spend = spendTxid
 		}
 		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
 		if txo.Data, err = p.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
@@ -129,7 +137,7 @@ func (p *PGStore) LoadTxos(ctx context.Context, outpoints []string, tags []strin
 	return txos, nil
 }
 
-func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool) ([]*idx.Txo, error) {
+func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
 	rows, err := p.DB.Query(ctx, `SELECT outpoint
 		FROM txos 
 		WHERE outpoint LIKE $1`,
@@ -148,7 +156,7 @@ func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string
 			return nil, err
 		}
 	}
-	return p.LoadTxos(ctx, outpoints, tags, script)
+	return p.LoadTxos(ctx, outpoints, tags, script, spend)
 }
 
 func (p *PGStore) LoadData(ctx context.Context, outpoint string, tags []string) (data idx.IndexDataMap, err error) {
