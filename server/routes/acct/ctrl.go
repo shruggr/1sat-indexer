@@ -22,6 +22,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Get("/:account/utxos", AccountTxos)
 	r.Get("/:account/balance", AccountTxos)
 	r.Get("/:account/:from", AccountActivity)
+	r.Put("/:account/tx", RegisterAccount)
 }
 
 func RegisterAccount(c *fiber.Ctx) error {
@@ -177,4 +178,9 @@ func SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) 
 		}
 	}
 	return nil
+}
+
+func PutTxns(c *fiber.Ctx) error {
+	return nil
+
 }

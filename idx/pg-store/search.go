@@ -138,7 +138,7 @@ func (p *PGStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*i
 		if outpoints, err = p.SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
 		}
-		if txos, err = p.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript); err != nil {
+		if txos, err = p.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript, cfg.IncludeSpend); err != nil {
 			return nil, err
 		}
 	} else {
@@ -177,7 +177,7 @@ func (p *PGStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (balanc
 	cfg.FilterSpent = true
 	if outpoints, err := p.SearchOutpoints(ctx, cfg); err != nil {
 		return 0, err
-	} else if txos, err := p.LoadTxos(ctx, outpoints, nil, false); err != nil {
+	} else if txos, err := p.LoadTxos(ctx, outpoints, nil, false, false); err != nil {
 		return 0, err
 	} else {
 		for _, txo := range txos {
