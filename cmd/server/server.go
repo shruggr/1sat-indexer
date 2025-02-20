@@ -23,9 +23,7 @@ func init() {
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
 
 	PORT, _ = strconv.Atoi(os.Getenv("PORT"))
-	if PORT == 0 {
-		flag.IntVar(&PORT, "p", 8082, "Port to listen on")
-	}
+	flag.IntVar(&PORT, "p", PORT, "Port to listen on")
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()

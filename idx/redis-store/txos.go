@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -202,7 +203,7 @@ func (r *RedisStore) SaveSpend(ctx context.Context, spend *idx.Txo, txid string,
 
 func (r *RedisStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) (err error) {
 	prevSpend := ""
-	if prevSpend, err = r.GetSpend(ctx, spend.Outpoint.String()); err != nil {
+	if prevSpend, err = r.GetSpend(ctx, spend.Outpoint.String(), false); err != nil {
 		log.Panic(err)
 		return err
 	}
@@ -287,23 +288,41 @@ func (r *RedisStore) SaveTxoData(ctx context.Context, txo *idx.Txo) (err error) 
 	return nil
 }
 
-func (r *RedisStore) GetSpend(ctx context.Context, outpoint string) (string, error) {
-	if spend, err := r.DB.HGet(ctx, SpendsKey, outpoint).Result(); err != nil && err != redis.Nil {
+func (r *RedisStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
+	if spend, err = r.DB.HGet(ctx, SpendsKey, outpoint).Result(); err != nil && err != redis.Nil {
 		return "", err
-	} else {
-		return spend, nil
+	} else if spend == "" && refresh {
+		if spend, err = jb.GetSpend(outpoint); err != nil {
+			return
+		} else if spend != "" {
+			if _, err = r.SetNewSpend(ctx, outpoint, spend); err != nil {
+				return
+			}
+		}
 	}
+	return spend, nil
 }
 
-func (r *RedisStore) GetSpends(ctx context.Context, outpoints []string) ([]string, error) {
+func (r *RedisStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
 	if records, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
-		for _, record := range records {
+		for i, record := range records {
+			outpoint := outpoints[i]
+			var spend string
 			if record != nil {
-				spends = append(spends, record.(string))
+				spend = record.(string)
+			} else if refresh {
+				if spend, err = jb.GetSpend(outpoint); err != nil {
+					return nil, err
+				} else if spend != "" {
+					if _, err = r.SetNewSpend(ctx, outpoint, spend); err != nil {
+						return nil, err
+					}
+				}
 			}
+			spends = append(spends, spend)
 		}
 	}
 	return spends, nil

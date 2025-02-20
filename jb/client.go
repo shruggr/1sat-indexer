@@ -180,10 +180,12 @@ func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error)
 			}()
 			if resp, err := http.Get(url); err != nil {
 				return nil, err
-			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
-				return nil, err
+			} else if resp.StatusCode == 404 {
+				return nil, ErrMissingTxn
 			} else if resp.StatusCode != 200 {
 				return nil, fmt.Errorf("%d %s", resp.StatusCode, rawtx)
+			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
+				return nil, err
 			} else {
 				return rawtx, nil
 			}
@@ -279,4 +281,28 @@ func GetSpend(outpoint string) (spend string, err error) {
 		spend := hex.EncodeToString(b)
 		return spend, nil
 	}
+}
+
+func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
+	loadedTransactions := map[string]*transaction.Transaction{}
+	if tx, err = LoadTx(ctx, txid, true); err != nil {
+		return nil, err
+	} else if tx.MerklePath == nil {
+		for _, in := range tx.Inputs {
+			if in.SourceTransaction == nil {
+				sourceTxid := in.SourceTXID.String()
+				if sourceTx, ok := loadedTransactions[sourceTxid]; !ok {
+					if sourceTx, err = LoadTx(ctx, sourceTxid, false); err != nil {
+						return nil, err
+					} else {
+						loadedTransactions[sourceTxid] = sourceTx
+						in.SourceTransaction = sourceTx
+					}
+				} else {
+					in.SourceTransaction = sourceTx
+				}
+			}
+		}
+	}
+	return tx, nil
 }

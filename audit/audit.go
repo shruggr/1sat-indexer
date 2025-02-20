@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
@@ -27,7 +28,7 @@ func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcas
 	} else {
 		chaintip := tip
 		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-		// AuditTransactions(ctx, rollback)
+		AuditTransactions(ctx, rollback)
 		for chaintip = range chaintips {
 			log.Println("Chaintip", chaintip.Height, chaintip.Hash)
 			immutableScore = idx.HeightScore(chaintip.Height-10, 0)
@@ -46,14 +47,25 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	to := 0.0
 	cfg.From = &from
 	cfg.To = &to
+	cfg.Limit = 100000
+	limiter := make(chan struct{}, 20)
+	var wg sync.WaitGroup
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Panic(err)
 	} else {
 		log.Println("Audit pending txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-				log.Panic(err)
-			}
+			limiter <- struct{}{}
+			wg.Add(1)
+			go func(item *idx.Log) {
+				defer func() {
+					<-limiter
+					wg.Done()
+				}()
+				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
+					log.Panic(err)
+				}
+			}(item)
 		}
 	}
 
@@ -66,9 +78,17 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	} else {
 		log.Println("Audit mined txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-				log.Panic(err)
-			}
+			limiter <- struct{}{}
+			wg.Add(1)
+			go func(item *idx.Log) {
+				defer func() {
+					<-limiter
+					wg.Done()
+				}()
+				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
+					log.Panic(err)
+				}
+			}(item)
 		}
 	}
 
@@ -82,17 +102,29 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	} else {
 		log.Println("Audit mempool txs", len(items))
 		for _, item := range items {
-			if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-				log.Panic(err)
-			}
+			limiter <- struct{}{}
+			wg.Add(1)
+			go func(item *idx.Log) {
+				defer func() {
+					<-limiter
+					wg.Done()
+				}()
+				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
+					log.Panic(err)
+				}
+			}(item)
 		}
 	}
+	wg.Wait()
 }
 
 func AuditTransaction(ctx context.Context, hexid string, score float64, rollback bool) error {
 	// log.Println("Auditing", hexid)
 	tx, err := jb.LoadTx(ctx, hexid, true)
-	if err != nil {
+	if err == jb.ErrMissingTxn {
+		log.Println("Missing tx", hexid)
+		return nil
+	} else if err != nil {
 		log.Panicln("LoadTx error", hexid, err)
 	} else if tx == nil {
 		// TODO: Handle missing tx

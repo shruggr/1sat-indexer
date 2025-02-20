@@ -2,6 +2,7 @@ package tx
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
+	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
@@ -26,7 +28,8 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transa
 	r.Get("/:txid/raw", GetRawTx)
 	r.Get("/:txid/proof", GetProof)
 	r.Get("/:txid/txos", TxosByTxid)
-	r.Get("/callback", TxCallback)
+	r.Get("/:txid/beef", GetTxBEEF)
+	r.Post("/callback", TxCallback)
 	r.Get("/:txid/parse", ParseTx)
 	r.Post("/parse", ParseTx)
 	r.Post("/:txid/ingest", IngestTx)
@@ -69,13 +72,28 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 		} else {
 			log.Println("Ingest", tx.TxID().String(), string(out))
 		}
-
+		evt.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
 	} else {
 		log.Println("Broadcast Error", tx.TxID().String(), response.Error)
 	}
 	c.Status(int(response.Status))
 	return c.JSON(response)
 
+}
+
+func GetTxBEEF(c *fiber.Ctx) error {
+	if tx, err := jb.BuildTxBEEF(c.Context(), c.Params("txid")); err != nil {
+		if err == jb.ErrMissingTxn {
+			return c.SendStatus(404)
+		} else {
+			return err
+		}
+	} else if beef, err := tx.AtomicBEEF(true); err != nil {
+		return err
+	} else {
+		c.Set("Content-Type", "application/octet-stream")
+		return c.Send(beef)
+	}
 }
 
 func GetTxWithProof(c *fiber.Ctx) error {
