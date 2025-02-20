@@ -23,17 +23,12 @@ var arc *broadcaster.Arc
 func StartTxAudit(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc, rollback bool) {
 	ingest = ingestCtx
 	arc = bcast
-	if tip, chaintips, err := blk.StartChaintipSub(ctx); err != nil {
-		log.Panic(err)
-	} else {
-		chaintip := tip
+	blk.StartChaintipSub(ctx)
+
+	for chaintip := range blk.C {
+		log.Println("Chaintip", chaintip.Height, chaintip.Hash)
 		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
 		AuditTransactions(ctx, rollback)
-		for chaintip = range chaintips {
-			log.Println("Chaintip", chaintip.Height, chaintip.Hash)
-			immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-			AuditTransactions(ctx, rollback)
-		}
 	}
 }
 
