@@ -10,6 +10,7 @@ import (
 var ingest *idx.IngestCtx
 
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+	ingest = ingestCtx
 	r.Get("/:outpoint", GetTxo)
 	r.Post("/", GetTxos)
 }
@@ -19,14 +20,11 @@ func GetTxo(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txo, err := ingest.Store.LoadTxo(c.Context(), c.Params("outpoint"), tags); err != nil {
+	if txo, err := ingest.Store.LoadTxo(c.Context(), c.Params("outpoint"), tags, c.QueryBool("script", false)); err != nil {
 		return err
 	} else if txo == nil {
 		return c.SendStatus(404)
 	} else {
-		if c.Query("script") == "true" {
-			txo.LoadScript(c.Context())
-		}
 		c.Set("Cache-Control", "public,max-age=60")
 		return c.JSON(txo)
 	}
@@ -41,14 +39,9 @@ func GetTxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags); err != nil {
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, c.QueryBool("script", false)); err != nil {
 		return err
 	} else {
-		if c.Query("script") == "true" {
-			for _, txo := range txos {
-				txo.LoadScript(c.Context())
-			}
-		}
 		c.Set("Cache-Control", "public,max-age=60")
 		return c.JSON(txos)
 	}

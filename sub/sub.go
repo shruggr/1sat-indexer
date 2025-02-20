@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/GorillaPool/go-junglebus/models"
@@ -24,6 +25,7 @@ type Sub struct {
 	Topic        string
 	FromBlock    uint
 	Verbose      bool
+	ReorgRewind  bool
 }
 
 var store *redisstore.RedisStore
@@ -37,19 +39,48 @@ func init() {
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	errors := make(chan error)
-
+	queueKey := idx.QueueKey(cfg.Queue)
 	var sub *junglebus.Subscription
+	txcount := 0
+	logs := make([]idx.Log, 0, 100000)
+	lastActivity := time.Now()
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		for range ticker.C {
+			if time.Since(lastActivity) > 15*time.Minute {
+				log.Println("No activity for 15 minutes seconds, exiting...")
+				os.Exit(0)
+			}
+		}
+	}()
 
 	eventHandler := junglebus.EventHandler{
 		OnStatus: func(status *models.ControlResponse) {
+			lastActivity = time.Now()
 			// if cfg.Verbose {
-			log.Printf("[STATUS]: %d %v\n", status.StatusCode, status.Message)
+			log.Printf("[STATUS]: %d %v %d processed\n", status.StatusCode, status.Message, txcount)
 			// }
-			if status.StatusCode == 200 {
+			switch status.StatusCode {
+			case 199:
+				if len(logs) > 0 {
+					if err := store.LogMany(ctx, queueKey, logs); err != nil {
+						errors <- err
+					}
+					logs = make([]idx.Log, 0, 100000)
+				}
+			case 200:
+				if len(logs) > 0 {
+					if err := store.LogMany(ctx, queueKey, logs); err != nil {
+						errors <- err
+					}
+					logs = make([]idx.Log, 0, 100000)
+				}
 				if err := store.Log(ctx, ProgressKey, cfg.Tag, float64(status.Block)); err != nil {
 					errors <- err
 				}
-			} else if status.StatusCode == 999 {
+				txcount = 0
+			case 999:
 				log.Println(status.Message)
 				log.Println("Unsubscribing...")
 				sub.Unsubscribe()
@@ -64,12 +95,17 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 
 	if cfg.IndexBlocks {
 		eventHandler.OnTransaction = func(txn *models.TransactionResponse) {
+			txcount++
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
-				errors <- err
-			}
+			logs = append(logs, idx.Log{
+				Member: txn.Id,
+				Score:  idx.HeightScore(txn.BlockHeight, txn.BlockIndex),
+			})
+			// if err := store.Log(ctx, queueKey, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {
+			// 	errors <- err
+			// }
 		}
 	}
 	if cfg.IndexMempool {
@@ -77,7 +113,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := store.Log(ctx, cfg.Queue, txn.Id, idx.HeightScore(0, 0)); err != nil {
+			if err := store.Log(ctx, queueKey, txn.Id, idx.HeightScore(0, 0)); err != nil {
 				errors <- err
 			}
 		}
@@ -86,7 +122,11 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	if progress, err := store.LogScore(ctx, ProgressKey, cfg.Tag); err != nil {
 		log.Panic(err)
 	} else if progress > 6 {
-		cfg.FromBlock = uint(progress) - 5
+		if cfg.ReorgRewind {
+			cfg.FromBlock = uint(progress) - 5
+		} else {
+			cfg.FromBlock = uint(progress)
+		}
 	}
 	log.Println("Subscribing to Junglebus from block", cfg.FromBlock)
 	if sub, err = jb.JB.SubscribeWithQueue(ctx,
@@ -95,7 +135,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		0,
 		eventHandler,
 		&junglebus.SubscribeOptions{
-			QueueSize: 1000,
+			QueueSize: 10000000,
 			LiteMode:  true,
 		},
 	); err != nil {

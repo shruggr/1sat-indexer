@@ -3,6 +3,7 @@ package redisstore
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -43,177 +44,245 @@ func BuildQuery(cfg *idx.SearchCfg) *redis.ZRangeBy {
 	return query
 }
 
-func (r *RedisStore) search(ctx context.Context, cfg *idx.SearchCfg) (results []redis.Z, err error) {
-	query := BuildQuery(cfg)
-	if cfg.Reverse {
-		return r.DB.ZRevRangeByScoreWithScores(ctx, cfg.Key, query).Result()
-	} else {
-		return r.DB.ZRangeByScoreWithScores(ctx, cfg.Key, query).Result()
-	}
+type record struct {
+	count int
+	score float64
 }
 
-func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results []*idx.SearchResult, err error) {
-	redisResults, err := r.search(ctx, cfg)
-	if err != nil {
-		return nil, err
+func (r *RedisStore) Search(ctx context.Context, cfg *idx.SearchCfg) (records []*idx.Log, err error) {
+	query := BuildQuery(cfg)
+	// outpointCounts := make(map[string]int)
+	outpointSet := make(map[string]*record)
+	keyCount := len(cfg.Keys)
+	records = make([]*idx.Log, 0, keyCount*int(cfg.Limit))
+	for _, key := range cfg.Keys {
+		var results []redis.Z
+		if cfg.Reverse {
+			if results, err = r.DB.ZRevRangeByScoreWithScores(ctx, key, query).Result(); err != nil {
+				return nil, err
+			}
+		} else {
+			if results, err = r.DB.ZRangeByScoreWithScores(ctx, key, query).Result(); err != nil {
+				return nil, err
+			}
+		}
+		for _, result := range results {
+			outpoint := result.Member.(string)
+			if len(outpoint) < 65 && (cfg.OutpointsOnly || cfg.FilterSpent) {
+				continue
+			}
+			if keyCount > 1 {
+				if _, exists := outpointSet[outpoint]; !exists {
+					outpointSet[outpoint] = &record{
+						score: result.Score,
+						count: 0,
+					}
+				}
+				outpointSet[outpoint].count++
+			} else {
+				records = append(records, &idx.Log{
+					Member: outpoint,
+					Score:  result.Score,
+				})
+			}
+		}
 	}
-	results = make([]*idx.SearchResult, 0, len(redisResults))
-	for _, redisResult := range redisResults {
-		results = append(results, &idx.SearchResult{
-			Member: redisResult.Member.(string),
-			Score:  redisResult.Score,
+	if keyCount > 1 {
+		for outpoint, record := range outpointSet {
+			if cfg.ComparisonType == idx.ComparisonAND && record.count != keyCount {
+				continue
+			}
+			records = append(records, &idx.Log{
+				Member: outpoint,
+				Score:  record.score,
+			})
+		}
+		slices.SortFunc(records, func(a, b *idx.Log) int {
+			if cfg.Reverse {
+				if a.Score > b.Score {
+					return -1
+				} else if a.Score < b.Score {
+					return 1
+				}
+			} else {
+				if a.Score < b.Score {
+					return -1
+				} else if a.Score > b.Score {
+					return 1
+				}
+			}
+			return 0
 		})
 	}
-	return
+
+	if cfg.Limit > 0 && len(records) > int(cfg.Limit) {
+		records = records[:cfg.Limit]
+	}
+	return records, nil
 }
 
-func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string) ([]string, error) {
+func (r *RedisStore) filterSpent(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	if len(outpoints) == 0 {
 		return outpoints, nil
 	}
+	unspent := make([]string, 0, len(outpoints))
 	if spends, err := r.DB.HMGet(ctx, SpendsKey, outpoints...).Result(); err != nil {
 		return nil, err
 	} else {
-		unspent := make([]string, 0, len(outpoints))
 		for i, outpoint := range outpoints {
-			if len(outpoint) < 65 {
-				continue
-			}
 			if spends[i] == nil {
+				if refresh {
+					if spend, err := jb.GetSpend(outpoint); err != nil {
+						return nil, err
+					} else if spend != "" {
+						if _, err := r.SetNewSpend(ctx, outpoint, spend); err != nil {
+							return nil, err
+						}
+						log.Println("Spent from JB", outpoint, spend)
+						continue
+					}
+				}
 				unspent = append(unspent, outpoint)
 			}
 		}
-		return unspent, nil
 	}
+
+	return unspent, nil
 }
 
 func (r *RedisStore) SearchMembers(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
-	if items, err := r.search(ctx, cfg); err != nil {
+	if items, err := r.Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
 		members := make([]string, 0, len(items))
 		for _, item := range items {
-			members = append(members, item.Member.(string))
+			members = append(members, item.Member)
 		}
 		return members, nil
 	}
 }
 
 func (r *RedisStore) SearchOutpoints(ctx context.Context, cfg *idx.SearchCfg) (results []string, err error) {
-	if items, err := r.search(ctx, cfg); err != nil {
+	cfg.OutpointsOnly = true
+	if items, err := r.Search(ctx, cfg); err != nil {
 		return nil, err
 	} else {
-		outpoints := make([]string, 0, len(items))
+		members := make([]string, 0, len(items))
 		for _, item := range items {
-			if len(item.Member.(string)) < 65 {
-				continue
-			}
-			outpoints = append(outpoints, item.Member.(string))
+			members = append(members, item.Member)
 		}
-		return outpoints, nil
+		return members, nil
 	}
 }
 
 func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos []*idx.Txo, err error) {
-	if cfg.IncludeTxo {
-		var outpoints []string
-		if outpoints, err = r.SearchOutpoints(ctx, cfg); err != nil {
+	results, err := r.Search(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	outpoints := make([]string, 0, len(results))
+	resultMap := make(map[string]*idx.Log, len(results))
+	for _, result := range results {
+		resultMap[result.Member] = result
+		outpoints = append(outpoints, result.Member)
+	}
+	if cfg.FilterSpent {
+		if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
 			return nil, err
 		}
-		if cfg.FilterSpent {
-			if outpoints, err = r.filterSpent(ctx, outpoints); err != nil {
-				return nil, err
-			}
-		}
-		if txos, err = r.LoadTxos(ctx, outpoints, nil); err != nil {
+	}
+
+	if cfg.IncludeTxo {
+		if txos, err = r.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript); err != nil {
 			return nil, err
 		}
 	} else {
-		if results, err := r.search(ctx, cfg); err != nil {
-			return nil, err
-		} else {
-			txos = make([]*idx.Txo, 0, len(results))
-			for _, result := range results {
-				outpoint := result.Member.(string)
-				if len(outpoint) < 65 {
-					continue
-				}
-				txo := &idx.Txo{
-					Height: uint32(result.Score / 1000000000),
-					Idx:    uint64(result.Score) % 1000000000,
-					Score:  result.Score,
-					Data:   make(map[string]*idx.IndexData),
-				}
-				if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
-					return nil, err
-				}
-				txos = append(txos, txo)
+		txos = make([]*idx.Txo, 0, len(results))
+		for _, outpoint := range outpoints {
+			result := resultMap[outpoint]
+			txo := &idx.Txo{
+				Height: uint32(result.Score / 1000000000),
+				Idx:    uint64(result.Score) % 1000000000,
+				Score:  result.Score,
+				Data:   make(map[string]*idx.IndexData),
 			}
-		}
-	}
-	if len(cfg.IncludeTags) > 0 {
-		for _, txo := range txos {
-			if txo.Data, err = r.LoadData(ctx, txo.Outpoint.String(), cfg.IncludeTags); err != nil {
+			if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
+				return nil, err
+			} else if txo.Data, err = r.LoadData(ctx, txo.Outpoint.String(), cfg.IncludeTags); err != nil {
 				return nil, err
 			} else if txo.Data == nil {
 				txo.Data = make(idx.IndexDataMap)
 			}
-		}
-	}
-	if cfg.IncludeScript {
-		for _, txo := range txos {
-			if err := txo.LoadScript(ctx); err != nil {
-				return txos, err
+			if cfg.IncludeScript {
+				if err := txo.LoadScript(ctx); err != nil {
+					return nil, err
+				}
 			}
+			txos = append(txos, txo)
 		}
 	}
+
 	return txos, nil
 }
 
-func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg, keys []string) (txns []*lib.TxResult, err error) {
+func (r *RedisStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (balance uint64, err error) {
+	cfg.OutpointsOnly = true
+	if outpoints, err := r.SearchMembers(ctx, cfg); err != nil {
+		return 0, err
+	} else if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
+		return 0, err
+	} else if txos, err := r.LoadTxos(ctx, outpoints, nil, false); err != nil {
+		return 0, err
+	} else {
+		for _, txo := range txos {
+			if txo.Satoshis != nil {
+				balance += *txo.Satoshis
+			}
+		}
+	}
+
+	return
+}
+
+func (r *RedisStore) SearchTxns(ctx context.Context, cfg *idx.SearchCfg) (txns []*lib.TxResult, err error) {
 	txMap := make(map[float64]*lib.TxResult)
 	scores := make([]float64, 0, 1000)
-
-	for _, key := range keys {
-		cfg.Key = key
-		if activity, err := r.Search(ctx, cfg); err != nil {
-			return nil, err
-		} else {
-			for _, item := range activity {
-				var txid string
-				var out *uint32
-				if len(item.Member) == 64 {
-					txid = item.Member
-				} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
-					return nil, err
-				} else {
-					txid = outpoint.TxidHex()
-					vout := outpoint.Vout()
-					out = &vout
+	if activity, err := r.Search(ctx, cfg); err != nil {
+		return nil, err
+	} else {
+		for _, item := range activity {
+			var txid string
+			var out *uint32
+			if len(item.Member) == 64 {
+				txid = item.Member
+			} else if outpoint, err := lib.NewOutpointFromString(item.Member); err != nil {
+				return nil, err
+			} else {
+				txid = outpoint.TxidHex()
+				vout := outpoint.Vout()
+				out = &vout
+			}
+			var result *lib.TxResult
+			var ok bool
+			if result, ok = txMap[item.Score]; !ok {
+				height := uint32(item.Score / 1000000000)
+				result = &lib.TxResult{
+					Txid:    txid,
+					Height:  height,
+					Idx:     uint64(item.Score) % 1000000000,
+					Outputs: lib.NewOutputMap(),
+					Score:   item.Score,
 				}
-				var result *lib.TxResult
-				var ok bool
-				if result, ok = txMap[item.Score]; !ok {
-					height := uint32(item.Score / 1000000000)
-					result = &lib.TxResult{
-						Txid:    txid,
-						Height:  height,
-						Idx:     uint64(item.Score) % 1000000000,
-						Outputs: lib.NewOutputMap(),
-						Score:   item.Score,
+				if cfg.IncludeRawtx {
+					if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
+						return nil, err
 					}
-					if cfg.IncludeRawtx {
-						if result.Rawtx, err = jb.LoadRawtx(ctx, txid); err != nil {
-							return nil, err
-						}
-					}
-					txMap[item.Score] = result
-					scores = append(scores, item.Score)
-					// results = append(results, result)
 				}
-				if out != nil {
-					result.Outputs[*out] = struct{}{}
-				}
+				txMap[item.Score] = result
+				scores = append(scores, item.Score)
+			}
+			if out != nil {
+				result.Outputs[*out] = struct{}{}
 			}
 		}
 	}
@@ -232,7 +301,10 @@ func (r *RedisStore) Balance(ctx context.Context, key string) (balance int64, er
 		return 0, err
 	} else if err != redis.Nil {
 		return balance, nil
-	} else if outpoints, err = r.SearchOutpoints(ctx, &idx.SearchCfg{Key: key}); err != nil {
+	} else if outpoints, err = r.SearchMembers(ctx, &idx.SearchCfg{
+		Keys:          []string{key},
+		OutpointsOnly: true,
+	}); err != nil {
 		return 0, err
 	}
 	var msgpacks []interface{}

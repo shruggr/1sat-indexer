@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 
+	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 	"github.com/shruggr/1sat-indexer/v5/sub"
 )
@@ -20,15 +21,17 @@ var TAG string
 var QUEUE string
 var MEMOOOL bool
 var BLOCK bool
+var REWIND bool
 
 func init() {
 	flag.StringVar(&TAG, "tag", "", "(REQUIRED) Subscription Tag")
-	flag.StringVar(&QUEUE, "q", "ingest", "Queue")
+	flag.StringVar(&QUEUE, "q", idx.IngestTag, "Queue")
 	flag.StringVar(&TOPIC, "t", "", "(REQUIRED) Junglebus SubscriptionID")
 	flag.UintVar(&FROM_BLOCK, "s", uint(onesat.TRIGGER), "Start from block")
 	flag.UintVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&MEMOOOL, "m", false, "Index Mempool")
 	flag.BoolVar(&BLOCK, "b", true, "Index Blocks")
+	flag.BoolVar(&REWIND, "r", false, "Reorg Rewind")
 	flag.Parse()
 
 	if TAG == "" {
@@ -48,6 +51,7 @@ func main() {
 		IndexBlocks:  BLOCK,
 		IndexMempool: MEMOOOL,
 		Verbose:      VERBOSE > 0,
+		ReorgRewind:  REWIND,
 	}).Exec(ctx); err != nil {
 		log.Panic(err)
 	}

@@ -81,8 +81,9 @@ func main() {
 
 	for {
 		searchCfg := &idx.SearchCfg{
-			Key:   eventKey,
-			Limit: 10000,
+			Keys:  []string{eventKey},
+			Limit: 1000000,
+			// Reverse: true,
 		}
 		if outpoints, err := store.SearchOutpoints(ctx, searchCfg); err != nil {
 			log.Panic(err)

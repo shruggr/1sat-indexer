@@ -13,6 +13,7 @@ import (
 )
 
 const PendingTxLog = "tx"
+const RollbackTxLog = "rollback"
 const ImmutableTxLog = "immutable"
 const RejectedTxLog = "rejected"
 
@@ -61,15 +62,16 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			log.Println("Error", err)
 			return err
 		default:
-			if cfg.Verbose {
-				log.Println("Loading", cfg.PageSize, "transactions to ingest")
-			}
 			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
-				Key:   cfg.Key,
+				Keys:  []string{cfg.Key},
 				Limit: cfg.PageSize,
 			}); err != nil {
 				log.Panic(err)
 			} else {
+				if len(txids) == 0 {
+					// log.Println("No transactions to ingest")
+					time.Sleep(time.Second)
+				}
 				for _, txid := range txids {
 					if _, ok := inflight[txid]; !ok {
 						txcount++
@@ -94,13 +96,14 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 								if err := (*cfg.OnIngest)(ctx, idxCtx); err != nil {
 									errors <- err
 								}
+							} else if len(cfg.Key) > 0 {
+								if err = cfg.Store.Delog(ctx, cfg.Key, txid); err != nil {
+									log.Panic(err)
+									return
+								}
 							}
 						}(txid)
 					}
-				}
-				if len(txids) == 0 {
-					// log.Println("No transactions to ingest")
-					time.Sleep(time.Second)
 				}
 			}
 		}
@@ -127,6 +130,7 @@ func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg A
 			log.Panic(err)
 			return nil, err
 		} else if score > 0 {
+			log.Println("[INGEST] Skipping", txid)
 			return nil, nil
 		}
 	}
@@ -163,11 +167,31 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 			log.Panic(err)
 			return
 		}
-		// } else if len(cfg.Key) > 0 {
-		// 	if err = cfg.Store.Delog(ctx, cfg.Key, idxCtx.TxidHex); err != nil {
-		// 		log.Panic(err)
-		// 		return
-		// 	}
 	}
 	return
+}
+
+func (cfg *IngestCtx) Rollback(ctx context.Context, txid string) error {
+	if idxCtx, err := cfg.ParseTxid(ctx, txid, AncestorConfig{Load: true, Parse: true}); err != nil {
+		return err
+	} else {
+		for _, spend := range idxCtx.Spends {
+			if err = cfg.Store.RollbackSpend(ctx, spend, txid); err != nil {
+				return err
+			}
+		}
+
+		for _, txo := range idxCtx.Txos {
+			if err = cfg.Store.RollbackTxo(ctx, txo); err != nil {
+				return err
+			}
+		}
+
+		// if err = cfg.Store.Log(ctx, RollbackTxLog, txid, float64(time.Now().UnixNano())); err != nil {
+		// 	return err
+		// } else if err = cfg.Store.Delog(ctx, PendingTxLog, txid); err != nil {
+		// 	return err
+		// }
+	}
+	return nil
 }

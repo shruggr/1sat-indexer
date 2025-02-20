@@ -58,10 +58,11 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 			LockingScript: lockingScript,
 			Change:        true,
 		})
-		if outpoints, err := idxCtx.Store.SearchOutpoints(idxCtx.Ctx, &SearchCfg{
-			Key:         evt.EventKey("p2pkh", &evt.Event{Id: "own", Value: address.AddressString}),
-			Limit:       25,
-			FilterSpent: true,
+		if outpoints, err := idxCtx.Store.SearchMembers(idxCtx.Ctx, &SearchCfg{
+			Keys:          []string{evt.EventKey("p2pkh", &evt.Event{Id: "own", Value: address.AddressString})},
+			Limit:         25,
+			FilterSpent:   true,
+			OutpointsOnly: true,
 		}); err != nil {
 			log.Println(err)
 			return err
@@ -75,7 +76,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 					log.Panic(err)
 				} else if !locked {
 					continue
-				} else if txo, err := idxCtx.Store.LoadTxo(idxCtx.Ctx, op, nil); err != nil {
+				} else if txo, err := idxCtx.Store.LoadTxo(idxCtx.Ctx, op, nil, false); err != nil {
 					log.Println(err)
 					return err
 				} else {

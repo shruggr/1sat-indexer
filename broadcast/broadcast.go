@@ -8,10 +8,13 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/spv"
 	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
+
+const MIN_SAT_PER_KB = 1.0
 
 type BroadcaseResponse struct {
 	Success bool   `json:"success"`
@@ -48,7 +51,18 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 
 	log.Println("Load Spends", response.Txid)
-
+	rawtx := tx.Bytes()
+	if fees, err := tx.GetFee(); err != nil {
+		response.Error = err.Error()
+		return
+	} else {
+		feeRate := float64(fees) / (float64(len(rawtx)) / 1024.0)
+		if feeRate < MIN_SAT_PER_KB {
+			response.Status = fiber.StatusPaymentRequired
+			response.Error = "fee-too-low"
+			return
+		}
+	}
 	score := idx.HeightScore(0, 0)
 
 	// TODO: Verify Fees
@@ -77,7 +91,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			response.Error = err.Error()
 			return
 		} else if !added {
-			if spend, err := store.GetSpend(ctx, spendOutpoint); err != nil {
+			if spend, err := store.GetSpend(ctx, spendOutpoint, false); err != nil {
 				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 				response.Error = err.Error()
 				return
@@ -113,7 +127,7 @@ func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string,
 		return nil
 	}
 	deletes := make([]string, 0, len(outpoints))
-	if spends, err := store.GetSpends(ctx, outpoints); err != nil {
+	if spends, err := store.GetSpends(ctx, outpoints, false); err != nil {
 		return err
 	} else {
 		for i, spend := range spends {
