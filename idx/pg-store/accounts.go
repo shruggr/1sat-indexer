@@ -3,10 +3,8 @@ package pgstore
 import (
 	"context"
 	"log"
-	"sync"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 func (p *PGStore) AcctsByOwners(ctx context.Context, owners []string) ([]string, error) {
@@ -72,79 +70,70 @@ func (p *PGStore) UpdateAccount(ctx context.Context, account string, owners []st
 		); err != nil {
 			log.Panic(err)
 			return err
-		}
-	}
-	return nil
-}
-
-func (p *PGStore) SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) error {
-	if owners, err := p.AcctOwners(ctx, acct); err != nil {
-		return err
-	} else {
-		for _, owner := range owners {
-			if err := p.SyncOwner(ctx, tag, owner, ing); err != nil {
-				log.Panic(err)
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (p *PGStore) SyncOwner(ctx context.Context, tag string, own string, ing *idx.IngestCtx) error {
-	log.Println("Syncing:", own)
-	var lastHeight float64
-	if err := p.DB.QueryRow(ctx, `SELECT sync_height 
-		FROM owner_accounts 
-		WHERE owner=$1`,
-		own,
-	).Scan(&lastHeight); err != nil {
-		log.Panic(err)
-		return err
-	} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
-		log.Panic(err)
-		return err
-	} else {
-		limiter := make(chan struct{}, ing.Concurrency)
-		var wg sync.WaitGroup
-		for _, addTxn := range addTxns {
-			if score, err := p.LogScore(ctx, tag, addTxn.Txid); err != nil {
-				log.Panic(err)
-				return err
-			} else if score > 0 {
-				continue
-			}
-			wg.Add(1)
-			limiter <- struct{}{}
-			go func(addTxn *jb.AddressTxn) {
-				defer func() {
-					<-limiter
-					wg.Done()
-				}()
-				if _, err := ing.IngestTxid(ctx, addTxn.Txid, idx.AncestorConfig{
-					Load:  true,
-					Parse: true,
-					Save:  true,
-				}); err != nil {
-					log.Panic(err)
-				}
-			}(addTxn)
-
-			if addTxn.Height > uint32(lastHeight) {
-				lastHeight = float64(addTxn.Height)
-			}
-		}
-		wg.Wait()
-		if _, err := p.DB.Exec(ctx, `UPDATE owner_accounts
-			SET sync_height=$2
-			WHERE owner=$1`,
-			own,
-			lastHeight,
-		); err != nil {
+		} else if err := p.Log(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
 			log.Panic(err)
 			return err
 		}
 	}
-
 	return nil
 }
+
+// func (p *PGStore) SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) error {
+// 	if owners, err := p.AcctOwners(ctx, acct); err != nil {
+// 		return err
+// 	} else {
+// 		for _, owner := range owners {
+// 			if err := p.SyncOwner(ctx, tag, owner, ing); err != nil {
+// 				log.Panic(err)
+// 				return err
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
+
+// func (p *PGStore) SyncOwner(ctx context.Context, tag string, own string, ing *idx.IngestCtx) error {
+// 	log.Println("Syncing:", own)
+// 	if lastHeight, err := p.LogScore(ctx, idx.OwnerSyncKey, own); err != nil {
+// 		log.Panic(err)
+// 	} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
+// 		log.Panic(err)
+// 	} else {
+// 		limiter := make(chan struct{}, ing.Concurrency)
+// 		var wg sync.WaitGroup
+// 		for _, addTxn := range addTxns {
+// 			if score, err := p.LogScore(ctx, tag, addTxn.Txid); err != nil {
+// 				log.Panic(err)
+// 				return err
+// 			} else if score > 0 {
+// 				continue
+// 			}
+// 			wg.Add(1)
+// 			limiter <- struct{}{}
+// 			go func(addTxn *jb.AddressTxn) {
+// 				defer func() {
+// 					<-limiter
+// 					wg.Done()
+// 				}()
+// 				if _, err := ing.IngestTxid(ctx, addTxn.Txid, idx.AncestorConfig{
+// 					Load:  true,
+// 					Parse: true,
+// 					Save:  true,
+// 				}); err != nil {
+// 					log.Panic(err)
+// 				}
+// 			}(addTxn)
+
+// 			if addTxn.Height > uint32(lastHeight) {
+// 				lastHeight = float64(addTxn.Height)
+// 			}
+// 		}
+// 		wg.Wait()
+// 		if err := p.Log(ctx, idx.OwnerSyncKey, own, lastHeight); err != nil {
+// 			log.Panic(err)
+// 			return err
+// 		}
+// 	}
+
+// 	return nil
+// }

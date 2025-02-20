@@ -141,7 +141,7 @@ func (idxCtx *IndexContext) ParseTxos() (err error) {
 
 func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
 	op := outpoint.String()
-	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false); err != nil {
+	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false, false); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if txo != nil {
@@ -163,7 +163,7 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]
 			if idxCtx.ancestorConfig.Save {
-				if err := spendCtx.SaveTxos(); err != nil {
+				if err := spendCtx.Store.SaveTxos(spendCtx); err != nil {
 					log.Panic(err)
 					return nil, err
 				}
@@ -174,10 +174,10 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 }
 
 func (idxCtx *IndexContext) Save() error {
-	if err := idxCtx.SaveTxos(); err != nil {
+	if err := idxCtx.Store.SaveTxos(idxCtx); err != nil {
 		log.Panic(err)
 		return err
-	} else if err := idxCtx.SaveSpends(); err != nil {
+	} else if err := idxCtx.Store.SaveSpends(idxCtx); err != nil {
 		log.Panic(err)
 		return err
 	}
@@ -185,20 +185,20 @@ func (idxCtx *IndexContext) Save() error {
 	return nil
 }
 
-func (idxCtx *IndexContext) SaveTxos() error {
-	for _, txo := range idxCtx.Txos {
-		if err := idxCtx.Store.SaveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// func (idxCtx *IndexContext) SaveTxos() error {
+// 	for _, txo := range idxCtx.Txos {
+// 		if err := idxCtx.Store.SaveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
+// 			return err
+// 		}
+// 	}
+// 	return nil
+// }
 
-func (idxCtx *IndexContext) SaveSpends() error {
-	for _, spend := range idxCtx.Spends {
-		if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, spend, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// func (idxCtx *IndexContext) SaveSpends() error {
+// 	for _, spend := range idxCtx.Spends {
+// 		if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, spend, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
+// 			return err
+// 		}
+// 	}
+// 	return nil
+// }

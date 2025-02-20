@@ -1,11 +1,15 @@
 package acct
 
 import (
+	"context"
+	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var ingest *idx.IngestCtx
@@ -14,9 +18,11 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
 	r.Put("/:account", RegisterAccount)
 	r.Get("/:account", AccountActivity)
-	r.Get("/:account/utxos", AccountUtxos)
-	r.Get("/:account/balance", AccountUtxos)
+	r.Get("/:account/txos", AccountTxos)
+	r.Get("/:account/utxos", AccountTxos)
+	r.Get("/:account/balance", AccountTxos)
 	r.Get("/:account/:from", AccountActivity)
+	r.Put("/:account/tx", RegisterAccount)
 }
 
 func RegisterAccount(c *fiber.Ctx) error {
@@ -30,14 +36,14 @@ func RegisterAccount(c *fiber.Ctx) error {
 
 	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
 		return err
-	} else if err := ingest.Store.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+	} else if err := SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
 		return err
 	}
 
 	return c.SendStatus(204)
 }
 
-func AccountUtxos(c *fiber.Ctx) error {
+func AccountTxos(c *fiber.Ctx) error {
 	account := c.Params("account")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
@@ -53,7 +59,7 @@ func AccountUtxos(c *fiber.Ctx) error {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
 			Keys:          keys,
@@ -63,7 +69,8 @@ func AccountUtxos(c *fiber.Ctx) error {
 			IncludeTxo:    c.QueryBool("txo", false),
 			IncludeTags:   tags,
 			IncludeScript: c.QueryBool("script", false),
-			FilterSpent:   true,
+			IncludeSpend:  c.QueryBool("spend", false),
+			FilterSpent:   c.QueryBool("unspent", true),
 			RefreshSpends: c.QueryBool("refresh", false),
 		}); err != nil {
 			return err
@@ -82,7 +89,7 @@ func AccountBalance(c *fiber.Ctx) error {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
 			Keys:          keys,
@@ -108,7 +115,7 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 	} else {
 		keys := make([]string, 0, len(owners))
 		for _, owner := range owners {
-			keys = append(keys, idx.OwnerTxosKey(owner))
+			keys = append(keys, idx.OwnerKey(owner))
 		}
 		if results, err := ingest.Store.SearchTxns(c.Context(), &idx.SearchCfg{
 			Keys:    keys,
@@ -121,4 +128,59 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 			return c.JSON(results)
 		}
 	}
+}
+
+func SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) error {
+	if owners, err := ingest.Store.AcctOwners(ctx, acct); err != nil {
+		return err
+	} else {
+		for _, own := range owners {
+			log.Println("Syncing:", own)
+			if lastHeight, err := ingest.Store.LogScore(ctx, idx.OwnerSyncKey, own); err != nil {
+				return err
+			} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
+				log.Panic(err)
+			} else {
+				limiter := make(chan struct{}, ing.Concurrency)
+				var wg sync.WaitGroup
+				for _, addTxn := range addTxns {
+					if score, err := ingest.Store.LogScore(ctx, tag, addTxn.Txid); err != nil {
+						log.Panic(err)
+						return err
+					} else if score > 0 {
+						continue
+					}
+					wg.Add(1)
+					limiter <- struct{}{}
+					go func(addTxn *jb.AddressTxn) {
+						defer func() {
+							<-limiter
+							wg.Done()
+						}()
+						if _, err := ing.IngestTxid(ctx, addTxn.Txid, idx.AncestorConfig{
+							Load:  true,
+							Parse: true,
+							Save:  true,
+						}); err != nil {
+							log.Panic(err)
+						}
+					}(addTxn)
+
+					if addTxn.Height > uint32(lastHeight) {
+						lastHeight = float64(addTxn.Height)
+					}
+				}
+				wg.Wait()
+				if err := ingest.Store.Log(ctx, idx.OwnerSyncKey, own, lastHeight); err != nil {
+					log.Panic(err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func PutTxns(c *fiber.Ctx) error {
+	return nil
+
 }

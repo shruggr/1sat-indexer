@@ -11,11 +11,12 @@ var ingest *idx.IngestCtx
 
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
-	r.Get("/:owner/utxos", OwnerUtxos)
+	r.Get("/:owner/txos", OwnerTxos)
+	r.Get("/:owner/utxos", OwnerTxos)
 	r.Get("/:owner/balance", OwnerBalance)
 }
 
-func OwnerUtxos(c *fiber.Ctx) error {
+func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
@@ -24,14 +25,15 @@ func OwnerUtxos(c *fiber.Ctx) error {
 	}
 	from := c.QueryFloat("from", 0)
 	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Keys:          []string{idx.OwnerTxosKey(owner)},
+		Keys:          []string{idx.OwnerKey(owner)},
 		From:          &from,
 		Reverse:       c.QueryBool("rev", false),
 		Limit:         uint32(c.QueryInt("limit", 100)),
 		IncludeTxo:    c.QueryBool("txo", false),
 		IncludeTags:   tags,
 		IncludeScript: c.QueryBool("script", false),
-		FilterSpent:   true,
+		IncludeSpend:  c.QueryBool("spend", false),
+		FilterSpent:   c.QueryBool("unspent", true),
 		RefreshSpends: false, //c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
@@ -43,7 +45,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 func OwnerBalance(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	if balance, err := ingest.Store.SearchBalance(c.Context(), &idx.SearchCfg{
-		Keys:          []string{idx.OwnerTxosKey(owner)},
+		Keys:          []string{idx.OwnerKey(owner)},
 		RefreshSpends: c.QueryBool("refresh", false),
 	}); err != nil {
 		return err
