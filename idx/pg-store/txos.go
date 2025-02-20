@@ -43,7 +43,7 @@ func (p *PGStore) insert(ctx context.Context, sql string, args ...interface{}) (
 		if resp, err = p.DB.Exec(ctx, sql, args...); err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) {
-				if pgErr.Code == "23505" {
+				if pgErr.Code == "23505" || pgErr.Code == "40P01" {
 					log.Println("Conflict. Retrying:", i, err)
 					time.Sleep(10 * time.Millisecond)
 					continue
@@ -59,7 +59,7 @@ func (p *PGStore) insert(ctx context.Context, sql string, args ...interface{}) (
 }
 
 func (p *PGStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
-	row := p.DB.QueryRow(ctx, `SELECT outpoint, height, idx, satoshis, owners
+	row := p.DB.QueryRow(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
 		FROM txos WHERE outpoint = $1 AND satoshis IS NOT NULL`,
 		outpoint,
 	)
