@@ -1,45 +1,31 @@
 package blk
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
+	"math/big"
+	"time"
 
 	"github.com/bitcoin-sv/go-sdk/chainhash"
 )
 
+// BlockHeader defines a single block header, used in SPV validations.
 type BlockHeader struct {
-	Hash       *chainhash.Hash `json:"hash"`
-	Coin       uint32          `json:"coin"`
-	Height     uint32          `json:"height"`
-	Time       uint32          `json:"time"`
-	Nonce      uint32          `json:"nonce"`
-	Version    uint32          `json:"version"`
-	MerkleRoot *chainhash.Hash `json:"merkleroot"`
-	Bits       string          `json:"bits"`
-	Synced     uint64          `json:"synced"`
+	Height        uint32         `json:"height"`
+	Hash          chainhash.Hash `json:"hash"`
+	Version       uint32         `json:"version"`
+	MerkleRoot    chainhash.Hash `json:"merkleRoot"`
+	Timestamp     time.Time      `json:"creationTimestamp"`
+	Bits          uint32         `json:"-"`
+	Nonce         uint32         `json:"nonce"`
+	ChainWork     *big.Int       `json:"chainWork"`
+	CumulatedWork *big.Int       `json:"work"`
+	PreviousBlock chainhash.Hash `json:"prevBlockHash"`
 }
 
-func (b BlockHeader) MarshalBinary() (data []byte, err error) {
-	return json.Marshal(b)
-}
-
-func (b *BlockHeader) UnmarshalBinary(data []byte) (err error) {
-	return json.Unmarshal(data, b)
-}
-
-func FetchBlockHeaders(fromBlock uint64, pageSize uint) (blocks []*BlockHeader, err error) {
-	url := fmt.Sprintf("%s/v1/block_header/list/%d?limit=%d", JUNGLEBUS, fromBlock, pageSize)
-	log.Printf("Requesting %d blocks from height %d\n", pageSize, fromBlock)
-	if resp, err := http.Get(url); err != nil || resp.StatusCode != 200 {
-		log.Panicln("Failed to get blocks from junglebus", resp.StatusCode, err)
-	} else {
-		err := json.NewDecoder(resp.Body).Decode(&blocks)
-		resp.Body.Close()
-		if err != nil {
-			log.Panic(err)
-		}
-	}
-	return
+// BlockHeaderState is an extended version of the BlockHeader
+// that has more important informations. Mostly used in http server endpoints.
+type BlockHeaderState struct {
+	Header    BlockHeader `json:"header"`
+	State     string      `json:"state"`
+	ChainWork *big.Int    `json:"chainWork" swaggertype:"string"`
+	Height    uint32      `json:"height"`
 }

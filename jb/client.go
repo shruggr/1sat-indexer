@@ -229,9 +229,9 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
 			return
-		} else if chaintip, err := blk.Chaintip(ctx); err != nil {
+		} else if chaintip, err := blk.GetChaintip(ctx); err != nil {
 			return nil, err
-		} else if proof.BlockHeight < uint32(chaintip.Height) {
+		} else if proof.BlockHeight+5 < uint32(chaintip.Height) {
 			Cache.Set(ctx, cacheKey, prf, 0)
 		} else {
 			Cache.Set(ctx, cacheKey, prf, time.Hour)
