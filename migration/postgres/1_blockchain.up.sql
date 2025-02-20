@@ -24,7 +24,6 @@ CREATE TABLE logs (
 );
 CREATE INDEX idx_logs_score ON logs (search_key text_pattern_ops, score)
     INCLUDE (member);
-CREATE INDEX idx_logs_member ON logs (member);
 
 CREATE TABLE owner_accounts (
     owner TEXT PRIMARY KEY,
