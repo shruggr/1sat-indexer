@@ -2,7 +2,6 @@ package blk
 
 import (
 	"math/big"
-	"time"
 
 	"github.com/bitcoin-sv/go-sdk/chainhash"
 )
@@ -13,7 +12,7 @@ type BlockHeader struct {
 	Hash          chainhash.Hash `json:"hash"`
 	Version       uint32         `json:"version"`
 	MerkleRoot    chainhash.Hash `json:"merkleRoot"`
-	Timestamp     time.Time      `json:"creationTimestamp"`
+	Timestamp     uint32         `json:"creationTimestamp"`
 	Bits          uint32         `json:"-"`
 	Nonce         uint32         `json:"nonce"`
 	ChainWork     *big.Int       `json:"chainWork"`
