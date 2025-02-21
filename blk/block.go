@@ -16,7 +16,7 @@ var BLOCK_API string
 var BLOCK_AUTH_KEY string
 
 var Chaintip *BlockHeader
-var C = make(chan *BlockHeader)
+var C chan *BlockHeader
 var updated time.Time
 
 func init() {
@@ -29,6 +29,9 @@ func init() {
 }
 
 func StartChaintipSub(ctx context.Context) {
+	if C == nil {
+		C = make(chan *BlockHeader, 1000)
+	}
 	go func() {
 		for {
 			if _, err := GetChaintip(ctx); err != nil {
@@ -57,7 +60,7 @@ func GetChaintip(ctx context.Context) (*BlockHeader, error) {
 			return nil, err
 		}
 		header := &headerState.Header
-		if header.Hash != Chaintip.Hash {
+		if C != nil && (Chaintip == nil || header.Hash != Chaintip.Hash) {
 			C <- header
 		}
 		header.Height = headerState.Height

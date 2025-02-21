@@ -143,7 +143,6 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 					Value: bsv20.Ticker,
 				},
 			},
-			PostProcess: true,
 		}
 	}
 }
