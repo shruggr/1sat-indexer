@@ -44,7 +44,7 @@ func GetChaintip(ctx context.Context) (*BlockHeader, error) {
 	}
 	headerState := &BlockHeaderState{}
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/chain/tip/longest", BLOCK_API), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/tip/longest", BLOCK_API), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func GetChaintip(ctx context.Context) (*BlockHeader, error) {
 func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
 	header := &BlockHeader{}
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/chain/header/byHeight?height=%d", BLOCK_API, height), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d", BLOCK_API, height), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
 func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
 	headerState := &BlockHeaderState{}
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/chain/header/state/%s", BLOCK_API, hash), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/header/state/%s", BLOCK_API, hash), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
 func Blocks(ctx context.Context, fromBlock uint32, count uint) ([]*BlockHeader, error) {
 	headers := make([]*BlockHeader, 0, count)
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/chain/header/byHeight?height=%d&count=%d", BLOCK_API, fromBlock, count)
+	url := fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d&count=%d", BLOCK_API, fromBlock, count)
 	if req, err := http.NewRequest("GET", url, nil); err != nil {
 		return nil, err
 	} else {
