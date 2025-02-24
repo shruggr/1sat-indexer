@@ -64,7 +64,7 @@ func GetChaintip(ctx context.Context) (*BlockHeader, error) {
 			C <- header
 		}
 		header.Height = headerState.Height
-		header.ChainWork = headerState.ChainWork
+		// header.ChainWork = headerState.ChainWork
 		Chaintip = header
 		updated = time.Now()
 		return header, nil
@@ -110,7 +110,7 @@ func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
 		}
 		header := &headerState.Header
 		header.Height = headerState.Height
-		header.ChainWork = headerState.ChainWork
+		// header.ChainWork = headerState.ChainWork
 		return header, nil
 	}
 }

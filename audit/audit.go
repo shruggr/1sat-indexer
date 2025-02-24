@@ -46,7 +46,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	limiter := make(chan struct{}, 20)
 	var wg sync.WaitGroup
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
-		log.Panic(err)
+		log.Println(err)
 	} else {
 		log.Println("Audit pending txs", len(items))
 		for _, item := range items {
@@ -58,7 +58,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-					log.Panic(err)
+					log.Println("AuditTransaction:", err)
 				}
 			}(item)
 		}
@@ -69,7 +69,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	cfg.From = &from
 	cfg.To = &immutableScore
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
-		log.Panic(err)
+		log.Println("Search:", err)
 	} else {
 		log.Println("Audit mined txs", len(items))
 		for _, item := range items {
@@ -81,7 +81,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-					log.Panic(err)
+					log.Println("AuditTransaction:", err)
 				}
 			}(item)
 		}
@@ -93,7 +93,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	to = float64(until.UnixNano())
 	cfg.To = &to
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
-		log.Panic(err)
+		log.Println("Search:", err)
 	} else {
 		log.Println("Audit mempool txs", len(items))
 		for _, item := range items {
@@ -105,7 +105,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
-					log.Panic(err)
+					log.Println("AuditTransaction:", err)
 				}
 			}(item)
 		}
@@ -115,16 +115,19 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 
 func AuditTransaction(ctx context.Context, hexid string, score float64, rollback bool) error {
 	// log.Println("Auditing", hexid)
-	tx, err := jb.LoadTx(ctx, hexid, true)
+	tx, err := jb.LoadTx(ctx, hexid, false)
 	if err == jb.ErrNotFound {
 		log.Println("Archive Missing", hexid)
 		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
-			log.Panicln("Rollback error", hexid, err)
+			log.Println("Rollback error", hexid, err)
+			return err
 		} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
-			log.Panicln("Delog error", hexid, err)
+			log.Println("Delog error", hexid, err)
+			return err
 		}
 	} else if err != nil {
-		log.Panicln("LoadTx error", hexid, err)
+		log.Println("LoadTx error", hexid, err)
+		return err
 	} else if tx.MerklePath == nil {
 		log.Println("Fetching status for", hexid)
 		if status, err := arc.Status(hexid); err != nil {
@@ -146,9 +149,11 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	if rollback && score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
 		log.Println("Rollback", hexid)
 		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
-			log.Panicln("Rollback error", hexid, err)
+			log.Println("Rollback error", hexid, err)
+			return err
 		} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
-			log.Panicln("Delog error", hexid, err)
+			log.Println("Delog error", hexid, err)
+			return err
 		}
 	}
 	if tx.MerklePath == nil {
@@ -158,9 +163,11 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	txid := tx.TxID()
 	var newScore float64
 	if root, err := tx.MerklePath.ComputeRoot(txid); err != nil {
-		log.Panicln("ComputeRoot error", hexid, err)
+		log.Println("ComputeRoot error", hexid, err)
+		return err
 	} else if valid, err := headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight); err != nil {
-		log.Panicln("IsValidRootForHeight error", hexid, err)
+		log.Println("IsValidRootForHeight error", hexid, err)
+		return err
 	} else if !valid {
 		// TODO: Reload proof and revalidate
 		log.Println("Invalid proof for", hexid)
@@ -176,7 +183,8 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 
 	if newScore == 0 {
 		// This should never happen
-		log.Panicln("Transaction not in proof", hexid)
+		log.Println("Transaction not in proof", hexid)
+		return nil
 	}
 
 	if newScore != score {
@@ -185,16 +193,19 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 			Load:  true,
 			Parse: true,
 		}); err != nil {
-			log.Panicln("IngestTx error", hexid, err)
+			log.Println("IngestTx error", hexid, err)
+			return err
 		}
 	}
 
 	if newScore < immutableScore {
 		log.Println("Archive Immutable", hexid, newScore)
 		if err := ingest.Store.Log(ctx, idx.ImmutableTxLog, hexid, newScore); err != nil {
-			log.Panicln("Log error", hexid, err)
+			log.Println("Log error", hexid, err)
+			return err
 		} else if err := ingest.Store.Delog(ctx, idx.PendingTxLog, hexid); err != nil {
-			log.Panicln("Delog error", hexid, err)
+			log.Println("Delog error", hexid, err)
+			return err
 		}
 	}
 	return nil
