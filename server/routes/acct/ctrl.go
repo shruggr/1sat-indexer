@@ -139,7 +139,8 @@ func SyncAcct(ctx context.Context, tag string, acct string, ing *idx.IngestCtx) 
 			if lastHeight, err := ingest.Store.LogScore(ctx, idx.OwnerSyncKey, own); err != nil {
 				return err
 			} else if addTxns, err := jb.FetchOwnerTxns(own, int(lastHeight)); err != nil {
-				log.Panic(err)
+				log.Println("FetchOwnerTxns:", err)
+				return err
 			} else {
 				limiter := make(chan struct{}, ing.Concurrency)
 				var wg sync.WaitGroup
