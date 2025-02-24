@@ -72,9 +72,10 @@ func GetChaintip(ctx context.Context) (*BlockHeader, error) {
 }
 
 func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
-	header := &BlockHeader{}
+	headers := []BlockHeader{}
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d", BLOCK_API, height), nil)
+	url := fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d", BLOCK_API, height)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,9 +84,10 @@ func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
 		return nil, err
 	} else {
 		defer res.Body.Close()
-		if err := json.NewDecoder(res.Body).Decode(header); err != nil {
+		if err := json.NewDecoder(res.Body).Decode(&headers); err != nil {
 			return nil, err
 		}
+		header := &headers[0]
 		header.Height = height
 		return header, nil
 	}
