@@ -10,11 +10,11 @@ import (
 
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
+	"github.com/shruggr/1sat-indexer/v5/blk"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
-	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
 )
 
 var ingest *idx.IngestCtx
@@ -83,7 +83,7 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 
 func GetTxBEEF(c *fiber.Ctx) error {
 	if tx, err := jb.BuildTxBEEF(c.Context(), c.Params("txid")); err != nil {
-		if err == jb.ErrMissingTxn {
+		if err == jb.ErrNotFound {
 			return c.SendStatus(404)
 		} else {
 			return err
@@ -99,6 +99,9 @@ func GetTxBEEF(c *fiber.Ctx) error {
 func GetTxWithProof(c *fiber.Ctx) error {
 	txid := c.Params("txid")
 	if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
+		if err == jb.ErrNotFound {
+			return c.SendStatus(404)
+		}
 		return err
 	} else if len(rawtx) == 0 {
 		return c.SendStatus(404)
@@ -113,8 +116,10 @@ func GetTxWithProof(c *fiber.Ctx) error {
 			if proof == nil {
 				buf.Write(transaction.VarInt(0).Bytes())
 				c.Set("Cache-Control", "public,max-age=60")
+			} else if chaintip, err := blk.GetChaintip(c.Context()); err != nil {
+				return err
 			} else {
-				if proof.BlockHeight < blocks.Chaintip.Height-5 {
+				if proof.BlockHeight < chaintip.Height-5 {
 					c.Set("Cache-Control", "public,max-age=31536000,immutable")
 				} else {
 					c.Set("Cache-Control", "public,max-age=60")
@@ -159,8 +164,10 @@ func GetProof(c *fiber.Ctx) error {
 		return err
 	} else if proof == nil {
 		return c.SendStatus(404)
+	} else if chaintip, err := blk.GetChaintip(c.Context()); err != nil {
+		return err
 	} else {
-		if proof.BlockHeight < blocks.Chaintip.Height-5 {
+		if proof.BlockHeight < chaintip.Height-5 {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")
@@ -234,7 +241,7 @@ func TxosByTxid(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("script", false)); err != nil {
+	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("script", false), c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)

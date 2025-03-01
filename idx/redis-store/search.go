@@ -186,14 +186,19 @@ func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos [
 		resultMap[result.Member] = result
 		outpoints = append(outpoints, result.Member)
 	}
+	var spends []string
 	if cfg.FilterSpent {
 		if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
+			return nil, err
+		}
+	} else if cfg.IncludeSpend {
+		if spends, err = r.GetSpends(ctx, outpoints, cfg.RefreshSpends); err != nil {
 			return nil, err
 		}
 	}
 
 	if cfg.IncludeTxo {
-		if txos, err = r.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript); err != nil {
+		if txos, err = r.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript, cfg.IncludeSpend); err != nil {
 			return nil, err
 		}
 	} else {
@@ -205,6 +210,9 @@ func (r *RedisStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos [
 				Idx:    uint64(result.Score) % 1000000000,
 				Score:  result.Score,
 				Data:   make(map[string]*idx.IndexData),
+			}
+			if cfg.IncludeSpend {
+				txo.Spend = spends[0]
 			}
 			if txo.Outpoint, err = lib.NewOutpointFromString(outpoint); err != nil {
 				return nil, err
@@ -231,7 +239,7 @@ func (r *RedisStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (bal
 		return 0, err
 	} else if outpoints, err = r.filterSpent(ctx, outpoints, cfg.RefreshSpends); err != nil {
 		return 0, err
-	} else if txos, err := r.LoadTxos(ctx, outpoints, nil, false); err != nil {
+	} else if txos, err := r.LoadTxos(ctx, outpoints, nil, false, false); err != nil {
 		return 0, err
 	} else {
 		for _, txo := range txos {

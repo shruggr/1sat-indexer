@@ -11,9 +11,6 @@ type IndexData struct {
 	Data   any
 	Events []*evt.Event
 	Deps   []*lib.Outpoint
-	// DepQueue    []*Outpoint `json:"-" msgpack:"-"`
-	PostProcess bool `json:"-" msgpack:"-"`
-	// FullText    string      `json:"text,omitempty"`
 }
 
 func (id IndexData) MarshalJSON() ([]byte, error) {

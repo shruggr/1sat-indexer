@@ -5,139 +5,176 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
-	"strconv"
+	"time"
 
-	"github.com/GorillaPool/go-junglebus"
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 )
 
-var JUNGLEBUS string
-var JB *junglebus.Client
-var DB *redis.Client
+var BLOCK_API string
+var BLOCK_AUTH_KEY string
 
-const BlockHeightKey = "blk:height"
-const BlockHeadersKey = "blk:headers"
-const ChaintipKey = "blk:tip"
+var Chaintip *BlockHeader
+var C chan *BlockHeader
+var updated time.Time
 
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
 	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
-	var err error
-	JUNGLEBUS = os.Getenv("JUNGLEBUS")
-	if JUNGLEBUS != "" {
-		log.Println("JUNGLEBUS", JUNGLEBUS)
-		JB, err = junglebus.New(
-			junglebus.WithHTTP(JUNGLEBUS),
-		)
-		if err != nil {
-			log.Panic(err)
-		}
-	}
 
-	log.Println("REDISBLK", os.Getenv("REDISBLK"))
-	if opts, err := redis.ParseURL(os.Getenv("REDISBLK")); err != nil {
-		panic(err)
-	} else {
-		DB = redis.NewClient(opts)
-	}
+	BLOCK_API = os.Getenv("BLOCK_API")
+	BLOCK_AUTH_KEY = os.Getenv("BLOCK_AUTH_KEY")
 }
 
-var sub *redis.Client
-
-func StartChaintipSub(ctx context.Context) (chaintip *BlockHeader, c chan *BlockHeader, err error) {
-	c = make(chan *BlockHeader)
-	go func(c chan *BlockHeader) {
-		log.Println("REDISEVT", os.Getenv("REDISEVT"))
-		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
-			log.Println("Failed to parse redis url", err)
-		} else {
-			sub = redis.NewClient(opts)
-			pubSub := sub.Subscribe(context.Background(), ChaintipKey)
-			ch := pubSub.Channel()
-			for {
-				select {
-				case <-ctx.Done():
-					sub.Close()
-					return
-				case msg := <-ch:
-					chaintip := &BlockHeader{}
-					if err := json.Unmarshal([]byte(msg.Payload), chaintip); err != nil {
-						log.Println("Failed to unmarshal chaintip", err)
-					} else {
-						c <- chaintip
-					}
-				}
+func StartChaintipSub(ctx context.Context) {
+	if C == nil {
+		C = make(chan *BlockHeader, 1000)
+	}
+	go func() {
+		for {
+			if _, err := GetChaintip(ctx); err != nil {
+				log.Panic(err)
 			}
 		}
-	}(c)
-
-	chaintip, err = Chaintip(ctx)
-	return chaintip, c, err
+	}()
 }
 
-func Chaintip(ctx context.Context) (*BlockHeader, error) {
-	header := &BlockHeader{}
-	if data, err := DB.Get(ctx, ChaintipKey).Bytes(); err == redis.Nil {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	} else if err = json.Unmarshal(data, &header); err != nil {
+func GetChaintip(ctx context.Context) (*BlockHeader, error) {
+	if time.Since(updated) < 5*time.Second {
+		return Chaintip, nil
+	}
+	headerState := &BlockHeaderState{}
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/tip/longest", BLOCK_API), nil)
+	if err != nil {
 		return nil, err
 	}
-	return header, nil
+	req.Header.Set("Authorization", "Bearer "+BLOCK_AUTH_KEY)
+	if res, err := client.Do(req); err != nil {
+		return nil, err
+	} else {
+		defer res.Body.Close()
+		if err := json.NewDecoder(res.Body).Decode(headerState); err != nil {
+			return nil, err
+		}
+		header := &headerState.Header
+		if C != nil && (Chaintip == nil || header.Hash != Chaintip.Hash) {
+			C <- header
+		}
+		header.Height = headerState.Height
+		// header.ChainWork = headerState.ChainWork
+		Chaintip = header
+		updated = time.Now()
+		return header, nil
+	}
 }
 
 func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
-	score := strconv.FormatUint(uint64(height), 10)
-	if blocks, err := DB.ZRangeByScore(ctx, BlockHeightKey, &redis.ZRangeBy{
-		Min:   score,
-		Max:   score,
-		Count: 1,
-	}).Result(); err != nil {
+	headers := []BlockHeader{}
+	client := &http.Client{}
+	url := fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d", BLOCK_API, height)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
 		return nil, err
-	} else if len(blocks) == 0 {
-		return nil, nil
+	}
+	req.Header.Set("Authorization", "Bearer "+BLOCK_AUTH_KEY)
+	if res, err := client.Do(req); err != nil {
+		return nil, err
 	} else {
-		return BlockByHash(ctx, blocks[0])
+		defer res.Body.Close()
+		if err := json.NewDecoder(res.Body).Decode(&headers); err != nil {
+			return nil, err
+		}
+		for _, header := range headers {
+			if state, err := GetBlockState(ctx, header.Hash.String()); err != nil {
+				return nil, err
+			} else if state.State == "LONGEST_CHAIN" {
+				header.Height = state.Height
+				return &header, nil
+			}
+		}
+		header := &headers[0]
+		header.Height = height
+		return header, nil
 	}
 }
 
 func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
-	block := &BlockHeader{}
-	if data, err := DB.HGet(ctx, BlockHeadersKey, hash).Bytes(); err == redis.Nil {
-		return nil, nil
-	} else if err != nil {
+	if headerState, err := GetBlockState(ctx, hash); err != nil {
 		return nil, err
-	} else if err = json.Unmarshal(data, &block); err != nil {
-		return nil, err
+	} else {
+		header := &headerState.Header
+		header.Height = headerState.Height
+		return header, nil
 	}
-	return block, nil
 }
 
-func Blocks(ctx context.Context, fromBlock uint64, count uint) ([]*BlockHeader, error) {
-	from := strconv.FormatUint(fromBlock, 10)
-	blocks := make([]*BlockHeader, 0, count)
-	if hashes, err := DB.ZRangeByScore(ctx, BlockHeightKey, &redis.ZRangeBy{
-		Min:   from,
-		Max:   "+inf",
-		Count: int64(count),
-	}).Result(); err != nil {
+func GetBlockState(ctx context.Context, hash string) (*BlockHeaderState, error) {
+	headerState := &BlockHeaderState{}
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/header/state/%s", BLOCK_API, hash), nil)
+	if err != nil {
 		return nil, err
-	} else if len(hashes) > 0 {
-		if blockJsons, err := DB.HMGet(ctx, BlockHeadersKey, hashes...).Result(); err != nil {
+	}
+	req.Header.Set("Authorization", "Bearer "+BLOCK_AUTH_KEY)
+	if res, err := client.Do(req); err != nil {
+		return nil, err
+	} else {
+		defer res.Body.Close()
+		if err := json.NewDecoder(res.Body).Decode(headerState); err != nil {
 			return nil, err
-		} else {
-			for _, blockJson := range blockJsons {
-				var block BlockHeader
-				if err := json.Unmarshal([]byte(blockJson.(string)), &block); err != nil {
-					return nil, err
-				}
-				blocks = append(blocks, &block)
-			}
 		}
 	}
-	return blocks, nil
+	return headerState, nil
+}
+
+func Blocks(ctx context.Context, fromBlock uint32, count uint) ([]*BlockHeader, error) {
+	headers := make([]*BlockHeader, 0, count)
+	client := &http.Client{}
+	url := fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d&count=%d", BLOCK_API, fromBlock, count)
+	byHash := make(map[string]*BlockHeader)
+	var results []*BlockHeader
+	if req, err := http.NewRequest("GET", url, nil); err != nil {
+		return nil, err
+	} else {
+		req.Header.Set("Authorization", "Bearer "+BLOCK_AUTH_KEY)
+		if res, err := client.Do(req); err != nil {
+			return nil, err
+		} else {
+			defer res.Body.Close()
+			if err := json.NewDecoder(res.Body).Decode(&headers); err != nil {
+				return nil, err
+			} else if len(headers) == 0 {
+				return headers, nil
+			}
+			for _, header := range headers {
+				byHash[header.Hash.String()] = header
+			}
+			for i := len(headers) - 1; i >= 0; i-- {
+				lastHeader := headers[i]
+				if state, err := GetBlockState(ctx, lastHeader.Hash.String()); err != nil {
+					return nil, err
+				} else if state.State == "LONGEST_CHAIN" {
+					lastHeight := state.Height
+					results = make([]*BlockHeader, lastHeight-fromBlock+1)
+					block := &state.Header
+					block.Height = state.Height
+					results[block.Height-fromBlock] = block
+					for {
+						parent := block
+						if block = byHash[parent.PreviousBlock.String()]; block != nil {
+							block.Height = parent.Height - 1
+							results[block.Height-fromBlock] = block
+						} else {
+							return results, nil
+						}
+					}
+				}
+			}
+
+			return results, nil
+		}
+	}
 }
