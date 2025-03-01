@@ -87,6 +87,14 @@ func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
 		if err := json.NewDecoder(res.Body).Decode(&headers); err != nil {
 			return nil, err
 		}
+		for _, header := range headers {
+			if state, err := GetBlockState(ctx, header.Hash.String()); err != nil {
+				return nil, err
+			} else if state.State == "LONGEST_CHAIN" {
+				header.Height = state.Height
+				return &header, nil
+			}
+		}
 		header := &headers[0]
 		header.Height = height
 		return header, nil
@@ -163,8 +171,6 @@ func Blocks(ctx context.Context, fromBlock uint32, count uint) ([]*BlockHeader, 
 							return results, nil
 						}
 					}
-				} else {
-					continue
 				}
 			}
 
