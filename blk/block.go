@@ -94,6 +94,16 @@ func BlockByHeight(ctx context.Context, height uint32) (*BlockHeader, error) {
 }
 
 func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
+	if headerState, err := GetBlockState(ctx, hash); err != nil {
+		return nil, err
+	} else {
+		header := &headerState.Header
+		header.Height = headerState.Height
+		return header, nil
+	}
+}
+
+func GetBlockState(ctx context.Context, hash string) (*BlockHeaderState, error) {
 	headerState := &BlockHeaderState{}
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/chain/header/state/%s", BLOCK_API, hash), nil)
@@ -108,17 +118,16 @@ func BlockByHash(ctx context.Context, hash string) (*BlockHeader, error) {
 		if err := json.NewDecoder(res.Body).Decode(headerState); err != nil {
 			return nil, err
 		}
-		header := &headerState.Header
-		header.Height = headerState.Height
-		// header.ChainWork = headerState.ChainWork
-		return header, nil
 	}
+	return headerState, nil
 }
 
 func Blocks(ctx context.Context, fromBlock uint32, count uint) ([]*BlockHeader, error) {
 	headers := make([]*BlockHeader, 0, count)
 	client := &http.Client{}
 	url := fmt.Sprintf("%s/api/v1/chain/header/byHeight?height=%d&count=%d", BLOCK_API, fromBlock, count)
+	byHash := make(map[string]*BlockHeader)
+	var results []*BlockHeader
 	if req, err := http.NewRequest("GET", url, nil); err != nil {
 		return nil, err
 	} else {
@@ -129,11 +138,37 @@ func Blocks(ctx context.Context, fromBlock uint32, count uint) ([]*BlockHeader, 
 			defer res.Body.Close()
 			if err := json.NewDecoder(res.Body).Decode(&headers); err != nil {
 				return nil, err
+			} else if len(headers) == 0 {
+				return headers, nil
 			}
-			for i, header := range headers {
-				header.Height = fromBlock + uint32(i)
+			for _, header := range headers {
+				byHash[header.Hash.String()] = header
 			}
-			return headers, nil
+			for i := len(headers) - 1; i >= 0; i-- {
+				lastHeader := headers[i]
+				if state, err := GetBlockState(ctx, lastHeader.Hash.String()); err != nil {
+					return nil, err
+				} else if state.State == "LONGEST_CHAIN" {
+					lastHeight := state.Height
+					results = make([]*BlockHeader, lastHeight-fromBlock+1)
+					block := &state.Header
+					block.Height = state.Height
+					results[block.Height-fromBlock] = block
+					for {
+						parent := block
+						if block = byHash[parent.PreviousBlock.String()]; block != nil {
+							block.Height = parent.Height - 1
+							results[block.Height-fromBlock] = block
+						} else {
+							return results, nil
+						}
+					}
+				} else {
+					continue
+				}
+			}
+
+			return results, nil
 		}
 	}
 }

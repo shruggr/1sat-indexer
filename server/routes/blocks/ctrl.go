@@ -43,7 +43,7 @@ func GetBlockByHeight(c *fiber.Ctx) error {
 }
 
 func GetBlockByHash(c *fiber.Ctx) error {
-	if block, err := blk.BlockByHash(c.Context(), c.Params("hashOrHeight")); err != nil {
+	if block, err := blk.BlockByHash(c.Context(), c.Params("hash")); err != nil {
 		return err
 	} else if block == nil {
 		return c.SendStatus(404)
