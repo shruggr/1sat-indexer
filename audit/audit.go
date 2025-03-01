@@ -133,30 +133,28 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 		if status, err := arc.Status(hexid); err != nil {
 			return err
 		} else if status.Status == 404 {
-			log.Println("Status not found", hexid)
-			// TODO: Handle missing tx
-		} else if status.Status == 200 && status.MerklePath != "" {
-			log.Println("MerklePath found", hexid)
+			if tx.MerklePath, err = jb.LoadProof(ctx, hexid); err != nil {
+				log.Println("LoadProof error", hexid, err)
+			}
+		} else if status.Status == 200 || status.MerklePath != "" {
+			// log.Println("MerklePath found", hexid)
 			if tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath); err != nil {
 				log.Println("NewMerklePathFromHex error", hexid, err)
 			}
-		} else {
-			log.Println("No proof", hexid)
-			// TODO: Handle no proof
+		}
+	}
 
-		}
-	}
-	if rollback && score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano())) {
-		log.Println("Rollback", hexid)
-		if err = ingest.Store.Rollback(ctx, hexid); err != nil {
-			log.Println("Rollback error", hexid, err)
-			return err
-		} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
-			log.Println("Delog error", hexid, err)
-			return err
-		}
-	}
 	if tx.MerklePath == nil {
+		if rollback && (score < 0 || (score > mempoolScore && score < float64(time.Now().Add(-2*time.Hour).UnixNano()))) {
+			log.Println("Rollback", hexid)
+			if err = ingest.Store.Rollback(ctx, hexid); err != nil {
+				log.Println("Rollback error", hexid, err)
+				return err
+			} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
+				log.Println("Delog error", hexid, err)
+				return err
+			}
+		}
 		return nil
 	}
 
