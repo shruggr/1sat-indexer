@@ -203,6 +203,7 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) == 0 && JB != nil {
 		// start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", JUNGLEBUS, txid)
+		// log.Println("Requesting:", url)
 		inflightM.Lock()
 		inflight, ok := inflightMap[url]
 		if !ok {
@@ -285,22 +286,16 @@ func GetSpend(outpoint string) (spend string, err error) {
 }
 
 func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
-	loadedTransactions := map[string]*transaction.Transaction{}
+	log.Println("Building BEEF", txid)
 	if tx, err = LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else if tx.MerklePath == nil {
 		for _, in := range tx.Inputs {
 			if in.SourceTransaction == nil {
 				sourceTxid := in.SourceTXID.String()
-				if sourceTx, ok := loadedTransactions[sourceTxid]; !ok {
-					if sourceTx, err = LoadTx(ctx, sourceTxid, false); err != nil {
-						return nil, err
-					} else {
-						loadedTransactions[sourceTxid] = sourceTx
-						in.SourceTransaction = sourceTx
-					}
-				} else {
-					in.SourceTransaction = sourceTx
+				log.Println("Recursing BEEF", sourceTxid, "from", txid)
+				if in.SourceTransaction, err = BuildTxBEEF(ctx, sourceTxid); err != nil {
+					return nil, err
 				}
 			}
 		}
