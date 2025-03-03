@@ -57,7 +57,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 					<-limiter
 					wg.Done()
 				}()
-				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
+				if err := AuditTransaction(ctx, item.Member, item.Score, true); err != nil {
 					log.Println("AuditTransaction:", err)
 				}
 			}(item)
