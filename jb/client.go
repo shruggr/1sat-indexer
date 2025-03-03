@@ -26,7 +26,8 @@ var Cache *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
 
-var ErrMissingTxn = errors.New("missing-txn")
+var ErrNotFound = errors.New("not-found")
+var ErrBadRequest = errors.New("bad-request")
 var ErrMalformed = errors.New("malformed")
 
 func init() {
@@ -118,7 +119,7 @@ func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.T
 		return
 	}
 	if tx == nil {
-		err = ErrMissingTxn
+		err = ErrNotFound
 		return
 	}
 
@@ -181,7 +182,7 @@ func LoadRemoteRawtx(ctx context.Context, txid string) (rawtx []byte, err error)
 			if resp, err := http.Get(url); err != nil {
 				return nil, err
 			} else if resp.StatusCode == 404 {
-				return nil, ErrMissingTxn
+				return nil, ErrNotFound
 			} else if resp.StatusCode != 200 {
 				return nil, fmt.Errorf("%d %s", resp.StatusCode, rawtx)
 			} else if rawtx, err = io.ReadAll(resp.Body); err != nil {
@@ -202,6 +203,7 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) == 0 && JB != nil {
 		// start := time.Now()
 		url := fmt.Sprintf("%s/v1/transaction/proof/%s/bin", JUNGLEBUS, txid)
+		// log.Println("Requesting:", url)
 		inflightM.Lock()
 		inflight, ok := inflightMap[url]
 		if !ok {
@@ -232,9 +234,9 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
 			return
-		} else if chaintip, err := blk.Chaintip(ctx); err != nil {
+		} else if chaintip, err := blk.GetChaintip(ctx); err != nil {
 			return nil, err
-		} else if proof.BlockHeight < uint32(chaintip.Height) {
+		} else if proof.BlockHeight+5 < uint32(chaintip.Height) {
 			Cache.Set(ctx, cacheKey, prf, 0)
 		} else {
 			Cache.Set(ctx, cacheKey, prf, time.Hour)
@@ -284,22 +286,16 @@ func GetSpend(outpoint string) (spend string, err error) {
 }
 
 func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
-	loadedTransactions := map[string]*transaction.Transaction{}
+	log.Println("Building BEEF", txid)
 	if tx, err = LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else if tx.MerklePath == nil {
 		for _, in := range tx.Inputs {
 			if in.SourceTransaction == nil {
 				sourceTxid := in.SourceTXID.String()
-				if sourceTx, ok := loadedTransactions[sourceTxid]; !ok {
-					if sourceTx, err = LoadTx(ctx, sourceTxid, false); err != nil {
-						return nil, err
-					} else {
-						loadedTransactions[sourceTxid] = sourceTx
-						in.SourceTransaction = sourceTx
-					}
-				} else {
-					in.SourceTransaction = sourceTx
+				log.Println("Recursing BEEF", sourceTxid, "from", txid)
+				if in.SourceTransaction, err = BuildTxBEEF(ctx, sourceTxid); err != nil {
+					return nil, err
 				}
 			}
 		}

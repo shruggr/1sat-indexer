@@ -4,14 +4,12 @@ import (
 	"context"
 	"flag"
 	"log"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	redisstore "github.com/shruggr/1sat-indexer/v5/idx/redis-store"
 	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
 
@@ -33,18 +31,12 @@ var queue = make(chan string, 10000000)
 var processed map[string]struct{}
 var wg sync.WaitGroup
 
-var store *redisstore.RedisStore
-
 func init() {
-	var err error
-	if store, err = redisstore.NewRedisStore(os.Getenv("REDISTXO")); err != nil {
-		panic(err)
-	}
 	ingest = &idx.IngestCtx{
 		Tag:      "origin",
 		Indexers: config.Indexers,
 		Network:  config.Network,
-		Store:    store,
+		Store:    config.Store,
 	}
 }
 
@@ -85,7 +77,7 @@ func main() {
 			Limit: 1000000,
 			// Reverse: true,
 		}
-		if outpoints, err := store.SearchOutpoints(ctx, searchCfg); err != nil {
+		if outpoints, err := config.Store.SearchOutpoints(ctx, searchCfg); err != nil {
 			log.Panic(err)
 		} else {
 			processed = make(map[string]struct{}, 10000)
@@ -145,7 +137,7 @@ func ResolveOrigins(txid string) (err error) {
 		}
 		if len(resolved) > 0 {
 			log.Println("Resolved", resolved)
-			if err := store.Delog(ctx, eventKey, resolved...); err != nil {
+			if err := config.Store.Delog(ctx, eventKey, resolved...); err != nil {
 				log.Panic(err)
 			}
 		}

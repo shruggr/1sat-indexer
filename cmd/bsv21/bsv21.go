@@ -81,7 +81,7 @@ func main() {
 }
 
 func processToken(tokenId string) (err error) {
-	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}, false); err != nil {
+	if tokenTxo, err := store.LoadTxo(ctx, tokenId, []string{onesat.BSV21_TAG}, false, false); err != nil {
 		log.Println("Error loading token", tokenId, err)
 		return err
 	} else if tokenTxo == nil {
@@ -104,7 +104,7 @@ func processToken(tokenId string) (err error) {
 		// 	return nil
 		// }
 
-		if balance, err := store.Balance(ctx, idx.OwnerTxosKey(bsv21.FundAddress)); err != nil {
+		if balance, err := store.Balance(ctx, idx.OwnerKey(bsv21.FundAddress)); err != nil {
 			log.Println("Error getting balance", tokenId, bsv21.FundAddress, err)
 			return err
 		} else if validCount, err := store.CountMembers(ctx, evt.EventKey(onesat.BSV21_TAG, &evt.Event{
