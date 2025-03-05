@@ -19,7 +19,7 @@ func GetChaintip(c *fiber.Ctx) error {
 	if chaintip, err := blk.GetChaintip(context.Background()); err != nil {
 		return err
 	} else {
-		return c.JSON(chaintip)
+		return c.JSON(blk.NewBlockHeaderResponse(chaintip))
 	}
 }
 
@@ -38,7 +38,7 @@ func GetBlockByHeight(c *fiber.Ctx) error {
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")
 		}
-		return c.JSON(block)
+		return c.JSON(blk.NewBlockHeaderResponse(block))
 	}
 }
 
@@ -49,7 +49,7 @@ func GetBlockByHash(c *fiber.Ctx) error {
 		return c.SendStatus(404)
 	} else {
 		c.Set("Cache-Control", "public,max-age=31536000,immutable")
-		return c.JSON(block)
+		return c.JSON(blk.NewBlockHeaderResponse(block))
 	}
 }
 
@@ -59,6 +59,10 @@ func ListBlocks(c *fiber.Ctx) error {
 	} else if headers, err := blk.Blocks(c.Context(), uint32(fromHeight), 10000); err != nil {
 		return err
 	} else {
-		return c.JSON(headers)
+		responses := make([]*blk.BlockHeaderResponse, len(headers))
+		for i, header := range headers {
+			responses[i] = blk.NewBlockHeaderResponse(header)
+		}
+		return c.JSON(responses)
 	}
 }

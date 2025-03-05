@@ -11,7 +11,7 @@ type BlockHeader struct {
 	Version    uint32         `json:"version"`
 	MerkleRoot chainhash.Hash `json:"merkleRoot"`
 	Timestamp  uint32         `json:"creationTimestamp"`
-	Bits       uint32         `json:"-"`
+	Bits       uint32         `json:"difficultyTarget"`
 	Nonce      uint32         `json:"nonce"`
 	// ChainWork     *big.Int       `json:"chainWork"`
 	// CumulatedWork *big.Int       `json:"work"`
@@ -25,4 +25,30 @@ type BlockHeaderState struct {
 	State  string      `json:"state"`
 	// ChainWork *big.Int    `json:"chainWork" swaggertype:"string"`
 	Height uint32 `json:"height"`
+}
+
+type BlockHeaderResponse struct {
+	Height     uint32         `json:"height"`
+	Hash       chainhash.Hash `json:"hash"`
+	Version    uint32         `json:"version"`
+	MerkleRoot chainhash.Hash `json:"merkleRoot"`
+	Timestamp  uint32         `json:"creationTimestamp"`
+	Bits       uint32         `json:"bits"`
+	Nonce      uint32         `json:"nonce"`
+	// ChainWork     *big.Int       `json:"chainWork"`
+	// CumulatedWork *big.Int       `json:"work"`
+	PreviousBlock chainhash.Hash `json:"prevBlockHash"`
+}
+
+func NewBlockHeaderResponse(header *BlockHeader) *BlockHeaderResponse {
+	return &BlockHeaderResponse{
+		Height:        header.Height,
+		Hash:          header.Hash,
+		Version:       header.Version,
+		MerkleRoot:    header.MerkleRoot,
+		Timestamp:     header.Timestamp,
+		Bits:          header.Bits,
+		Nonce:         header.Nonce,
+		PreviousBlock: header.PreviousBlock,
+	}
 }
