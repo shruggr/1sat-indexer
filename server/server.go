@@ -10,6 +10,7 @@ import (
 	"github.com/bitcoin-sv/go-sdk/transaction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -34,6 +35,7 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 	// app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(compress.New())
+	app.Use(cors.New(cors.Config{AllowOrigins: "*"}))
 
 	app.Get("/yo", func(c *fiber.Ctx) error {
 		return c.SendString("yo")

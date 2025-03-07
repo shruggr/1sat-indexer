@@ -70,7 +70,7 @@ func (p *PGStore) UpdateAccount(ctx context.Context, account string, owners []st
 		); err != nil {
 			log.Panic(err)
 			return err
-		} else if err := p.Log(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+		} else if _, err := p.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
 			log.Panic(err)
 			return err
 		}
