@@ -154,11 +154,11 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 				}
 			}
 		}
-	} else if idxCtx.ancestorConfig.Parse {
+	} else if idxCtx.ancestorConfig.Load || idxCtx.ancestorConfig.Parse {
 		parentTxid := outpoint.TxidHex()
 		if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
 			return nil, err
-		} else {
+		} else if idxCtx.ancestorConfig.Parse {
 			spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
 			spendCtx.ParseTxos()
 			txo = spendCtx.Txos[outpoint.Vout()]
@@ -167,6 +167,13 @@ func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error
 					log.Panic(err)
 					return nil, err
 				}
+			}
+		} else {
+			txo = &Txo{
+				Outpoint: outpoint,
+				Satoshis: &tx.Outputs[outpoint.Vout()].Satoshis,
+				// Script:   *tx.Outputs[outpoint.Vout()].LockingScript,
+				Data: make(map[string]*IndexData),
 			}
 		}
 	}

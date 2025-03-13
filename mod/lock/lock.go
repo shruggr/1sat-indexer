@@ -60,7 +60,7 @@ func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDat
 			return &idx.IndexData{
 				Data: lock,
 				Events: []*evt.Event{
-					{Id: "owner", Value: lock.Address},
+					{Id: "own", Value: lock.Address},
 				},
 			}
 		}

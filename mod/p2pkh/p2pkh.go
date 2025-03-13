@@ -36,10 +36,18 @@ func P2PKHFromBytes(data []byte) (*P2PKH, error) {
 
 func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
 	output := idxCtx.Tx.Outputs[vout]
+	txo := idxCtx.Txos[vout]
 
-	if output.LockingScript.IsP2PKH() {
-		if add, err := script.NewAddressFromPublicKeyHash((*output.LockingScript)[3:23], true); err == nil {
-			// txo.AddOwner(add.AddressString)
+	b := []byte(*output.LockingScript)
+	if len(b) >= 25 &&
+		b[0] == script.OpDUP &&
+		b[1] == script.OpHASH160 &&
+		b[2] == script.OpDATA20 &&
+		b[23] == script.OpEQUALVERIFY &&
+		b[24] == script.OpCHECKSIG {
+
+		if add, err := script.NewAddressFromPublicKeyHash(b[3:23], true); err == nil {
+			txo.AddOwner(add.AddressString)
 			return &idx.IndexData{
 				Data: &P2PKH{
 					Address: add.AddressString,

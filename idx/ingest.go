@@ -18,17 +18,18 @@ const ImmutableTxLog = "immutable"
 const RejectedTxLog = "rejected"
 
 type IngestCtx struct {
-	Tag         string
-	Key         string
-	Indexers    []Indexer
-	Concurrency uint
-	Verbose     bool
-	PageSize    uint32
-	Limit       uint32
-	Network     lib.Network
-	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
-	Once        bool
-	Store       TxoStore
+	Tag            string
+	Key            string
+	Indexers       []Indexer
+	Concurrency    uint
+	Verbose        bool
+	PageSize       uint32
+	Limit          uint32
+	Network        lib.Network
+	OnIngest       *func(ctx context.Context, idxCtx *IndexContext) error
+	Once           bool
+	Store          TxoStore
+	AncestorConfig AncestorConfig
 }
 
 func (cfg *IngestCtx) IndexedTags() []string {
@@ -88,10 +89,8 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 								<-limiter
 								done <- txid
 							}()
-							if idxCtx, err := cfg.IngestTxid(ctx, txid, AncestorConfig{
-								Load:  true,
-								Parse: true,
-							}); err != nil {
+							if idxCtx, err := cfg.IngestTxid(ctx, txid, cfg.AncestorConfig); err != nil {
+								log.Panicf("Ingest error %s %v", txid, err)
 								errors <- err
 							} else if cfg.OnIngest != nil {
 								if err := (*cfg.OnIngest)(ctx, idxCtx); err != nil {
