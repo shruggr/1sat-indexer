@@ -91,20 +91,49 @@ func (idxCtx *IndexContext) ParseSpends() (err error) {
 	}
 	for _, txin := range idxCtx.Tx.Inputs {
 		outpoint := lib.NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
-		var spend *Txo
-
-		if txo, err := idxCtx.LoadTxo(outpoint); err != nil {
+		op := outpoint.String()
+		if spend, err := idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false, false); err != nil {
+			log.Panic(err)
 			return err
+		} else if spend != nil {
+			for i, indexer := range idxCtx.Indexers {
+				tag := idxCtx.tags[i]
+				if data, ok := spend.Data[tag]; ok {
+					if data.Data, err = indexer.FromBytes(data.Data.(json.RawMessage)); err != nil {
+						log.Panic(err)
+						return err
+					}
+				}
+			}
+			idxCtx.Spends = append(idxCtx.Spends, spend)
+		} else if idxCtx.ancestorConfig.Load || idxCtx.ancestorConfig.Parse {
+			parentTxid := outpoint.TxidHex()
+			if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
+				return err
+			} else if idxCtx.ancestorConfig.Parse {
+				spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
+				spendCtx.ParseTxos()
+				idxCtx.Spends = append(idxCtx.Spends, spendCtx.Txos[outpoint.Vout()])
+				if idxCtx.ancestorConfig.Save {
+					if err := spendCtx.Store.SaveTxos(spendCtx); err != nil {
+						log.Panic(err)
+						return err
+					}
+				}
+			} else {
+				idxCtx.Spends = append(idxCtx.Spends, &Txo{
+					Outpoint: outpoint,
+					Satoshis: &tx.Outputs[outpoint.Vout()].Satoshis,
+					Script:   *tx.Outputs[outpoint.Vout()].LockingScript,
+					Data:     make(map[string]*IndexData),
+				})
+			}
 		} else {
-			spend = txo
-		}
-		if spend == nil {
-			spend = &Txo{
+			idxCtx.Spends = append(idxCtx.Spends, &Txo{
 				Outpoint: outpoint,
 				Data:     make(map[string]*IndexData),
-			}
+			})
 		}
-		idxCtx.Spends = append(idxCtx.Spends, spend)
 	}
 	return nil
 }
@@ -139,47 +168,6 @@ func (idxCtx *IndexContext) ParseTxos() (err error) {
 	return nil
 }
 
-func (idxCtx *IndexContext) LoadTxo(outpoint *lib.Outpoint) (txo *Txo, err error) {
-	op := outpoint.String()
-	if txo, err = idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false, false); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if txo != nil {
-		for i, indexer := range idxCtx.Indexers {
-			tag := idxCtx.tags[i]
-			if data, ok := txo.Data[tag]; ok {
-				if data.Data, err = indexer.FromBytes(data.Data.(json.RawMessage)); err != nil {
-					log.Panic(err)
-					return nil, err
-				}
-			}
-		}
-	} else if idxCtx.ancestorConfig.Load || idxCtx.ancestorConfig.Parse {
-		parentTxid := outpoint.TxidHex()
-		if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
-			return nil, err
-		} else if idxCtx.ancestorConfig.Parse {
-			spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
-			spendCtx.ParseTxos()
-			txo = spendCtx.Txos[outpoint.Vout()]
-			if idxCtx.ancestorConfig.Save {
-				if err := spendCtx.Store.SaveTxos(spendCtx); err != nil {
-					log.Panic(err)
-					return nil, err
-				}
-			}
-		} else {
-			txo = &Txo{
-				Outpoint: outpoint,
-				Satoshis: &tx.Outputs[outpoint.Vout()].Satoshis,
-				// Script:   *tx.Outputs[outpoint.Vout()].LockingScript,
-				Data: make(map[string]*IndexData),
-			}
-		}
-	}
-	return txo, nil
-}
-
 func (idxCtx *IndexContext) Save() error {
 	if err := idxCtx.Store.SaveTxos(idxCtx); err != nil {
 		log.Panic(err)
@@ -191,21 +179,3 @@ func (idxCtx *IndexContext) Save() error {
 
 	return nil
 }
-
-// func (idxCtx *IndexContext) SaveTxos() error {
-// 	for _, txo := range idxCtx.Txos {
-// 		if err := idxCtx.Store.SaveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return nil
-// }
-
-// func (idxCtx *IndexContext) SaveSpends() error {
-// 	for _, spend := range idxCtx.Spends {
-// 		if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, spend, idxCtx.TxidHex, idxCtx.Height, idxCtx.Idx); err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return nil
-// }
