@@ -188,7 +188,6 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 	if newScore != score {
 		log.Println("Reingest", hexid, score, newScore)
 		if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{
-			Load:  true,
 			Parse: true,
 		}); err != nil {
 			log.Println("IngestTx error", hexid, err)

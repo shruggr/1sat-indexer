@@ -21,9 +21,10 @@ func init() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&ancestorConfig.Load, "l", false, "Load ancestors")
-	flag.BoolVar(&ancestorConfig.Parse, "p", false, "Parse ancestors")
-	flag.BoolVar(&ancestorConfig.Parse, "s", true, "Save ancestors")
+	flag.BoolVar(&ancestorConfig.Parse, "p", true, "Parse ancestors")
+	flag.BoolVar(&ancestorConfig.Save, "s", false, "Save ancestors")
 	flag.Parse()
+	log.Println(ancestorConfig)
 }
 
 func main() {

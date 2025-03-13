@@ -19,6 +19,14 @@ type SQLiteStore struct {
 	DB *sql.DB
 }
 
+var getTxo *sql.Stmt
+var getTxosByTxid *sql.Stmt
+var putLog *sql.Stmt
+var putLogOnce *sql.Stmt
+var getLogScore *sql.Stmt
+var setSpend *sql.Stmt
+var getSpend *sql.Stmt
+
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite3", connString)
 	if err != nil {
@@ -42,14 +50,48 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
+	if getTxo, err = db.Prepare(`SELECT outpoint, height, idx, satoshis, spend
+        FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if getTxosByTxid, err = db.Prepare(`SELECT outpoint
+		FROM txos
+		WHERE outpoint LIKE ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if putLog, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
+        VALUES (?, ?, ?)
+        ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if putLogOnce, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
+        VALUES (?, ?, ?)
+        ON CONFLICT DO NOTHING`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if getLogScore, err = db.Prepare(`SELECT score FROM logs
+        WHERE search_key = ? AND member = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if setSpend, err = db.Prepare(`INSERT INTO txos(outpoint, spend)
+		VALUES (?, ?)
+		ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if getSpend, err = db.Prepare(`SELECT spend FROM txos
+		WHERE outpoint = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	}
 	return &SQLiteStore{DB: db}, nil
 }
 
 func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
-	row := s.DB.QueryRowContext(ctx, `SELECT outpoint, height, idx, satoshis, spend
-        FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`,
-		outpoint,
-	)
+	row := getTxo.QueryRowContext(ctx, outpoint)
+	// s.DB.QueryRowContext(ctx, `SELECT outpoint, height, idx, satoshis, spend
+	//     FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`,
+	// 	outpoint,
+	// )
 	txo := &idx.Txo{}
 	var sats sql.NullInt64
 	var spendTxid string
@@ -129,11 +171,12 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 }
 
 func (s *SQLiteStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT outpoint
-        FROM txos 
-        WHERE outpoint LIKE ?`,
-		fmt.Sprintf("%s%%", txid),
-	)
+	// rows, err := s.DB.QueryContext(ctx, `SELECT outpoint
+	//     FROM txos
+	//     WHERE outpoint LIKE ?`,
+	// 	fmt.Sprintf("%s%%", txid),
+	// )
+	rows, err := getTxosByTxid.QueryContext(ctx, fmt.Sprintf("%s%%", txid))
 	if err != nil {
 		log.Panic(err)
 		return nil, err
@@ -306,26 +349,28 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 				owners[owner] = struct{}{}
 				ownerKey := idx.OwnerKey(owner)
 				ownerKeys = append(ownerKeys, ownerKey)
-				if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
-					VALUES (?, ?, ?)
-					ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
-					ownerKey,
-					idxCtx.TxidHex,
-					score,
-					score,
-				); err != nil {
+				if _, err := putLog.ExecContext(idxCtx.Ctx, ownerKey, idxCtx.TxidHex, score, score); err != nil {
+					// if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
+					// 	VALUES (?, ?, ?)
+					// 	ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
+					// 	ownerKey,
+					// 	idxCtx.TxidHex,
+					// 	score,
+					// 	score,
+					// ); err != nil {
 					log.Panic(err)
 					return err
 				}
 			}
 		}
-		if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO txos(outpoint, spend)
-			VALUES (?, ?)
-			ON CONFLICT (outpoint) DO UPDATE SET spend = ?`,
-			outpoint,
-			idxCtx.TxidHex,
-			idxCtx.TxidHex,
-		); err != nil {
+		if _, err := setSpend.ExecContext(idxCtx.Ctx, outpoint, idxCtx.TxidHex, idxCtx.TxidHex); err != nil {
+			// if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO txos(outpoint, spend)
+			// 	VALUES (?, ?)
+			// 	ON CONFLICT (outpoint) DO UPDATE SET spend = ?`,
+			// 	outpoint,
+			// 	idxCtx.TxidHex,
+			// 	idxCtx.TxidHex,
+			// ); err != nil {
 			log.Panic(err)
 		}
 	}
@@ -359,10 +404,11 @@ func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid st
 }
 
 func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
-	if err := s.DB.QueryRowContext(ctx, `SELECT spend FROM txos 
-        WHERE outpoint = ?`,
-		outpoint,
-	).Scan(&spend); err != nil && err != sql.ErrNoRows {
+	if err := getSpend.QueryRowContext(ctx, outpoint).Scan(&spend); err != nil && err != sql.ErrNoRows {
+		// if err := s.DB.QueryRowContext(ctx, `SELECT spend FROM txos
+		//     WHERE outpoint = ?`,
+		// 	outpoint,
+		// ).Scan(&spend); err != nil && err != sql.ErrNoRows {
 		log.Panic(err)
 		return spend, err
 	}
@@ -411,15 +457,16 @@ func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh
 }
 
 func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
-	if result, err := s.DB.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
-        VALUES (?, ?)
-        ON CONFLICT (outpoint) DO UPDATE 
-            SET spend = ? 
-            WHERE txos.spend = ''`,
-		outpoint,
-		txid,
-		txid,
-	); err != nil {
+	if result, err := setSpend.ExecContext(ctx, outpoint, txid, txid); err != nil {
+		// if result, err := s.DB.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
+		//     VALUES (?, ?)
+		//     ON CONFLICT (outpoint) DO UPDATE
+		//         SET spend = ?
+		//         WHERE txos.spend = ''`,
+		// 	outpoint,
+		// 	txid,
+		// 	txid,
+		// ); err != nil {
 		log.Panicln("insert Err:", err)
 		return false, err
 	} else if changes, err := result.RowsAffected(); err != nil {
