@@ -189,13 +189,110 @@ func (p *PGStore) LoadData(ctx context.Context, outpoint string, tags []string) 
 	return data, nil
 }
 
-func (p *PGStore) SaveTxos(idxCtx *idx.IndexContext) error {
+func (p *PGStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
+	// ctx := idxCtx.Ctx
+	// outpoints := make([]string, 0, len(idxCtx.Txos))
+	// batchSize := 1000
+	// insTxosRows := make([]string, 0, batchSize)
+	// insTxoArgs := make([]any, 0, 3*batchSize+2)
+	// insTxoArgs = append(insTxoArgs, idxCtx.Height, idxCtx.Idx)
+	// insLogsRows := make([]string, 0, batchSize)
+	// insLogsArgs := make([]any, 0, 2*batchSize+1)
+	// insLogsArgs = append(insLogsArgs, idxCtx.Score)
+	// insDataRows := make([]string, 0, batchSize)
+	// insDataArgs := make([]any, 0, 3*batchSize)
 	for _, txo := range idxCtx.Txos {
+		// outpoint := txo.Outpoint.String()
+		// outpoints = append(outpoints, outpoint)
+		// // score := idx.HeightScore(height, blkIdx)
+
+		// txo.Events = make([]string, 0, 100)
+		// datas := make(map[string]any, len(txo.Data))
+		// for tag, data := range txo.Data {
+		// 	if data != nil {
+		// 		txo.Events = append(txo.Events, evt.TagKey(tag))
+		// 		for _, event := range data.Events {
+		// 			txo.Events = append(txo.Events, evt.EventKey(tag, event))
+		// 		}
+		// 		if data.Data != nil {
+		// 			if datas[tag], err = data.MarshalJSON(); err != nil {
+		// 				log.Panic(err)
+		// 				return err
+		// 			}
+		// 		}
+		// 	}
+		// }
+		// for _, owner := range txo.Owners {
+		// 	if owner == "" {
+		// 		continue
+		// 	}
+		// 	txo.Events = append(txo.Events, idx.OwnerKey(owner))
+		// }
+
+		// insTxosRows = append(insTxosRows, fmt.Sprintf("($%d, $1, $2, $%d, $%d)", len(insTxoArgs)+1, len(insTxoArgs)+2, len(insTxoArgs)+3))
+		// insTxoArgs = append(insTxoArgs, outpoint, *txo.Satoshis, txo.Owners)
+
+		// if len(txo.Events) > 0 {
+		// 	for _, event := range txo.Events {
+		// 		insLogsRows = append(insLogsRows, fmt.Sprintf("($%d, $%d, $1)", len(insLogsArgs)+1, len(insLogsArgs)+2))
+		// 		insLogsArgs = append(insLogsArgs, event, outpoint)
+		// 	}
+		// }
+
+		// for tag, data := range datas {
+		// 	insDataRows = append(insDataRows, fmt.Sprintf("($%d, $%d, $%d)", len(insDataArgs)+1, len(insDataArgs)+2, len(insDataArgs)+3))
+		// 	insDataArgs = append(insDataArgs, outpoint, tag, data)
+		// }
+
+		// if vout == len(idxCtx.Txos)-1 || len(insTxosRows) >= batchSize {
+		// 	sql := "INSERT INTO txos(outpoint, height, idx, satoshis, owners) VALUES " +
+		// 		strings.Join(insTxosRows, ", ") +
+		// 		" ON CONFLICT (outpoint) DO UPDATE SET height = EXCLUDED.height, idx = EXCLUDED.idx, satoshis = EXCLUDED.satoshis, owners = EXCLUDED.owners"
+		// 	if _, err := p.DB.Exec(ctx, sql, insTxoArgs...); err != nil {
+		// 		log.Println("insTxo Err:", err, sql, insTxoArgs)
+		// 		log.Panic(err)
+		// 		return err
+		// 	}
+		// 	insTxosRows = make([]string, 0, batchSize)
+		// 	insTxoArgs = make([]any, 0, 3*len(idxCtx.Txos)+2)
+		// 	insTxoArgs = append(insTxoArgs, idxCtx.Height, idxCtx.Idx)
+		// }
+		// if vout == len(idxCtx.Txos)-1 || len(insLogsRows) >= batchSize {
+		// 	sql := "INSERT INTO logs(search_key, member, score) VALUES " +
+		// 		strings.Join(insLogsRows, ", ") +
+		// 		" ON CONFLICT (search_key, member) DO UPDATE SET score = EXCLUDED.score"
+		// 	if _, err := p.DB.Exec(ctx, sql, insLogsArgs...); err != nil {
+		// 		log.Println("insLogs Err:", err, sql, insLogsArgs)
+		// 		log.Panic(err)
+		// 		return err
+		// 	}
+		// 	insLogsRows = make([]string, 0, batchSize)
+		// 	insLogsArgs = make([]any, 0, 2*len(idxCtx.Txos)+1)
+		// 	insLogsArgs = append(insLogsArgs, idxCtx.Score)
+		// }
+		// if vout == len(idxCtx.Txos)-1 || len(insDataRows) >= batchSize {
+		// 	sql := "INSERT INTO txo_data(outpoint, tag, data) VALUES " +
+		// 		strings.Join(insDataRows, ", ") +
+		// 		" ON CONFLICT (outpoint, tag) DO UPDATE SET data = EXCLUDED.data"
+		// 	if _, err := p.DB.Exec(ctx, sql, insDataArgs...); err != nil {
+		// 		log.Println("insData Err:", err, sql, insDataArgs)
+		// 		log.Panic(err)
+		// 		return err
+		// 	}
+		// 	insDataRows = make([]string, 0, batchSize)
+		// 	insDataArgs = make([]any, 0, 3*len(idxCtx.Txos))
+		// }
 		if err := p.saveTxo(idxCtx.Ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
 			log.Panic(err)
 			return err
 		}
 	}
+
+	// for vout, txo := range idxCtx.Txos {
+	// 	for _, event := range txo.Events {
+	// 		evt.Publish(ctx, event, outpoints[vout])
+	// 	}
+	// }
 	return nil
 }
 
@@ -275,7 +372,7 @@ func (p *PGStore) saveTxo(ctx context.Context, txo *idx.Txo, height uint32, blkI
 func (p *PGStore) SaveSpends(idxCtx *idx.IndexContext) error {
 	score := idx.HeightScore(idxCtx.Height, idxCtx.Idx)
 	spends := make(map[string]string, len(idxCtx.Spends))
-	outpoints := make([]interface{}, 0, len(idxCtx.Spends))
+	outpoints := make([]any, 0, len(idxCtx.Spends))
 	owners := make(map[string]struct{}, 10)
 	ownerKyes := make([]string, 0, 10)
 	for _, spend := range idxCtx.Spends {

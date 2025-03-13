@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Launch file",
             "type": "go",
@@ -16,7 +17,7 @@
                 // "-t=b1d6decfecfebadec22c9e98109aad3e58f7e4ac799024d1e5bf3afe3b95d0f2",
                 // "-s=783968",
                 // "-m=1"
-                "-p=8088"
+                // "-p=8088"
             //     "-tag=locks",
             //     "-t=9c554bf80570ba371a558127612960e885de846a607329277452e668a4be6c76",
             //     "-s=801000",

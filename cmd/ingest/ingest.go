@@ -22,25 +22,24 @@ func init() {
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&ancestorConfig.Load, "l", false, "Load ancestors")
 	flag.BoolVar(&ancestorConfig.Parse, "p", false, "Parse ancestors")
-	flag.BoolVar(&ancestorConfig.Parse, "s", false, "Save ancestors")
+	flag.BoolVar(&ancestorConfig.Parse, "s", true, "Save ancestors")
 	flag.Parse()
-
 }
 
 func main() {
 	ctx := context.Background()
 	ingest := &idx.IngestCtx{
-		Tag:         TAG,
-		Key:         idx.QueueKey(QUEUE),
-		Indexers:    config.Indexers,
-		Network:     config.Network,
-		Concurrency: CONCURRENCY,
-		Once:        true,
-		// Verbose:     VERBOSE > 0,
-		Verbose:        true,
+		Tag:            TAG,
+		Key:            idx.QueueKey(QUEUE),
+		Indexers:       config.Indexers,
+		Network:        config.Network,
+		Concurrency:    CONCURRENCY,
+		Once:           true,
 		Store:          config.Store,
 		PageSize:       10000,
 		AncestorConfig: ancestorConfig,
+		Verbose:        true,
+		// Verbose:     VERBOSE > 0,
 	}
 
 	if err := (ingest).Exec(ctx); err != nil {
