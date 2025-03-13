@@ -37,7 +37,7 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		log.Panic(err)
 		return nil, err
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout = 60000"); err != nil {
+	if _, err := db.Exec("PRAGMA busy_timeout = 10000"); err != nil {
 		log.Panic(err)
 		return nil, err
 	}
