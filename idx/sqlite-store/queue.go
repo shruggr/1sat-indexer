@@ -15,7 +15,7 @@ func (s *SQLiteStore) Delog(ctx context.Context, key string, members ...string) 
 }
 
 func (s *SQLiteStore) Log(ctx context.Context, key string, member string, score float64) (err error) {
-	_, err = putLog.ExecContext(ctx, key, member, score, score)
+	_, err = insLog.ExecContext(ctx, key, member, score, score)
 	// _, err = s.DB.ExecContext(ctx, `INSERT INTO logs(search_key, member, score)
 	//     VALUES (?, ?, ?)
 	//     ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
@@ -28,29 +28,11 @@ func (s *SQLiteStore) Log(ctx context.Context, key string, member string, score 
 }
 
 func (s *SQLiteStore) LogMany(ctx context.Context, key string, logs []idx.Log) error {
-	// tx, err := s.DB.BeginTx(ctx, nil)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer tx.Rollback()
-
-	// stmt, err := tx.PrepareContext(ctx, `INSERT INTO logs(search_key, member, score)
-	//     VALUES (?, ?, ?)
-	//     ON CONFLICT (search_key, member) DO UPDATE SET score = ?`)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer stmt.Close()
-
 	for _, l := range logs {
-		if _, err := putLog.ExecContext(ctx, key, l.Member, l.Score, l.Score); err != nil {
+		if _, err := insLog.ExecContext(ctx, key, l.Member, l.Score, l.Score); err != nil {
 			return err
 		}
 	}
-
-	// if err := tx.Commit(); err != nil {
-	// 	return err
-	// }
 	return nil
 }
 

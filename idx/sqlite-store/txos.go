@@ -21,11 +21,14 @@ type SQLiteStore struct {
 
 var getTxo *sql.Stmt
 var getTxosByTxid *sql.Stmt
-var putLog *sql.Stmt
+var insTxo *sql.Stmt
+var insLog *sql.Stmt
+var insData *sql.Stmt
 var putLogOnce *sql.Stmt
 var getLogScore *sql.Stmt
 var setSpend *sql.Stmt
 var getSpend *sql.Stmt
+var insOwnerAcct *sql.Stmt
 
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite3", connString)
@@ -54,14 +57,25 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
         FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
 		log.Panic(err)
 		return nil, err
+	} else if insTxo, err = db.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (outpoint)
+		DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if insLog, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
+		VALUES (?, ?, ?)
+		ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if insData, err = db.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
+		VALUES (?, ?, ?)
+		ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
 	} else if getTxosByTxid, err = db.Prepare(`SELECT outpoint
 		FROM txos
 		WHERE outpoint LIKE ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if putLog, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
-        VALUES (?, ?, ?)
-        ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if putLogOnce, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
@@ -80,6 +94,11 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		return nil, err
 	} else if getSpend, err = db.Prepare(`SELECT spend FROM txos
 		WHERE outpoint = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if insOwnerAcct, err = db.Prepare(`INSERT INTO owner_accounts(owner, account)
+		VALUES (?, ?)
+		ON CONFLICT(owner) DO UPDATE SET account = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
 	}
@@ -130,8 +149,8 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 	}
 	rows, err := s.DB.QueryContext(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
         FROM txos 
-        WHERE outpoint IN (?)`,
-		outpoints,
+        WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
+		toInterfaceSlice(outpoints)...,
 	)
 	if err != nil {
 		log.Panic(err)
@@ -229,22 +248,22 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 	t, err := s.DB.Begin()
 	defer t.Rollback()
 
-	insTxos, err := t.PrepareContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+	insTxo, err := t.PrepareContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (outpoint)
 		DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`)
 	if err != nil {
 		log.Panic(err)
 	}
-	defer insTxos.Close()
+	defer insTxo.Close()
 
-	insLogs, err := t.PrepareContext(ctx, `INSERT INTO logs(search_key, member, score)
+	insLog, err := t.PrepareContext(ctx, `INSERT INTO logs(search_key, member, score)
 		VALUES (?, ?, ?)
 		ON CONFLICT (search_key, member) DO UPDATE SET score = ?`)
 	if err != nil {
 		log.Panic(err)
 	}
-	defer insLogs.Close()
+	defer insLog.Close()
 
 	insData, err := t.PrepareContext(ctx, `INSERT INTO txo_data(outpoint, tag, data)
 		VALUES (?, ?, ?)
@@ -286,7 +305,7 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		if err != nil {
 			log.Panic(err)
 		}
-		if _, err := insTxos.ExecContext(ctx,
+		if _, err := insTxo.ExecContext(ctx,
 			outpoint,
 			idxCtx.Height,
 			idxCtx.Idx,
@@ -302,7 +321,7 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		}
 
 		for _, event := range txo.Events {
-			if _, err := insLogs.ExecContext(ctx,
+			if _, err := insLog.ExecContext(ctx,
 				event,
 				outpoint,
 				score,
@@ -349,7 +368,7 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 				owners[owner] = struct{}{}
 				ownerKey := idx.OwnerKey(owner)
 				ownerKeys = append(ownerKeys, ownerKey)
-				if _, err := putLog.ExecContext(idxCtx.Ctx, ownerKey, idxCtx.TxidHex, score, score); err != nil {
+				if _, err := insLog.ExecContext(idxCtx.Ctx, ownerKey, idxCtx.TxidHex, score, score); err != nil {
 					// if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
 					// 	VALUES (?, ?, ?)
 					// 	ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,

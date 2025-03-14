@@ -50,38 +50,17 @@ func (s *SQLiteStore) AcctOwners(ctx context.Context, account string) ([]string,
 }
 
 func (s *SQLiteStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Panic(err)
-		return err
-	}
-	defer tx.Rollback()
-
 	for _, owner := range owners {
 		if owner == "" {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO owner_accounts(owner, account)
-            VALUES (?, ?)
-            ON CONFLICT(owner) DO UPDATE 
-                SET account = ?
-                WHERE owner_accounts.account != ?`,
-			owner,
-			account,
-			account,
-			account,
-		); err != nil {
+		if _, err := insOwnerAcct.ExecContext(ctx, owner, account, account); err != nil {
 			log.Panic(err)
 			return err
 		} else if _, err := s.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
 			log.Panic(err)
 			return err
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		log.Panic(err)
-		return err
 	}
 	return nil
 }

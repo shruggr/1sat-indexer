@@ -37,7 +37,7 @@ func main() {
 		Concurrency:    CONCURRENCY,
 		Once:           true,
 		Store:          config.Store,
-		PageSize:       10000,
+		PageSize:       1000,
 		AncestorConfig: ancestorConfig,
 		Verbose:        true,
 		// Verbose:     VERBOSE > 0,
