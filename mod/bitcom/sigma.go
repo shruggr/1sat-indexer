@@ -9,10 +9,10 @@ import (
 	"log"
 	"strconv"
 
-	bsm "github.com/bitcoin-sv/go-sdk/compat/bsm"
-	"github.com/bitcoin-sv/go-sdk/script"
-	"github.com/bitcoin-sv/go-sdk/transaction"
-	"github.com/bitcoin-sv/go-sdk/util"
+	bsm "github.com/bsv-blockchain/go-sdk/compat/bsm"
+	"github.com/bsv-blockchain/go-sdk/script"
+	"github.com/bsv-blockchain/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 

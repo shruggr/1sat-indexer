@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	bip32 "github.com/bitcoin-sv/go-sdk/compat/bip32"
+	bip32 "github.com/bsv-blockchain/go-sdk/compat/bip32"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
