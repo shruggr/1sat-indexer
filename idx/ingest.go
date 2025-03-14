@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -58,7 +58,6 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 		case txid := <-done:
 			delete(inflight, txid)
 			ingestcount++
-			wg.Done()
 		case err := <-errors:
 			log.Println("Error", err)
 			return err
@@ -87,6 +86,7 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 						go func(txid string) {
 							defer func() {
 								<-limiter
+								wg.Done()
 								done <- txid
 							}()
 							if idxCtx, err := cfg.IngestTxid(ctx, txid, cfg.AncestorConfig); err != nil {
@@ -105,6 +105,7 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 						}(txid)
 					}
 				}
+				// wg.Wait()
 			}
 		}
 	}
