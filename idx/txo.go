@@ -2,6 +2,7 @@ package idx
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
@@ -39,4 +40,10 @@ func (txo *Txo) LoadScript(ctx context.Context) error {
 		txo.Script = *tx.Outputs[txo.Outpoint.Vout()].LockingScript
 	}
 	return nil
+}
+
+type TxoData struct {
+	Satoshis *uint64                    `json:"s,omitempty"`
+	Owners   []string                   `json:"o,omitempty"`
+	Data     map[string]json.RawMessage `json:"d,omitempty"`
 }

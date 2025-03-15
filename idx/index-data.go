@@ -8,9 +8,9 @@ import (
 )
 
 type IndexData struct {
-	Data   any
-	Events []*evt.Event
-	Deps   []*lib.Outpoint
+	Data   any             `json:"data,omitempty"`
+	Events []*evt.Event    `json:"events,omitempty"`
+	Deps   []*lib.Outpoint `json:"deps,omitempty"`
 }
 
 func (id IndexData) MarshalJSON() ([]byte, error) {
