@@ -18,7 +18,7 @@ type Txo struct {
 	OutAcc   uint64                `json:"-"`
 	Owners   []string              `json:"owners,omitempty"`
 	Events   []string              `json:"events,omitempty"`
-	Data     map[string]*IndexData `json:"data,omitempty" msgpack:"-"`
+	Data     map[string]*IndexData `json:"data" msgpack:"-"`
 	Score    float64               `json:"score,omitempty" msgpack:"-"`
 	Spend    string                `json:"spend,omitempty" msgpack:"-"`
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shruggr/1sat-indexer/v5/evt"
@@ -16,7 +15,8 @@ import (
 )
 
 type SQLiteStore struct {
-	DB *sql.DB
+	WRITEDB *sql.DB
+	READDB  *sql.DB
 }
 
 var getTxo *sql.Stmt
@@ -31,78 +31,81 @@ var getSpend *sql.Stmt
 var insOwnerAcct *sql.Stmt
 
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", connString)
+	writeDb, err := sql.Open("sqlite3", connString)
 	if err != nil {
 		log.Panic(err)
 		return nil, err
 	}
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxIdleTime(15 * time.Second)
+	writeDb.SetMaxOpenConns(1)
 
-	// Set PRAGMA commands
-	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	}
-	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	}
-	if _, err := db.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+	readDb, err := sql.Open("sqlite3", connString)
+	if err != nil {
 		log.Panic(err)
 		return nil, err
 	}
 
-	if getTxo, err = db.Prepare(`SELECT outpoint, height, idx, satoshis, spend
+	// Set PRAGMA commands
+	if _, err := readDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if _, err := writeDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if _, err := writeDb.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		log.Panic(err)
+		return nil, err
+	}
+
+	if getTxo, err = readDb.Prepare(`SELECT outpoint, height, idx, satoshis, spend
         FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if insTxo, err = db.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+	} else if insTxo, err = writeDb.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (outpoint)
 		DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if insLog, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
+	} else if insLog, err = writeDb.Prepare(`INSERT INTO logs(search_key, member, score)
 		VALUES (?, ?, ?)
 		ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if insData, err = db.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
+	} else if insData, err = writeDb.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
 		VALUES (?, ?, ?)
 		ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if getTxosByTxid, err = db.Prepare(`SELECT outpoint
+	} else if getTxosByTxid, err = readDb.Prepare(`SELECT outpoint
 		FROM txos
 		WHERE outpoint LIKE ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if putLogOnce, err = db.Prepare(`INSERT INTO logs(search_key, member, score)
+	} else if putLogOnce, err = writeDb.Prepare(`INSERT INTO logs(search_key, member, score)
         VALUES (?, ?, ?)
         ON CONFLICT DO NOTHING`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if getLogScore, err = db.Prepare(`SELECT score FROM logs
+	} else if getLogScore, err = readDb.Prepare(`SELECT score FROM logs
         WHERE search_key = ? AND member = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if setSpend, err = db.Prepare(`INSERT INTO txos(outpoint, spend)
+	} else if setSpend, err = writeDb.Prepare(`INSERT INTO txos(outpoint, spend)
 		VALUES (?, ?)
 		ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if getSpend, err = db.Prepare(`SELECT spend FROM txos
+	} else if getSpend, err = readDb.Prepare(`SELECT spend FROM txos
 		WHERE outpoint = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if insOwnerAcct, err = db.Prepare(`INSERT INTO owner_accounts(owner, account)
+	} else if insOwnerAcct, err = writeDb.Prepare(`INSERT INTO owner_accounts(owner, account)
 		VALUES (?, ?)
 		ON CONFLICT(owner) DO UPDATE SET account = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
 	}
-	return &SQLiteStore{DB: db}, nil
+	return &SQLiteStore{WRITEDB: writeDb, READDB: readDb}, nil
 }
 
 func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
@@ -147,7 +150,7 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
+	rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
         FROM txos 
         WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
 		toInterfaceSlice(outpoints)...,
@@ -190,11 +193,6 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 }
 
 func (s *SQLiteStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string, script bool, spend bool) ([]*idx.Txo, error) {
-	// rows, err := s.DB.QueryContext(ctx, `SELECT outpoint
-	//     FROM txos
-	//     WHERE outpoint LIKE ?`,
-	// 	fmt.Sprintf("%s%%", txid),
-	// )
 	rows, err := getTxosByTxid.QueryContext(ctx, fmt.Sprintf("%s%%", txid))
 	if err != nil {
 		log.Panic(err)
@@ -219,7 +217,7 @@ func (s *SQLiteStore) LoadData(ctx context.Context, outpoint string, tags []stri
 	data = make(idx.IndexDataMap, len(tags))
 
 	args := append([]interface{}{outpoint}, toInterfaceSlice(tags)...)
-	if rows, err := s.DB.QueryContext(ctx, `SELECT tag, data
+	if rows, err := s.READDB.QueryContext(ctx, `SELECT tag, data
         FROM txo_data
         WHERE outpoint=? AND tag IN (`+placeholders(len(tags))+`)`,
 		args...,
@@ -245,7 +243,7 @@ func (s *SQLiteStore) LoadData(ctx context.Context, outpoint string, tags []stri
 
 func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 	ctx := idxCtx.Ctx
-	t, err := s.DB.Begin()
+	t, err := s.WRITEDB.Begin()
 	defer t.Rollback()
 
 	insTxo, err := t.PrepareContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
@@ -401,7 +399,7 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 }
 
 func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
-	if _, err := s.DB.ExecContext(ctx, `UPDATE txos
+	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos
         SET spend = ''
         WHERE outpoint = ? AND spend = ?`,
 		spend.Outpoint.String(),
@@ -410,7 +408,7 @@ func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid st
 		log.Panic(err)
 		return err
 	} else {
-		if _, err := s.DB.ExecContext(ctx, `DELETE FROM logs
+		if _, err := s.WRITEDB.ExecContext(ctx, `DELETE FROM logs
             WHERE member = ?`,
 			txid,
 		); err != nil {
@@ -424,10 +422,6 @@ func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid st
 
 func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
 	if err := getSpend.QueryRowContext(ctx, outpoint).Scan(&spend); err != nil && err != sql.ErrNoRows {
-		// if err := s.DB.QueryRowContext(ctx, `SELECT spend FROM txos
-		//     WHERE outpoint = ?`,
-		// 	outpoint,
-		// ).Scan(&spend); err != nil && err != sql.ErrNoRows {
 		log.Panic(err)
 		return spend, err
 	}
@@ -445,7 +439,7 @@ func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh boo
 
 func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
-	if rows, err := s.DB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
+	if rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
         WHERE outpoint IN (?)`,
 		outpoints,
 	); err != nil {
@@ -497,7 +491,7 @@ func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (b
 }
 
 func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string) error {
-	if _, err := s.DB.ExecContext(ctx, `UPDATE txos 
+	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos 
         SET spend = ''
         WHERE outpoint IN (?)`,
 		outpoints,
@@ -509,7 +503,7 @@ func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string) error
 }
 
 func (s *SQLiteStore) Rollback(ctx context.Context, txid string) error {
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.WRITEDB.BeginTx(ctx, nil)
 	if err != nil {
 		log.Panic(err)
 		return err
