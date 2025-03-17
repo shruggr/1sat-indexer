@@ -39,8 +39,8 @@ func main() {
 		Store:          config.Store,
 		PageSize:       1000,
 		AncestorConfig: ancestorConfig,
-		Verbose:        true,
-		// Verbose:     VERBOSE > 0,
+		// Verbose:        true,
+		Verbose: VERBOSE > 0,
 	}
 
 	if err := (ingest).Exec(ctx); err != nil {
