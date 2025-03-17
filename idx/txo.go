@@ -2,6 +2,7 @@ package idx
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 
 	"github.com/shruggr/1sat-indexer/v5/jb"
@@ -46,4 +47,19 @@ type TxoData struct {
 	Satoshis *uint64                    `json:"s,omitempty"`
 	Owners   []string                   `json:"o,omitempty"`
 	Data     map[string]json.RawMessage `json:"d,omitempty"`
+}
+
+func (td *TxoData) Value() (driver.Value, error) {
+	if val, err := json.Marshal(td); err != nil {
+		return nil, err
+	} else {
+		return string(val), nil
+	}
+}
+
+func (td *TxoData) Scan(value interface{}) error {
+	if err := json.Unmarshal([]byte(value.(string)), td); err != nil {
+		return err
+	}
+	return nil
 }

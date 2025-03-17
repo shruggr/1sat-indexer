@@ -2,7 +2,6 @@ package sqlitestore
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"slices"
 	"strings"
@@ -21,9 +20,6 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 	} else {
 		sqlBuilder.WriteString(`SELECT logs.member, logs.score FROM logs `)
 	}
-	if cfg.FilterSpent {
-		sqlBuilder.WriteString("JOIN txos ON logs.member = txos.outpoint AND txos.spend='' ")
-	}
 
 	if len(cfg.Keys) == 1 {
 		args = append(args, cfg.Keys[0])
@@ -35,25 +31,25 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 	if cfg.From != nil {
 		args = append(args, *cfg.From)
 		if cfg.Reverse {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score < ? "))
+			sqlBuilder.WriteString("AND score < ? ")
 		} else {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score > ? "))
+			sqlBuilder.WriteString("AND score > ? ")
 		}
 	}
 
 	if cfg.To != nil {
 		args = append(args, *cfg.To)
 		if cfg.Reverse {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score > ? "))
+			sqlBuilder.WriteString("AND score > ? ")
 		} else {
-			sqlBuilder.WriteString(fmt.Sprintf("AND score < ? "))
+			sqlBuilder.WriteString("AND score < ? ")
 		}
 	}
 
 	if cfg.ComparisonType == idx.ComparisonAND && len(cfg.Keys) > 1 {
 		args = append(args, len(cfg.Keys))
 		sqlBuilder.WriteString("GROUP BY logs.member ")
-		sqlBuilder.WriteString(fmt.Sprintf("HAVING COUNT(1) = ? "))
+		sqlBuilder.WriteString("HAVING COUNT(1) = ? ")
 	}
 
 	if cfg.Reverse {
@@ -64,7 +60,7 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 
 	if cfg.Limit > 0 {
 		args = append(args, cfg.Limit)
-		sqlBuilder.WriteString(fmt.Sprintf("LIMIT ? "))
+		sqlBuilder.WriteString("LIMIT ? ")
 	}
 
 	sql := sqlBuilder.String()
@@ -73,7 +69,7 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 		log.Println(sql, args)
 		start = time.Now()
 	}
-	rows, err := s.DB.QueryContext(ctx, sql, args...)
+	rows, err := s.WRITEDB.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,15 +83,6 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 		var result idx.Log
 		if err = rows.Scan(&result.Member, &result.Score); err != nil {
 			return nil, err
-		}
-		if cfg.RefreshSpends {
-			log.Println("Refreshing spends", result.Member)
-			if spend, err := jb.GetSpend(result.Member); err != nil {
-				return nil, err
-			} else if spend != "" {
-				s.SetNewSpend(ctx, result.Member, spend)
-				continue
-			}
 		}
 		results = append(results, &result)
 	}
@@ -137,6 +124,20 @@ func (s *SQLiteStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos 
 		var outpoints []string
 		if outpoints, err = s.SearchOutpoints(ctx, cfg); err != nil {
 			return nil, err
+		}
+		if cfg.FilterSpent {
+			if spends, err := s.GetSpends(ctx, outpoints, cfg.RefreshSpends); err != nil {
+				return nil, err
+			} else {
+				var filtered []string
+				for i, outpoint := range outpoints {
+					if spends[i] != "" {
+						filtered = append(filtered, outpoint)
+					}
+				}
+				outpoints = filtered
+			}
+			cfg.IncludeSpend = false
 		}
 		if txos, err = s.LoadTxos(ctx, outpoints, cfg.IncludeTags, cfg.IncludeScript, cfg.IncludeSpend); err != nil {
 			return nil, err
@@ -257,7 +258,7 @@ func (s *SQLiteStore) Balance(ctx context.Context, key string) (balance int64, e
 }
 
 func (s *SQLiteStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
-	row := s.DB.QueryRowContext(ctx, `SELECT COUNT(1)
+	row := s.WRITEDB.QueryRowContext(ctx, `SELECT COUNT(1)
         FROM logs
         WHERE key = ?`,
 		key,

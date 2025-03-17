@@ -85,6 +85,9 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 						wg.Add(1)
 						go func(txid string) {
 							defer func() {
+								if r := recover(); r != nil {
+									log.Panicln("Recovered in f", r)
+								}
 								<-limiter
 								wg.Done()
 								done <- txid

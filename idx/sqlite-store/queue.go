@@ -10,7 +10,7 @@ import (
 func (s *SQLiteStore) Delog(ctx context.Context, key string, members ...string) error {
 	query := `DELETE FROM logs WHERE search_key = ? AND member IN (` + placeholders(len(members)) + `)`
 	args := append([]interface{}{key}, toInterfaceSlice(members)...)
-	_, err := s.DB.ExecContext(ctx, query, args...)
+	_, err := s.WRITEDB.ExecContext(ctx, query, args...)
 	return err
 }
 
