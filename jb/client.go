@@ -286,14 +286,12 @@ func GetSpend(outpoint string) (spend string, err error) {
 }
 
 func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction, err error) {
-	log.Println("Building BEEF", txid)
 	if tx, err = LoadTx(ctx, txid, true); err != nil {
 		return nil, err
 	} else if tx.MerklePath == nil {
 		for _, in := range tx.Inputs {
 			if in.SourceTransaction == nil {
 				sourceTxid := in.SourceTXID.String()
-				log.Println("Recursing BEEF", sourceTxid, "from", txid)
 				if in.SourceTransaction, err = BuildTxBEEF(ctx, sourceTxid); err != nil {
 					return nil, err
 				}
