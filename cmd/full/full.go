@@ -61,8 +61,11 @@ func main() {
 	}
 
 	go func() {
-		if err := (ingest).Exec(ctx); err != nil {
-			log.Println("Ingest error", err)
+		for {
+			if err := ingest.Exec(ctx); err != nil {
+				log.Println("Ingest error", err)
+				time.Sleep(5 * time.Second)
+			}
 		}
 	}()
 
