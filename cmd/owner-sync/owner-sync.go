@@ -24,8 +24,6 @@ func init() {
 	store = config.Store
 }
 
-var mempoolScore = idx.HeightScore(50000000, 0)
-
 func main() {
 	for {
 		if results, err := store.Search(ctx, &idx.SearchCfg{
@@ -55,7 +53,7 @@ func main() {
 							}
 							if score, err := store.LogScore(ctx, idx.LogKey(TAG), addTxn.Txid); err != nil && err != redis.Nil {
 								log.Panic(err)
-							} else if score > 0 && score <= mempoolScore {
+							} else if score > 0 && score <= idx.MempoolScore {
 								log.Println("Skipping", addTxn.Txid, score)
 								continue
 							}

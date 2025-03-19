@@ -12,6 +12,8 @@ import (
 var JUNGLEBUS string
 var JB *junglebus.Client
 
+var MempoolScore = HeightScore(50000000, 0)
+
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)

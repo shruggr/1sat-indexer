@@ -1,3 +1,4 @@
+go build -o full.run cmd/full/full.go
 go build -o audit.run cmd/audit/audit.go
 go build -o ingest.run cmd/ingest/ingest.go
 # go build -o origin.run cmd/origin/origin.go
