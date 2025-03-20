@@ -65,12 +65,16 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 
 	response := broadcast.Broadcast(c.Context(), ingest.Store, tx, b)
 	if response.Success {
-		if _, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
+		log.Println("Broadcast Success", tx.TxID().String())
+		if _, err := ingest.ParseTx(c.Context(), tx, idx.AncestorConfig{Parse: true}); err != nil {
 			log.Println("Ingest Error", tx.TxID().String(), err)
 			// } else if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
 			// 	log.Println("Ingest Error", tx.TxID().String(), err)
 			// } else {
 			// 	log.Println("Ingest", tx.TxID().String(), string(out))
+		}
+		if err := ingest.Queue(c.Context(), tx.TxID().String()); err != nil {
+			log.Println("Queue Error", tx.TxID().String(), err)
 		}
 		evt.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
 	} else {

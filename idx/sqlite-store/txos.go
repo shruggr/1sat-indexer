@@ -30,6 +30,15 @@ var setSpend *sql.Stmt
 var getSpend *sql.Stmt
 var insOwnerAcct *sql.Stmt
 
+type WriteRequest struct {
+	Ctx  context.Context
+	Stmt *sql.Stmt
+	Args []interface{}
+	Done chan error
+}
+
+var writeQueue = make(chan *WriteRequest, 1000)
+
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	writeDb, err := sql.Open("sqlite3", connString)
 	if err != nil {
@@ -60,6 +69,14 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
         FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
 		log.Panic(err)
 		return nil, err
+	} else if getLogScore, err = readDb.Prepare(`SELECT score FROM logs
+        WHERE search_key = ? AND member = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
+	} else if getSpend, err = readDb.Prepare(`SELECT spend FROM txos
+		WHERE outpoint = ?`); err != nil {
+		log.Panic(err)
+		return nil, err
 	} else if insTxo, err = writeDb.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (outpoint)
@@ -86,17 +103,9 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
         ON CONFLICT DO NOTHING`); err != nil {
 		log.Panic(err)
 		return nil, err
-	} else if getLogScore, err = readDb.Prepare(`SELECT score FROM logs
-        WHERE search_key = ? AND member = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
 	} else if setSpend, err = writeDb.Prepare(`INSERT INTO txos(outpoint, spend)
 		VALUES (?, ?)
 		ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if getSpend, err = readDb.Prepare(`SELECT spend FROM txos
-		WHERE outpoint = ?`); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if insOwnerAcct, err = writeDb.Prepare(`INSERT INTO owner_accounts(owner, account)
@@ -110,10 +119,6 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
 	row := getTxo.QueryRowContext(ctx, outpoint)
-	// s.DB.QueryRowContext(ctx, `SELECT outpoint, height, idx, satoshis, spend
-	//     FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`,
-	// 	outpoint,
-	// )
 	txo := &idx.Txo{}
 	var sats sql.NullInt64
 	var spendTxid string
@@ -303,17 +308,24 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		if err != nil {
 			log.Panic(err)
 		}
-		if _, err := insTxo.ExecContext(ctx,
-			outpoint,
-			idxCtx.Height,
-			idxCtx.Idx,
-			*txo.Satoshis,
-			string(owners),
-			idxCtx.Height,
-			idxCtx.Idx,
-			*txo.Satoshis,
-			string(owners),
-		); err != nil {
+		req := &WriteRequest{
+			Ctx:  ctx,
+			Stmt: insTxo,
+			Args: []interface{}{
+				outpoint,
+				idxCtx.Height,
+				idxCtx.Idx,
+				*txo.Satoshis,
+				string(owners),
+				idxCtx.Height,
+				idxCtx.Idx,
+				*txo.Satoshis,
+				string(owners),
+			},
+			Done: make(chan error),
+		}
+		writeQueue <- req
+		if err := <-req.Done; err != nil {
 			log.Panicln("insert txos Err:", err)
 			return err
 		}
@@ -470,16 +482,16 @@ func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh
 }
 
 func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
-	if result, err := setSpend.ExecContext(ctx, outpoint, txid, txid); err != nil {
-		// if result, err := s.DB.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
-		//     VALUES (?, ?)
-		//     ON CONFLICT (outpoint) DO UPDATE
-		//         SET spend = ?
-		//         WHERE txos.spend = ''`,
-		// 	outpoint,
-		// 	txid,
-		// 	txid,
-		// ); err != nil {
+	// if result, err := setSpend.ExecContext(ctx, outpoint, txid, txid); err != nil {
+	if result, err := s.DB.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
+		    VALUES (?, ?)
+		    ON CONFLICT (outpoint) DO UPDATE
+		        SET spend = ?
+		        WHERE txos.spend = ''`,
+		outpoint,
+		txid,
+		txid,
+	); err != nil {
 		log.Panicln("insert Err:", err)
 		return false, err
 	} else if changes, err := result.RowsAffected(); err != nil {

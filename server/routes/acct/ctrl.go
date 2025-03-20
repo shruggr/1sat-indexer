@@ -32,8 +32,8 @@ func RegisterAccount(c *fiber.Ctx) error {
 
 	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
 		return err
-	} else if err := idx.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
-		return err
+		// } else if err := idx.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+		// 	return err
 	}
 
 	return c.SendStatus(204)

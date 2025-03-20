@@ -104,7 +104,9 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 	}
 
+	log.Println("Do Broadcast", response.Txid)
 	if success, failure := broadcaster.Broadcast(tx); failure != nil {
+		log.Println("Broadcast Failed", response.Txid, failure)
 		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
 		if status, err := strconv.Atoi(failure.Code); err == nil {
 			response.Status = uint32(status)

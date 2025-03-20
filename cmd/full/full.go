@@ -139,16 +139,7 @@ func main() {
 		}, config.Broadcaster, true)
 	}()
 
-	app := server.Initialize(&idx.IngestCtx{
-		Tag:         idx.IngestTag,
-		Indexers:    config.Indexers,
-		Concurrency: CONCURRENCY,
-		Network:     config.Network,
-		Once:        true,
-		Store:       config.Store,
-		// Verbose:     VERBOSE > 0,
-		Verbose: true,
-	}, config.Broadcaster)
+	app := server.Initialize(ingest, config.Broadcaster)
 	log.Println("Listening on", PORT)
 	app.Listen(fmt.Sprintf(":%d", PORT))
 }
