@@ -72,7 +72,7 @@ func (s *SQLiteStore) Search(ctx context.Context, cfg *idx.SearchCfg) (results [
 		log.Println(sql, args)
 		start = time.Now()
 	}
-	rows, err := s.READDB.QueryContext(ctx, sql, args...)
+	rows, err := s.rDB.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +256,7 @@ func (s *SQLiteStore) Balance(ctx context.Context, key string) (balance int64, e
 }
 
 func (s *SQLiteStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
-	row := s.READDB.QueryRowContext(ctx, `SELECT COUNT(1)
+	row := s.rDB.QueryRowContext(ctx, `SELECT COUNT(1)
         FROM logs
         WHERE key = ?`,
 		key,

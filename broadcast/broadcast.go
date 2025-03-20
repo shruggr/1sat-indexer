@@ -139,7 +139,7 @@ func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string,
 		}
 	}
 	if len(deletes) > 0 {
-		if err := store.UnsetSpends(ctx, deletes); err != nil {
+		if err := store.UnsetSpends(ctx, deletes, txid); err != nil {
 			return err
 		}
 	}

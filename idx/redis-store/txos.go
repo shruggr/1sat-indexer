@@ -360,7 +360,7 @@ func (r *RedisStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bo
 	return r.DB.HSetNX(ctx, SpendsKey, outpoint, txid).Result()
 }
 
-func (r *RedisStore) UnsetSpends(ctx context.Context, outpoints []string) error {
+func (r *RedisStore) UnsetSpends(ctx context.Context, outpoints []string, _ string) error {
 	return r.DB.HDel(ctx, SpendsKey, outpoints...).Err()
 }
 

@@ -15,8 +15,32 @@ import (
 )
 
 type SQLiteStore struct {
-	WRITEDB *sql.DB
-	READDB  *sql.DB
+	rDB   *sql.DB
+	wDB   *sql.DB
+	queue chan *execRequest
+}
+
+func (s *SQLiteStore) Close() error {
+	if err := s.wDB.Close(); err != nil {
+		log.Panic(err)
+		return err
+	} else if err := s.rDB.Close(); err != nil {
+		log.Panic(err)
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) execute(ctx context.Context, stmt *sql.Stmt, args ...interface{}) (sql.Result, error) {
+	req := &execRequest{
+		Ctx:  ctx,
+		Stmt: stmt,
+		Args: args,
+		Done: make(chan *execResult),
+	}
+	s.queue <- req
+	result := <-req.Done
+	return result.Result, result.Error
 }
 
 var getTxo *sql.Stmt
@@ -29,92 +53,138 @@ var getLogScore *sql.Stmt
 var setSpend *sql.Stmt
 var getSpend *sql.Stmt
 var insOwnerAcct *sql.Stmt
+var unsetSpend *sql.Stmt
+var unsetTxSpend *sql.Stmt
+var delTxLogs *sql.Stmt
+var delTxData *sql.Stmt
+var delTxos *sql.Stmt
+var delLog *sql.Stmt
+var delMemeberLogs *sql.Stmt
 
-type WriteRequest struct {
+type execRequest struct {
 	Ctx  context.Context
 	Stmt *sql.Stmt
 	Args []interface{}
-	Done chan error
+	Done chan *execResult
 }
 
-var writeQueue = make(chan *WriteRequest, 1000)
+type execResult struct {
+	Result sql.Result
+	Error  error
+}
 
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
-	writeDb, err := sql.Open("sqlite3", connString)
-	if err != nil {
-		log.Panic(err)
-		return nil, err
-	}
-	writeDb.SetMaxOpenConns(1)
-
-	readDb, err := sql.Open("sqlite3", connString)
-	if err != nil {
-		log.Panic(err)
-		return nil, err
+	store := &SQLiteStore{
+		queue: make(chan *execRequest, 1000),
 	}
 
-	// Set PRAGMA commands
-	if _, err := readDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if _, err := writeDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if _, err := writeDb.Exec("PRAGMA busy_timeout = 10000"); err != nil {
-		log.Panic(err)
-		return nil, err
-	}
+	go func() {
+		var err error
+		if store.wDB, err = sql.Open("sqlite3", connString); err != nil {
+			log.Panic(err)
+		}
+		store.wDB.SetMaxOpenConns(1)
 
-	if getTxo, err = readDb.Prepare(`SELECT outpoint, height, idx, satoshis, spend
-        FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if getLogScore, err = readDb.Prepare(`SELECT score FROM logs
-        WHERE search_key = ? AND member = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if getSpend, err = readDb.Prepare(`SELECT spend FROM txos
-		WHERE outpoint = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if insTxo, err = writeDb.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (outpoint)
-		DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if insLog, err = writeDb.Prepare(`INSERT INTO logs(search_key, member, score)
-		VALUES (?, ?, ?)
-		ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if insData, err = writeDb.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
-		VALUES (?, ?, ?)
-		ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if getTxosByTxid, err = readDb.Prepare(`SELECT outpoint
-		FROM txos
-		WHERE outpoint LIKE ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if putLogOnce, err = writeDb.Prepare(`INSERT INTO logs(search_key, member, score)
-        VALUES (?, ?, ?)
-        ON CONFLICT DO NOTHING`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if setSpend, err = writeDb.Prepare(`INSERT INTO txos(outpoint, spend)
-		VALUES (?, ?)
-		ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if insOwnerAcct, err = writeDb.Prepare(`INSERT INTO owner_accounts(owner, account)
-		VALUES (?, ?)
-		ON CONFLICT(owner) DO UPDATE SET account = ?`); err != nil {
-		log.Panic(err)
-		return nil, err
-	}
-	return &SQLiteStore{WRITEDB: writeDb, READDB: readDb}, nil
+		if store.rDB, err = sql.Open("sqlite3", connString); err != nil {
+			log.Panic(err)
+		}
+
+		// Set PRAGMA commands
+		if _, err := store.rDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+			log.Panic(err)
+		} else if _, err := store.wDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+			log.Panic(err)
+		} else if _, err := store.wDB.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+			log.Panic(err)
+		}
+
+		if getTxo, err = store.rDB.Prepare(`SELECT outpoint, height, idx, satoshis, spend
+			FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
+			log.Panic(err)
+		} else if getLogScore, err = store.rDB.Prepare(`SELECT score FROM logs
+			WHERE search_key = ? AND member = ?`); err != nil {
+			log.Panic(err)
+		} else if getSpend, err = store.rDB.Prepare(`SELECT spend FROM txos
+			WHERE outpoint = ?`); err != nil {
+			log.Panic(err)
+		} else if insTxo, err = store.wDB.Prepare(`INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT (outpoint)
+			DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`); err != nil {
+			log.Panic(err)
+		} else if insLog, err = store.wDB.Prepare(`INSERT INTO logs(search_key, member, score)
+			VALUES (?, ?, ?)
+			ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
+			log.Panic(err)
+		} else if insData, err = store.wDB.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
+			VALUES (?, ?, ?)
+			ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
+			log.Panic(err)
+		} else if getTxosByTxid, err = store.rDB.Prepare(`SELECT outpoint
+			FROM txos
+			WHERE outpoint LIKE ?`); err != nil {
+			log.Panic(err)
+		} else if putLogOnce, err = store.wDB.Prepare(`INSERT INTO logs(search_key, member, score)
+			VALUES (?, ?, ?)
+			ON CONFLICT DO NOTHING`); err != nil {
+			log.Panic(err)
+		} else if setSpend, err = store.wDB.Prepare(`INSERT INTO txos(outpoint, spend)
+			VALUES (?, ?)
+			ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
+			log.Panic(err)
+		} else if insOwnerAcct, err = store.wDB.Prepare(`INSERT INTO owner_accounts(owner, account)
+			VALUES (?, ?)
+			ON CONFLICT(owner) DO UPDATE SET account = ?`); err != nil {
+			log.Panic(err)
+		} else if insLog, err = store.wDB.Prepare(`INSERT INTO logs(search_key, member, score)
+			VALUES (?, ?, ?)
+			ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
+			log.Panic(err)
+		} else if insData, err = store.wDB.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
+			VALUES (?, ?, ?)
+			ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
+			log.Panic(err)
+		} else if unsetSpend, err = store.wDB.Prepare(`UPDATE txos
+			SET spend = ''
+			WHERE outpoint = ? AND spend = ?`,
+		); err != nil {
+			log.Panic(err)
+		} else if unsetTxSpend, err = store.wDB.Prepare(`UPDATE txos
+			SET spend = ''
+			WHERE spend = ?`,
+		); err != nil {
+			log.Panic(err)
+		} else if delTxLogs, err = store.wDB.Prepare(`DELETE FROM logs
+        	WHERE member LIKE ?`,
+		); err != nil {
+			log.Panic(err)
+		} else if delTxData, err = store.wDB.Prepare(`DELETE FROM txo_data
+        	WHERE outpoint LIKE ?`,
+		); err != nil {
+			log.Panic(err)
+		} else if delTxos, err = store.wDB.Prepare(`DELETE FROM txos
+        	WHERE outpoint LIKE ?`,
+		); err != nil {
+			log.Panic(err)
+		} else if delLog, err = store.wDB.Prepare(`DELETE FROM logs
+			WHERE search_key = ? AND member = ?`); err != nil {
+			log.Panic(err)
+		} else if delMemeberLogs, err = store.wDB.Prepare(`DELETE FROM logs
+			WHERE member = ?`); err != nil {
+			log.Panic(err)
+		}
+		for req := range store.queue {
+			result, err := req.Stmt.ExecContext(req.Ctx, req.Args...)
+			if err != nil {
+				log.Println("exec err:", err)
+			}
+			req.Done <- &execResult{
+				Result: result,
+				Error:  err,
+			}
+		}
+	}()
+	return store, nil
 }
 
 func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
@@ -155,7 +225,7 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 	if len(outpoints) == 0 {
 		return nil, nil
 	}
-	rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
+	rows, err := s.rDB.QueryContext(ctx, `SELECT outpoint, height, idx, satoshis, owners, spend
         FROM txos 
         WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
 		toInterfaceSlice(outpoints)...,
@@ -222,7 +292,7 @@ func (s *SQLiteStore) LoadData(ctx context.Context, outpoint string, tags []stri
 	data = make(idx.IndexDataMap, len(tags))
 
 	args := append([]interface{}{outpoint}, toInterfaceSlice(tags)...)
-	if rows, err := s.READDB.QueryContext(ctx, `SELECT tag, data
+	if rows, err := s.rDB.QueryContext(ctx, `SELECT tag, data
         FROM txo_data
         WHERE outpoint=? AND tag IN (`+placeholders(len(tags))+`)`,
 		args...,
@@ -248,33 +318,33 @@ func (s *SQLiteStore) LoadData(ctx context.Context, outpoint string, tags []stri
 
 func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 	ctx := idxCtx.Ctx
-	t, err := s.WRITEDB.Begin()
-	defer t.Rollback()
+	// t, err := s.store.WRITE.Begin()
+	// defer t.Rollback()
 
-	insTxo, err := t.PrepareContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (outpoint)
-		DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer insTxo.Close()
+	// insTxo, err := t.PrepareContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
+	// 	VALUES (?, ?, ?, ?, ?)
+	// 	ON CONFLICT (outpoint)
+	// 	DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// defer insTxo.Close()
 
-	insLog, err := t.PrepareContext(ctx, `INSERT INTO logs(search_key, member, score)
-		VALUES (?, ?, ?)
-		ON CONFLICT (search_key, member) DO UPDATE SET score = ?`)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer insLog.Close()
+	// insLog, err := t.PrepareContext(ctx, `INSERT INTO logs(search_key, member, score)
+	// 	VALUES (?, ?, ?)
+	// 	ON CONFLICT (search_key, member) DO UPDATE SET score = ?`)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// defer insLog.Close()
 
-	insData, err := t.PrepareContext(ctx, `INSERT INTO txo_data(outpoint, tag, data)
-		VALUES (?, ?, ?)
-		ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer insData.Close()
+	// insData, err := t.PrepareContext(ctx, `INSERT INTO txo_data(outpoint, tag, data)
+	// 	VALUES (?, ?, ?)
+	// 	ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`)
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
+	// defer insData.Close()
 	outpoints := make([]string, 0, len(idxCtx.Txos))
 	for _, txo := range idxCtx.Txos {
 		outpoint := txo.Outpoint.String()
@@ -308,30 +378,25 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		if err != nil {
 			log.Panic(err)
 		}
-		req := &WriteRequest{
-			Ctx:  ctx,
-			Stmt: insTxo,
-			Args: []interface{}{
-				outpoint,
-				idxCtx.Height,
-				idxCtx.Idx,
-				*txo.Satoshis,
-				string(owners),
-				idxCtx.Height,
-				idxCtx.Idx,
-				*txo.Satoshis,
-				string(owners),
-			},
-			Done: make(chan error),
-		}
-		writeQueue <- req
-		if err := <-req.Done; err != nil {
+		if _, err := s.execute(
+			ctx,
+			insTxo,
+			outpoint,
+			idxCtx.Height,
+			idxCtx.Idx,
+			*txo.Satoshis,
+			string(owners),
+			idxCtx.Height,
+			idxCtx.Idx,
+			*txo.Satoshis,
+			string(owners),
+		); err != nil {
 			log.Panicln("insert txos Err:", err)
 			return err
 		}
 
 		for _, event := range txo.Events {
-			if _, err := insLog.ExecContext(ctx,
+			if _, err := s.execute(ctx, insLog,
 				event,
 				outpoint,
 				score,
@@ -343,7 +408,7 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		}
 
 		for tag, data := range datas {
-			if _, err := insData.ExecContext(ctx,
+			if _, err := s.execute(ctx, insData,
 				outpoint,
 				tag,
 				data,
@@ -354,9 +419,9 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 			}
 		}
 	}
-	if err := t.Commit(); err != nil {
-		log.Panic(err)
-	}
+	// if err := t.Commit(); err != nil {
+	// 	log.Panic(err)
+	// }
 	for vout, txo := range idxCtx.Txos {
 		for _, event := range txo.Events {
 			evt.Publish(ctx, event, outpoints[vout])
@@ -378,29 +443,13 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 				owners[owner] = struct{}{}
 				ownerKey := idx.OwnerKey(owner)
 				ownerKeys = append(ownerKeys, ownerKey)
-				if _, err := insLog.ExecContext(idxCtx.Ctx, ownerKey, idxCtx.TxidHex, score, score); err != nil {
-					// if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO logs(search_key, member, score)
-					// 	VALUES (?, ?, ?)
-					// 	ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
-					// 	ownerKey,
-					// 	idxCtx.TxidHex,
-					// 	score,
-					// 	score,
-					// ); err != nil {
-					log.Panic(err)
-					return err
+				if _, err := s.execute(idxCtx.Ctx, insLog, ownerKey, idxCtx.TxidHex, score, score); err != nil {
+					log.Panicln("insLog", err)
 				}
 			}
 		}
-		if _, err := setSpend.ExecContext(idxCtx.Ctx, outpoint, idxCtx.TxidHex, idxCtx.TxidHex); err != nil {
-			// if _, err := s.DB.ExecContext(idxCtx.Ctx, `INSERT INTO txos(outpoint, spend)
-			// 	VALUES (?, ?)
-			// 	ON CONFLICT (outpoint) DO UPDATE SET spend = ?`,
-			// 	outpoint,
-			// 	idxCtx.TxidHex,
-			// 	idxCtx.TxidHex,
-			// ); err != nil {
-			log.Panic(err)
+		if _, err := s.execute(idxCtx.Ctx, setSpend, outpoint, idxCtx.TxidHex, idxCtx.TxidHex); err != nil {
+			log.Panicln("setSpend", err)
 		}
 	}
 
@@ -411,22 +460,15 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 }
 
 func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid string) error {
-	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos
-        SET spend = ''
-        WHERE outpoint = ? AND spend = ?`,
+	if _, err := s.execute(ctx, unsetSpend, []interface{}{
 		spend.Outpoint.String(),
 		txid,
-	); err != nil {
-		log.Panic(err)
+	}); err != nil {
+		log.Panicln("unsetSpend", err)
 		return err
-	} else {
-		if _, err := s.WRITEDB.ExecContext(ctx, `DELETE FROM logs
-            WHERE member = ?`,
-			txid,
-		); err != nil {
-			log.Panic(err)
-			return err
-		}
+	} else if _, err := s.execute(ctx, delMemeberLogs, txid); err != nil {
+		log.Panicln("delMemeberLogs", err)
+		return err
 	}
 
 	return nil
@@ -434,7 +476,7 @@ func (s *SQLiteStore) RollbackSpend(ctx context.Context, spend *idx.Txo, txid st
 
 func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh bool) (spend string, err error) {
 	if err := getSpend.QueryRowContext(ctx, outpoint).Scan(&spend); err != nil && err != sql.ErrNoRows {
-		log.Panic(err)
+		log.Panicln("getSpend", err)
 		return spend, err
 	}
 	if spend == "" && refresh {
@@ -451,11 +493,11 @@ func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh boo
 
 func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
-	if rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
+	if rows, err := s.rDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
         WHERE outpoint IN (?)`,
 		outpoints,
 	); err != nil {
-		log.Panic(err)
+		log.Panicln("GetSpend", err)
 		return nil, err
 	} else {
 		defer rows.Close()
@@ -482,76 +524,42 @@ func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh
 }
 
 func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
-	// if result, err := setSpend.ExecContext(ctx, outpoint, txid, txid); err != nil {
-	if result, err := s.DB.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
-		    VALUES (?, ?)
-		    ON CONFLICT (outpoint) DO UPDATE
-		        SET spend = ?
-		        WHERE txos.spend = ''`,
-		outpoint,
-		txid,
-		txid,
-	); err != nil {
+	if spend, err := s.GetSpend(ctx, outpoint, false); err != nil {
+		return false, err
+	} else if spend == txid {
+		return true, nil
+	} else if spend != "" {
+		return false, nil
+	}
+	if _, err := s.execute(ctx, setSpend, outpoint, txid, txid); err != nil {
 		log.Panicln("insert Err:", err)
 		return false, err
-	} else if changes, err := result.RowsAffected(); err != nil {
-		log.Panic(err)
-		return false, err
 	} else {
-		return changes > 0, nil
+		return true, nil
 	}
 }
 
-func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string) error {
-	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos 
-        SET spend = ''
-        WHERE outpoint IN (?)`,
-		outpoints,
-	); err != nil {
-		log.Panic(err)
+func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string, txid string) error {
+	if _, err := s.execute(ctx, unsetTxSpend, txid); err != nil {
+		log.Panicln("UnsetSpends", err)
 		return err
 	}
 	return nil
 }
 
 func (s *SQLiteStore) Rollback(ctx context.Context, txid string) error {
-	tx, err := s.WRITEDB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Panic(err)
-		return err
-	}
-	defer tx.Rollback()
-
 	txidPattern := fmt.Sprintf("%s%%", txid)
-	if _, err = tx.ExecContext(ctx, `UPDATE txos
-        SET spend = ''
-        WHERE spend = ?`,
-		txid,
-	); err != nil {
-		log.Panic(err)
+	if _, err := s.execute(ctx, unsetTxSpend, txid); err != nil {
+		log.Panicln("unsetTxSpend", err)
 		return err
-	} else if _, err = tx.ExecContext(ctx, `DELETE FROM logs
-        WHERE member LIKE ?`,
-		txidPattern,
-	); err != nil {
-		log.Panic(err)
+	} else if _, err := s.execute(ctx, delTxLogs, txidPattern); err != nil {
+		log.Panicln("delTxLogs", err)
 		return err
-	} else if _, err = tx.ExecContext(ctx, `DELETE FROM txo_data
-        WHERE outpoint LIKE ?`,
-		txidPattern,
-	); err != nil {
-		log.Panic(err)
+	} else if _, err = s.execute(ctx, delTxData, txidPattern); err != nil {
+		log.Panicln("delTxData", err)
 		return err
-	} else if _, err = tx.ExecContext(ctx, `DELETE FROM txos
-        WHERE outpoint LIKE ?`,
-		txidPattern,
-	); err != nil {
-		log.Panic(err)
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		log.Panic(err)
+	} else if _, err = s.execute(ctx, delTxos, txidPattern); err != nil {
+		log.Panicln("delTxos", err)
 		return err
 	}
 	return nil

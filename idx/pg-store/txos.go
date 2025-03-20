@@ -503,11 +503,12 @@ func (p *PGStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool,
 	}
 }
 
-func (p *PGStore) UnsetSpends(ctx context.Context, outpoints []string) error {
+func (p *PGStore) UnsetSpends(ctx context.Context, outpoints []string, txid string) error {
 	if _, err := p.insert(ctx, `UPDATE txos 
 		SET spend = ''
-		WHERE outpoint = ANY($1)`,
+		WHERE outpoint = ANY($1) AND spend = $2`,
 		outpoints,
+		txid,
 	); err != nil {
 		log.Panic(err)
 		return err

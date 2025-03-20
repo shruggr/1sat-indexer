@@ -12,7 +12,7 @@ func (s *SQLiteStore) AcctsByOwners(ctx context.Context, owners []string) ([]str
 		return nil, nil
 	}
 	query := `SELECT account FROM owner_accounts WHERE owner IN (` + placeholders(len(owners)) + `)`
-	rows, err := s.READDB.QueryContext(ctx, query, toInterfaceSlice(owners)...)
+	rows, err := s.rDB.QueryContext(ctx, query, toInterfaceSlice(owners)...)
 	if err != nil {
 		log.Panic(err)
 		return nil, err
@@ -31,7 +31,7 @@ func (s *SQLiteStore) AcctsByOwners(ctx context.Context, owners []string) ([]str
 }
 
 func (s *SQLiteStore) AcctOwners(ctx context.Context, account string) ([]string, error) {
-	rows, err := s.READDB.QueryContext(ctx, `SELECT owner FROM owner_accounts WHERE account = ?`, account)
+	rows, err := s.rDB.QueryContext(ctx, `SELECT owner FROM owner_accounts WHERE account = ?`, account)
 	if err != nil {
 		log.Panic(err)
 		return nil, err
@@ -54,7 +54,7 @@ func (s *SQLiteStore) UpdateAccount(ctx context.Context, account string, owners 
 		if owner == "" {
 			continue
 		}
-		if _, err := insOwnerAcct.ExecContext(ctx, owner, account, account); err != nil {
+		if _, err := s.execute(ctx, insOwnerAcct, owner, account, account); err != nil {
 			log.Panic(err)
 			return err
 		} else if _, err := s.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
