@@ -31,7 +31,11 @@ func (s *SQLiteStore) Close() error {
 	return nil
 }
 
+// var execCount = 0
+
 func (s *SQLiteStore) execute(ctx context.Context, stmt *sql.Stmt, args ...interface{}) (sql.Result, error) {
+	// execCount++
+	// log.Println("execCount", execCount)
 	req := &execRequest{
 		Ctx:  ctx,
 		Stmt: stmt,
@@ -40,6 +44,7 @@ func (s *SQLiteStore) execute(ctx context.Context, stmt *sql.Stmt, args ...inter
 	}
 	s.queue <- req
 	result := <-req.Done
+	// log.Println("execDone", execCount)
 	return result.Result, result.Error
 }
 
@@ -135,14 +140,6 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		} else if insOwnerAcct, err = store.wDB.Prepare(`INSERT INTO owner_accounts(owner, account)
 			VALUES (?, ?)
 			ON CONFLICT(owner) DO UPDATE SET account = ?`); err != nil {
-			log.Panic(err)
-		} else if insLog, err = store.wDB.Prepare(`INSERT INTO logs(search_key, member, score)
-			VALUES (?, ?, ?)
-			ON CONFLICT (search_key, member) DO UPDATE SET score = ?`); err != nil {
-			log.Panic(err)
-		} else if insData, err = store.wDB.Prepare(`INSERT INTO txo_data(outpoint, tag, data)
-			VALUES (?, ?, ?)
-			ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`); err != nil {
 			log.Panic(err)
 		} else if unsetSpend, err = store.wDB.Prepare(`UPDATE txos
 			SET spend = ''
@@ -524,6 +521,7 @@ func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh
 }
 
 func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (bool, error) {
+	log.Println("SetNewSpend", outpoint, txid)
 	if spend, err := s.GetSpend(ctx, outpoint, false); err != nil {
 		return false, err
 	} else if spend == txid {
@@ -549,16 +547,23 @@ func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string, txid 
 
 func (s *SQLiteStore) Rollback(ctx context.Context, txid string) error {
 	txidPattern := fmt.Sprintf("%s%%", txid)
+	log.Println("unsetTxSpend", txid)
 	if _, err := s.execute(ctx, unsetTxSpend, txid); err != nil {
 		log.Panicln("unsetTxSpend", err)
 		return err
-	} else if _, err := s.execute(ctx, delTxLogs, txidPattern); err != nil {
+	}
+	log.Println("delTxLogs", txidPattern)
+	if _, err := s.execute(ctx, delTxLogs, txidPattern); err != nil {
 		log.Panicln("delTxLogs", err)
 		return err
-	} else if _, err = s.execute(ctx, delTxData, txidPattern); err != nil {
+	}
+	log.Println("delTxData", txidPattern)
+	if _, err := s.execute(ctx, delTxData, txidPattern); err != nil {
 		log.Panicln("delTxData", err)
 		return err
-	} else if _, err = s.execute(ctx, delTxos, txidPattern); err != nil {
+	}
+	log.Println("delTxos", txidPattern)
+	if _, err := s.execute(ctx, delTxos, txidPattern); err != nil {
 		log.Panicln("delTxos", err)
 		return err
 	}

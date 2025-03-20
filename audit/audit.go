@@ -42,7 +42,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	cfg.From = &from
 	cfg.To = &to
 	cfg.Limit = 100000
-	limiter := make(chan struct{}, 20)
+	limiter := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Println(err)
@@ -149,10 +149,14 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 			if err = ingest.Store.Rollback(ctx, hexid); err != nil {
 				log.Println("Rollback error", hexid, err)
 				return err
-			} else if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
-				log.Println("Delog error", hexid, err)
-				return err
+			} else {
+				log.Println("Log rollback", hexid)
+				if err := ingest.Store.Log(ctx, idx.RollbackTxLog, hexid, score); err != nil {
+					log.Println("Rollback log error", hexid, err)
+					return err
+				}
 			}
+			log.Println("Rolledback", hexid)
 		}
 		return nil
 	}
@@ -204,5 +208,6 @@ func AuditTransaction(ctx context.Context, hexid string, score float64, rollback
 			return err
 		}
 	}
+
 	return nil
 }

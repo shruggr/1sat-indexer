@@ -49,8 +49,8 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			}
 		}
 	}
+	log.Println("Spends Loaded", response.Txid)
 
-	log.Println("Load Spends", response.Txid)
 	rawtx := tx.Bytes()
 	if fees, err := tx.GetFee(); err != nil {
 		response.Error = err.Error()
@@ -67,10 +67,12 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 
 	// TODO: Verify Fees
 	// Verify Transaction locally
+	log.Println("Verifying", response.Txid)
 	if valid, err := spv.VerifyScripts(tx); err != nil {
 		response.Error = err.Error()
 		return
 	} else if !valid {
+		log.Println("Invalid Tx", response.Txid)
 		response.Status = 400
 		response.Error = fmt.Sprintf("validation-failed: %s", txid)
 		return
@@ -78,10 +80,14 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		response.Error = err.Error()
 		return
 		// Log Transaction Status as pending
-	} else if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
-		response.Error = err.Error()
-		return
+	} else {
+		log.Println("Log Pending", response.Txid)
+		if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
+			response.Error = err.Error()
+			return
+		}
 	}
+	log.Println("Tx Verified", response.Txid)
 
 	// Check and Mark Spends
 	for vin, spendOutpoint := range spendOutpoints {
