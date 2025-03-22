@@ -42,18 +42,17 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	cfg.From = &from
 	cfg.To = &to
 	cfg.Limit = 100000
-	limiter := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	if items, err := ingest.Store.Search(ctx, cfg); err != nil {
 		log.Println(err)
 	} else {
 		log.Println("Audit pending txs", len(items))
 		for _, item := range items {
-			limiter <- struct{}{}
+			ingest.Limiter <- struct{}{}
 			wg.Add(1)
 			go func(item *idx.Log) {
 				defer func() {
-					<-limiter
+					<-ingest.Limiter
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, true); err != nil {
@@ -72,11 +71,11 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	} else {
 		log.Println("Audit mined txs", len(items))
 		for _, item := range items {
-			limiter <- struct{}{}
+			ingest.Limiter <- struct{}{}
 			wg.Add(1)
 			go func(item *idx.Log) {
 				defer func() {
-					<-limiter
+					<-ingest.Limiter
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {
@@ -96,11 +95,11 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	} else {
 		log.Println("Audit mempool txs", len(items))
 		for _, item := range items {
-			limiter <- struct{}{}
+			ingest.Limiter <- struct{}{}
 			wg.Add(1)
 			go func(item *idx.Log) {
 				defer func() {
-					<-limiter
+					<-ingest.Limiter
 					wg.Done()
 				}()
 				if err := AuditTransaction(ctx, item.Member, item.Score, rollback); err != nil {

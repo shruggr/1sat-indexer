@@ -31,16 +31,30 @@ func (s *SQLiteStore) Close() error {
 	return nil
 }
 
-// var execCount = 0
+type execRequest struct {
+	Id   int
+	Ctx  context.Context
+	Stmt *sql.Stmt
+	Args []interface{}
+	Done chan *execResult
+}
+
+type execResult struct {
+	Result sql.Result
+	Error  error
+}
+
+var execCount = 0
 
 func (s *SQLiteStore) execute(ctx context.Context, stmt *sql.Stmt, args ...interface{}) (sql.Result, error) {
-	// execCount++
+	execCount++
 	// log.Println("execCount", execCount)
 	req := &execRequest{
 		Ctx:  ctx,
 		Stmt: stmt,
 		Args: args,
 		Done: make(chan *execResult),
+		Id:   execCount,
 	}
 	s.queue <- req
 	result := <-req.Done
@@ -66,18 +80,6 @@ var delTxos *sql.Stmt
 var delLog *sql.Stmt
 var delMemeberLogs *sql.Stmt
 
-type execRequest struct {
-	Ctx  context.Context
-	Stmt *sql.Stmt
-	Args []interface{}
-	Done chan *execResult
-}
-
-type execResult struct {
-	Result sql.Result
-	Error  error
-}
-
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	store := &SQLiteStore{
 		queue: make(chan *execRequest, 1000),
@@ -85,23 +87,35 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 
 	go func() {
 		var err error
-		if store.wDB, err = sql.Open("sqlite3", connString); err != nil {
-			log.Panic(err)
-		}
-		store.wDB.SetMaxOpenConns(1)
 
 		if store.rDB, err = sql.Open("sqlite3", connString); err != nil {
 			log.Panic(err)
+		} else if _, err = store.rDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.rDB.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.rDB.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.rDB.Exec("PRAGMA temp_store=MEMORY;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.rDB.Exec("PRAGMA mmap_size=30000000000;"); err != nil {
+			log.Panic(err)
 		}
 
-		// Set PRAGMA commands
-		if _, err := store.rDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		if store.wDB, err = sql.Open("sqlite3", connString); err != nil {
 			log.Panic(err)
-		} else if _, err := store.wDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		} else if _, err = store.wDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 			log.Panic(err)
-		} else if _, err := store.wDB.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		} else if _, err = store.wDB.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.wDB.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.wDB.Exec("PRAGMA temp_store=MEMORY;"); err != nil {
+			log.Panic(err)
+		} else if _, err = store.wDB.Exec("PRAGMA mmap_size=30000000000;"); err != nil {
 			log.Panic(err)
 		}
+		store.wDB.SetMaxOpenConns(1)
 
 		if getTxo, err = store.rDB.Prepare(`SELECT outpoint, height, idx, satoshis, spend
 			FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
@@ -491,10 +505,10 @@ func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh boo
 func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
 	if rows, err := s.rDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
-        WHERE outpoint IN (?)`,
-		outpoints,
+        WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
+		toInterfaceSlice(outpoints)...,
 	); err != nil {
-		log.Panicln("GetSpend", err)
+		log.Panicln("GetSpends", err)
 		return nil, err
 	} else {
 		defer rows.Close()

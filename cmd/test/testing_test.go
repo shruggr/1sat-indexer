@@ -17,10 +17,10 @@ import (
 var hexId = "8395796c2d9216cd2bdf4527bbc091e50b7967cc02cbf34e1d588d5fd8da9d4d"
 var ctx = context.Background()
 var ingest = &idx.IngestCtx{
-	Indexers:    config.Indexers,
-	Concurrency: 1,
-	Verbose:     true,
-	Store:       config.Store,
+	Indexers: config.Indexers,
+	Limiter:  make(chan struct{}, 1),
+	Verbose:  true,
+	Store:    config.Store,
 }
 
 func TestIngest(t *testing.T) {

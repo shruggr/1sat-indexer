@@ -52,7 +52,7 @@ func main() {
 		Key:            idx.QueueKey(QUEUE),
 		Indexers:       config.Indexers,
 		Network:        config.Network,
-		Concurrency:    CONCURRENCY,
+		Limiter:        make(chan struct{}, CONCURRENCY),
 		Once:           true,
 		Store:          config.Store,
 		PageSize:       1000,
@@ -132,11 +132,7 @@ func main() {
 	}()
 
 	go func() {
-		audit.StartTxAudit(context.Background(), &idx.IngestCtx{
-			Indexers: config.Indexers,
-			Network:  config.Network,
-			Store:    config.Store,
-		}, config.Broadcaster, true)
+		audit.StartTxAudit(context.Background(), ingest, config.Broadcaster, true)
 	}()
 
 	app := server.Initialize(ingest, config.Broadcaster)

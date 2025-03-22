@@ -31,12 +31,12 @@ func init() {
 
 func main() {
 	app := server.Initialize(&idx.IngestCtx{
-		Tag:         idx.IngestTag,
-		Indexers:    config.Indexers,
-		Concurrency: CONCURRENCY,
-		Network:     config.Network,
-		Once:        true,
-		Store:       config.Store,
+		Tag:      idx.IngestTag,
+		Indexers: config.Indexers,
+		Limiter:  make(chan struct{}, CONCURRENCY),
+		Network:  config.Network,
+		Once:     true,
+		Store:    config.Store,
 		// Verbose:     VERBOSE > 0,
 		Verbose: true,
 	}, config.Broadcaster)

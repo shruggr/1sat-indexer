@@ -34,7 +34,7 @@ func main() {
 		Key:            idx.QueueKey(QUEUE),
 		Indexers:       config.Indexers,
 		Network:        config.Network,
-		Concurrency:    CONCURRENCY,
+		Limiter:        make(chan struct{}, CONCURRENCY),
 		Once:           true,
 		Store:          config.Store,
 		PageSize:       1000,

@@ -20,7 +20,6 @@ func SyncAcct(ctx context.Context, tag string, acct string, ing *IngestCtx) erro
 				log.Println("FetchOwnerTxns:", err)
 				return err
 			} else {
-				limiter := make(chan struct{}, ing.Concurrency)
 				var wg sync.WaitGroup
 				for _, addTxn := range addTxns {
 					if score, err := ing.Store.LogScore(ctx, tag, addTxn.Txid); err != nil {
@@ -30,10 +29,10 @@ func SyncAcct(ctx context.Context, tag string, acct string, ing *IngestCtx) erro
 						continue
 					}
 					wg.Add(1)
-					limiter <- struct{}{}
+					ing.Limiter <- struct{}{}
 					go func(addTxn *jb.AddressTxn) {
 						defer func() {
-							<-limiter
+							<-ing.Limiter
 							wg.Done()
 						}()
 						if _, err := ing.IngestTxid(ctx, addTxn.Txid, AncestorConfig{

@@ -49,7 +49,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			}
 		}
 	}
-	log.Println("Spends Loaded", response.Txid)
+	// log.Println("Spends Loaded", response.Txid)
 
 	rawtx := tx.Bytes()
 	if fees, err := tx.GetFee(); err != nil {
@@ -67,12 +67,12 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 
 	// TODO: Verify Fees
 	// Verify Transaction locally
-	log.Println("Verifying", response.Txid)
+	// log.Println("Verifying", response.Txid)
 	if valid, err := spv.VerifyScripts(tx); err != nil {
 		response.Error = err.Error()
 		return
 	} else if !valid {
-		log.Println("Invalid Tx", response.Txid)
+		// log.Println("Invalid Tx", response.Txid)
 		response.Status = 400
 		response.Error = fmt.Sprintf("validation-failed: %s", txid)
 		return
@@ -81,13 +81,13 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		return
 		// Log Transaction Status as pending
 	} else {
-		log.Println("Log Pending", response.Txid)
+		// log.Println("Log Pending", response.Txid)
 		if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
 			response.Error = err.Error()
 			return
 		}
 	}
-	log.Println("Tx Verified", response.Txid)
+	// log.Println("Tx Verified", response.Txid)
 
 	// Check and Mark Spends
 	for vin, spendOutpoint := range spendOutpoints {
@@ -110,7 +110,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 	}
 
-	log.Println("Do Broadcast", response.Txid)
+	// log.Println("Do Broadcast", response.Txid)
 	if success, failure := broadcaster.Broadcast(tx); failure != nil {
 		log.Println("Broadcast Failed", response.Txid, failure)
 		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
