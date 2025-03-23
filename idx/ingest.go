@@ -42,14 +42,12 @@ func (cfg *IngestCtx) IndexedTags() []string {
 }
 
 func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
-	// limiter := make(chan struct{}, cfg.Concurrency)
 	errors := make(chan error)
 	done := make(chan string)
 	inflight := make(map[string]struct{})
 	ticker := time.NewTicker(15 * time.Second)
 	ingestcount := 0
 	txcount := uint32(0)
-	// queueKey := QueueKey(cfg.Tag)
 	wg := sync.WaitGroup{}
 	for {
 		select {
@@ -86,9 +84,9 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 						wg.Add(1)
 						go func(txid string) {
 							defer func() {
-								// if r := recover(); r != nil {
-								// 	log.Panicln("Recovered in f", r)
-								// }
+								if r := recover(); r != nil {
+									log.Println("Recovered in f", r)
+								}
 								<-cfg.Limiter
 								wg.Done()
 								done <- txid

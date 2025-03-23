@@ -102,19 +102,19 @@ func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.T
 		}
 	}
 
-	if tx == nil && bit != nil {
-		// log.Println("Requesting tx from node", txid)
-		var r io.ReadCloser
-		if r, err = bit.GetRawTransactionRest(txid); err != nil {
-			log.Println("node error", txid, err)
-		} else if rawtx, err = io.ReadAll(r); err != nil {
-			log.Println("read error", txid, err)
-		} else if len(rawtx) > 0 {
-			if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
-				err = ErrMalformed
-			}
-		}
-	}
+	// if tx == nil && bit != nil {
+	// 	// log.Println("Requesting tx from node", txid)
+	// 	var r io.ReadCloser
+	// 	if r, err = bit.GetRawTransactionRest(txid); err != nil {
+	// 		log.Println("node error", txid, err)
+	// 	} else if rawtx, err = io.ReadAll(r); err != nil {
+	// 		log.Println("read error", txid, err)
+	// 	} else if len(rawtx) > 0 {
+	// 		if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
+	// 			err = ErrMalformed
+	// 		}
+	// 	}
+	// }
 	if err != nil {
 		return
 	}
