@@ -39,12 +39,12 @@ func NewPGStore(connString string) (*PGStore, error) {
 }
 
 func (p *PGStore) insert(ctx context.Context, sql string, args ...interface{}) (resp pgconn.CommandTag, err error) {
-	for i := range 3 {
+	for range 3 {
 		if resp, err = p.DB.Exec(ctx, sql, args...); err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) {
 				if pgErr.Code == "23505" || pgErr.Code == "40P01" {
-					log.Println("Conflict. Retrying:", i, err)
+					// log.Println("Conflict. Retrying:", i, err)
 					time.Sleep(10 * time.Millisecond)
 					continue
 				}

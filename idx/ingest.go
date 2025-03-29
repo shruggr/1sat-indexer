@@ -49,12 +49,16 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 	ingestcount := 0
 	txcount := uint32(0)
 	// queueKey := QueueKey(cfg.Tag)
+	statusTime := time.Now()
 	wg := sync.WaitGroup{}
+	lastScore := float64(0)
 	for {
 		select {
-		case <-ticker.C:
-			log.Println("Transactions - Ingested", ingestcount, ingestcount/15, "tx/s")
+		case now := <-ticker.C:
+			duration := time.Since(statusTime)
+			log.Printf("Ingested %d in %ds - %.02ftx/s height %d", ingestcount, int(duration.Seconds()), float64(ingestcount)/duration.Seconds(), int(lastScore/1000000000))
 			ingestcount = 0
+			statusTime = now
 		case txid := <-done:
 			delete(inflight, txid)
 			ingestcount++
@@ -62,18 +66,22 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 			log.Println("Error", err)
 			return err
 		default:
-			if txids, err := cfg.Store.SearchMembers(ctx, &SearchCfg{
+			to := float64(time.Now().UnixNano())
+			if logs, err := cfg.Store.Search(ctx, &SearchCfg{
 				Keys:    []string{cfg.Key},
 				Limit:   cfg.PageSize,
 				Verbose: cfg.Verbose,
+				To:      &to,
 			}); err != nil {
 				log.Panic(err)
 			} else {
-				if len(txids) == 0 {
+				if len(logs) == 0 {
 					log.Println("No transactions to ingest")
 					time.Sleep(time.Second)
 				}
-				for _, txid := range txids {
+				for _, l := range logs {
+					txid := l.Member
+					lastScore = l.Score
 					if _, ok := inflight[txid]; !ok {
 						txcount++
 						if cfg.Limit > 0 && txcount > cfg.Limit {
@@ -92,7 +100,13 @@ func (cfg *IngestCtx) Exec(ctx context.Context) (err error) {
 								wg.Done()
 								done <- txid
 							}()
-							if idxCtx, err := cfg.IngestTxid(ctx, txid, cfg.AncestorConfig); err != nil {
+							if tx, err := jb.LoadTx(ctx, txid, true); err == jb.ErrNotFound {
+								cfg.Store.Log(ctx, cfg.Key, txid, float64(time.Now().Add(15*time.Second).UnixNano()))
+								return
+							} else if err != nil {
+								log.Panicf("LoadTx error %s %v", txid, err)
+								errors <- err
+							} else if idxCtx, err := cfg.IngestTx(ctx, tx, cfg.AncestorConfig); err != nil {
 								log.Panicf("Ingest error %s %v", txid, err)
 								errors <- err
 							} else if cfg.OnIngest != nil {
