@@ -74,7 +74,7 @@ func (idxCtx *IndexContext) FundAndSignTx(priv *ec.PrivateKey) error {
 				} else if locked, err := jb.Cache.SetNX(idxCtx.Ctx, LockKey(op), time.Now().Unix(), time.Minute).Result(); err != nil {
 					log.Println(err)
 					log.Panic(err)
-				} else if !locked {
+				} else if locked {
 					continue
 				} else if txo, err := idxCtx.Store.LoadTxo(idxCtx.Ctx, op, nil, false, false); err != nil {
 					log.Println(err)
