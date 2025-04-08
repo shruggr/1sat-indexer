@@ -104,7 +104,9 @@ func AccountActivity(c *fiber.Ctx) (err error) {
 		from, _ = strconv.ParseFloat(c.Params("from", "0"), 64)
 	}
 	account := c.Params("account")
-	if owners, err := ingest.Store.AcctOwners(c.Context(), account); err != nil {
+	if err := idx.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+		return err
+	} else if owners, err := ingest.Store.AcctOwners(c.Context(), account); err != nil {
 		return err
 	} else if len(owners) == 0 {
 		return c.SendStatus(404)
