@@ -1,6 +1,8 @@
 module github.com/shruggr/1sat-indexer
 
-go 1.20
+go 1.24.1
+
+toolchain go1.24.2
 
 require (
 	github.com/GorillaPool/go-junglebus v0.2.13
@@ -15,6 +17,7 @@ require (
 	github.com/libsv/go-bt/v2 v2.2.5
 	github.com/ordishs/go-bitcoin v1.0.86
 	github.com/redis/go-redis/v9 v9.5.1
+	github.com/shruggr/go-block-headers-client v0.0.0-20250314203441-bf638acc3683
 )
 
 require (
@@ -24,6 +27,7 @@ require (
 	github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173 // indirect
 	github.com/bitcoinsv/bsvlog v0.0.0-20181216181007-cb81b076bf2e // indirect
 	github.com/bitcoinsv/bsvutil v0.0.0-20181216182056-1d77cf353ea9 // indirect
+	github.com/bsv-blockchain/go-sdk v1.1.22 // indirect
 	github.com/centrifugal/centrifuge-go v0.10.2 // indirect
 	github.com/centrifugal/protocol v0.12.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -59,10 +63,10 @@ require (
 	github.com/valyala/fasthttp v1.52.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.20.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

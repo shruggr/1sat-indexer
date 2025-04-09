@@ -20,6 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/lib"
 	"github.com/shruggr/1sat-indexer/ordinals"
+	"github.com/shruggr/go-block-headers-client/client"
 )
 
 var POSTGRES string
@@ -27,6 +28,7 @@ var INDEXER string = "bsv20"
 var TOPIC string
 var fromBlock uint
 var CONCURRENCY int = 64
+var headers *client.HeadersClient
 
 func init() {
 	wd, _ := os.Getwd()
@@ -66,9 +68,14 @@ func init() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	headers = &client.HeadersClient{
+		Url: os.Getenv("HEADERS_URL"),
+	}
 }
 
 func main() {
+	ctx := context.Background()
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
 		JUNGLEBUS = "https://junglebus.gorillapool.io"
@@ -122,14 +129,14 @@ func main() {
 		os.Exit(0)
 	}()
 
-	var chaintip *models.BlockHeader
+	var chaintip *client.BlockHeader
 	timer := time.NewTicker(30 * time.Second)
 	for {
 		<-timer.C
 		if sub != nil {
 			continue
 		}
-		chaintip = lib.GetChaintip(context.Background())
+		chaintip, err = headers.GetChaintip(ctx)
 
 		if chaintip.Height < lastProcessed+5 {
 			log.Println("Waiting for chaintip", lastProcessed+5, chaintip.Height)

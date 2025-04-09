@@ -2,7 +2,6 @@ package lib
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
-	"github.com/GorillaPool/go-junglebus/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/libsv/go-bt/v2"
 	"github.com/ordishs/go-bitcoin"
@@ -132,16 +130,6 @@ func GetSpend(outpoint *Outpoint) (spend []byte, err error) {
 		return
 	}
 	return io.ReadAll(resp.Body)
-}
-
-func GetChaintip(ctx context.Context) *models.BlockHeader {
-	chaintip := &models.BlockHeader{}
-	if data, err := Cache.Get(ctx, "blk:tip").Bytes(); err != nil {
-		log.Panic(err)
-	} else if err = json.Unmarshal(data, &chaintip); err != nil {
-		log.Panic(err)
-	}
-	return chaintip
 }
 
 func PublishEvent(ctx context.Context, event string, data string) {
