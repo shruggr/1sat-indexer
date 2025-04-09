@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
-	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/joho/godotenv"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"

@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"

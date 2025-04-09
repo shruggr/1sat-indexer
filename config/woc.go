@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/bitcoin-sv/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 )
 
 type WOCNetwork string

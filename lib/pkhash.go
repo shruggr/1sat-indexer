@@ -3,7 +3,7 @@ package lib
 import (
 	"encoding/json"
 
-	"github.com/bitcoin-sv/go-sdk/script"
+	"github.com/bsv-blockchain/go-sdk/script"
 )
 
 type PKHash []byte

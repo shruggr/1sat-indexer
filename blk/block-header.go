@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/bitcoin-sv/go-sdk/chainhash"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 )
 
 // BlockHeader defines a single block header, used in SPV validations.
