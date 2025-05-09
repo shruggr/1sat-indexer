@@ -162,7 +162,9 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 	defer rows.Close()
 	txos := make([]*idx.Txo, 0, len(outpoints))
 	for rows.Next() {
-		txo := &idx.Txo{}
+		txo := &idx.Txo{
+			Data: make(idx.IndexDataMap),
+		}
 		var spendTxid string
 		var owners string
 		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &owners, &spendTxid); err != nil {
@@ -176,11 +178,11 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 			txo.Spend = spendTxid
 		}
 		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
-		if txo.Data, err = s.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
-			log.Panic(err)
-			return nil, err
-		} else if txo.Data == nil {
-			txo.Data = make(idx.IndexDataMap)
+		if len(tags) > 0 {
+			if txo.Data, err = s.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
+				log.Panic(err)
+				return nil, err
+			}
 		}
 		if script {
 			if err = txo.LoadScript(ctx); err != nil {

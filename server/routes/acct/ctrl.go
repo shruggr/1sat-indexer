@@ -16,7 +16,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Get("/:account", AccountActivity)
 	r.Get("/:account/txos", AccountTxos)
 	r.Get("/:account/utxos", AccountTxos)
-	r.Get("/:account/balance", AccountTxos)
+	r.Get("/:account/balance", AccountBalance)
 	r.Get("/:account/:from", AccountActivity)
 	// r.Put("/:account/tx", RegisterAccount)
 }

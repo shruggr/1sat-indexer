@@ -16,16 +16,16 @@ import (
 
 const MIN_SAT_PER_KB = 1.0
 
-type BroadcaseResponse struct {
+type BroadcastResponse struct {
 	Success bool   `json:"success"`
 	Status  uint32 `json:"status"`
 	Txid    string `json:"txid"`
 	Error   string `json:"error"`
 }
 
-func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transaction, broadcaster transaction.Broadcaster) (response *BroadcaseResponse) {
+func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transaction, broadcaster transaction.Broadcaster) (response *BroadcastResponse) {
 	txid := tx.TxID()
-	response = &BroadcaseResponse{
+	response = &BroadcastResponse{
 		Txid:   txid.String(),
 		Status: 500,
 	}

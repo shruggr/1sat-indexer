@@ -19,6 +19,11 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
+	if c.QueryBool("refresh", false) {
+		if err := idx.SyncOwner(c.Context(), idx.IngestTag, owner, ingest); err != nil {
+			return err
+		}
+	}
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
