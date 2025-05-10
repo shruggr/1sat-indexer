@@ -37,6 +37,7 @@ func StartChaintipSub(ctx context.Context) {
 			if _, err := GetChaintip(ctx); err != nil {
 				log.Panic(err)
 			}
+			time.Sleep(time.Second)
 		}
 	}()
 }
