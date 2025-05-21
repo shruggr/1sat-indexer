@@ -50,6 +50,7 @@ func Exec(
 	var wg sync.WaitGroup
 	errors := make(chan error)
 
+	log.Println("CONCURRENCY", concurrency)
 	threadLimiter = make(chan struct{}, concurrency)
 
 	JUNGLEBUS := os.Getenv("JUNGLEBUS")
@@ -153,7 +154,7 @@ func Exec(
 			}
 			threadLimiter <- struct{}{}
 			wg.Add(1)
-			lib.Cache.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
+			lib.Cache.Set(context.Background(), "tx:"+txn.Id, txn.Transaction, 24*365*time.Hour).Err()
 			txCount++
 			height = txn.BlockHeight
 			idx = txn.BlockIndex
@@ -196,7 +197,7 @@ func Exec(
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
 			threadLimiter <- struct{}{}
-			lib.Cache.Set(context.Background(), txn.Id, txn.Transaction, 0).Err()
+			lib.Cache.Set(context.Background(), "tx:"+txn.Id, txn.Transaction, 2*time.Hour).Err()
 			txCount++
 			go func(txn *models.TransactionResponse) {
 				defer func() {

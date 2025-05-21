@@ -15,31 +15,35 @@ import (
 	"github.com/shruggr/1sat-indexer/ordinals"
 )
 
-var settled = make(chan uint32, 1000)
+// var settled = make(chan uint32, 1000)
 var POSTGRES string
 
 var INDEXER string
 var TOPIC string
 var FROM_BLOCK uint
 var VERBOSE int
-var CONCURRENCY int = 64
+var CONCURRENCY int
 
 func init() {
 	wd, _ := os.Getwd()
-	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+	p := fmt.Sprintf(`%s/../../.env`, wd)
+	log.Println("ENV PATH:", p)
+	err := godotenv.Load(p)
+	if err != nil {
+		log.Println("No .env file found", err)
+	}
 
 	flag.StringVar(&INDEXER, "id", "", "Indexer name")
 	flag.StringVar(&TOPIC, "t", "", "Junglebus SubscriptionID")
 	flag.UintVar(&FROM_BLOCK, "s", uint(lib.TRIGGER), "Start from block")
-	flag.IntVar(&CONCURRENCY, "c", 64, "Concurrency Limit")
+	flag.IntVar(&CONCURRENCY, "c", 1, "Concurrency Limit")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.Parse()
 
 	if POSTGRES == "" {
 		POSTGRES = os.Getenv("POSTGRES_FULL")
 	}
-	var err error
+
 	log.Println("POSTGRES:", POSTGRES)
 	db, err := pgxpool.New(context.Background(), POSTGRES)
 	if err != nil {

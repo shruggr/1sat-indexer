@@ -77,7 +77,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 
 	if len(rawtx) == 0 && JB != nil {
 		url := fmt.Sprintf("%s/v1/transaction/get/%s/bin", os.Getenv("JUNGLEBUS"), txid)
-
+		// log.Println("Requesting tx from JB", url)
 		if resp, err := http.Get(url); err == nil && resp.StatusCode < 300 {
 			rawtx, _ = io.ReadAll(resp.Body)
 		}
@@ -95,7 +95,7 @@ func LoadRawtx(txid string) (rawtx []byte, err error) {
 		return
 	}
 
-	Cache.Set(context.Background(), cacheKey, rawtx, 0).Err()
+	Cache.Set(context.Background(), cacheKey, rawtx, 24*365*time.Hour).Err()
 	return
 }
 

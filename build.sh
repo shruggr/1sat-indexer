@@ -1,27 +1,11 @@
-cd ./cmd/ord
-go build
-cd ../market
-go build
-cd ../market-spends
-go build
-cd ../locks
-go build
-cd ../opns
-go build
-cd ../bsv20-analysis
-go build
-cd ../bsv20-deploy
-go build
-cd ../bsv20v1
-go build
-cd ../bsv20v2
-go build
-cd ../mempool
-go build
-cd ../clean-mempool
-go build 
-cd ../sigil
-go build
-cd ../block-sync
-go build
-cd ../../
+go build -o ord.run cmd/ord/ord.go
+go build -o market.run cmd/market/market.go
+go build -o market-spends.run cmd/market-spends/market-spends.go
+go build -o locks.run cmd/locks/locks.go
+go build -o server.run cmd/server/server.go
+go build -o bsv20-analysis.run cmd/bsv20-analysis/bsv20-analysis.go
+go build -o bsv20-deploy.run cmd/bsv20-deploy/bsv20-deploy.go
+go build -o bsv20v1.run cmd/bsv20v1/bsv20v1.go
+go build -o bsv20v2.run cmd/bsv20v2/bsv20v2.go
+go build -o mempool.run cmd/mempool/main.go
+go build -o clean-mempool.run cmd/clean-mempool/clean-mempool.go

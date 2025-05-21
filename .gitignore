@@ -4,3 +4,4 @@ ord/ord
 .env
 app.yaml
 .gcloudignore
+*.run
