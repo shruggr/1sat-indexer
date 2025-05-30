@@ -136,7 +136,9 @@ func main() {
 		if sub != nil {
 			continue
 		}
-		chaintip, err = headers.GetChaintip(ctx)
+		if chaintip, err = headers.GetChaintip(ctx); err != nil {
+			log.Panicln("Error getting chaintip:", err)
+		}
 
 		if chaintip.Height < lastProcessed+5 {
 			log.Println("Waiting for chaintip", lastProcessed+5, chaintip.Height)

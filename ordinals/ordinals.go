@@ -378,7 +378,7 @@ func RefreshAddress(ctx context.Context, address string) error {
 		}(txid, txn)
 	}
 	wg.Wait()
-	if height == 0 {
+	if height < 817000 {
 		height = 817000
 	}
 	_, err = lib.Db.Exec(ctx, `

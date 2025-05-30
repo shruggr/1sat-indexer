@@ -825,6 +825,9 @@ func ValidateV2Transfer(txid []byte, id *lib.Outpoint, mined bool) (outputs int)
 			log.Printf("Validating %s %x %d\n", id.String(), txid, bsv20.Vout)
 			if bsv20.Listing {
 				bsv20.Outpoint = lib.NewOutpoint(txid, bsv20.Vout)
+				if bsv20.PricePerToken == math.Inf(1) {
+					bsv20.PricePerToken = 0
+				}
 				out, err := json.Marshal(bsv20)
 				if err != nil {
 					log.Panic(err)
