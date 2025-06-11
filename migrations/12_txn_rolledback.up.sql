@@ -1,0 +1,1 @@
+ALTER TABLE txns ADD COLUMN rolledback TIMESTAMP;

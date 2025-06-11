@@ -150,7 +150,7 @@ func cleanupTxns() (rowCount int, cleaned int, cleared int) {
 				log.Println("Txos Rolled back:", result.RowsAffected())
 
 				result, err = lib.Db.Exec(context.Background(),
-					"DELETE FROM txns WHERE txid=$1",
+					"UPDATE txns SET rolledback=CURRENT_TIMESTAMP WHERE txid=$1",
 					txid,
 				)
 				if err != nil {
