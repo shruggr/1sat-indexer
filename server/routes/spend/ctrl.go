@@ -15,9 +15,9 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 
 func GetSpend(c *fiber.Ctx) error {
 	outpoint := c.Params("outpoint")
-	if spend, err := ingest.Store.GetSpends(c.Context(), []string{outpoint}, true); err != nil {
+	if spend, err := ingest.Store.GetSpend(c.Context(), outpoint, true); err != nil {
 		return err
-	} else {
+	} else if len(spend) == 0 {
 		return c.JSON(spend)
 	}
 }
