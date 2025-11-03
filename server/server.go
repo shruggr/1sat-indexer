@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/redis/go-redis/v9"
+	"github.com/shruggr/1sat-indexer/v5/broadcast"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/acct"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
@@ -30,7 +32,7 @@ var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
 }
 
-func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *fiber.App {
+func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fiber.App {
 	app := fiber.New(fiber.Config{
 		BodyLimit: 100 * 1024 * 1024, // 100MB
 	})
@@ -51,7 +53,7 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 	origins.RegisterRoutes(v5.Group("/origins"), ingestCtx)
 	own.RegisterRoutes(v5.Group("/own"), ingestCtx)
 	tag.RegisterRoutes(v5.Group("/tag"), ingestCtx)
-	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx, broadcaster)
+	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx, arcBroadcaster)
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
@@ -147,6 +149,7 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 		return nil
 	})
 
+	// SSE listener for block and other events
 	go func() {
 		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
 			panic(err)
@@ -171,6 +174,19 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 					}
 				}
 			}
+		}
+	}()
+
+	// Broadcast status listener for ARC callbacks
+	go func() {
+		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
+			log.Printf("Error parsing REDISEVT URL for broadcast listener: %v", err)
+			return
+		} else {
+			statusRedis := redis.NewClient(opts)
+			listener := broadcast.InitListener(statusRedis)
+			ctx := context.Background()
+			listener.Start(ctx)
 		}
 	}()
 

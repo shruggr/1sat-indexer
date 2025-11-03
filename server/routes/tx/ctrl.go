@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/blk"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
@@ -18,11 +19,11 @@ import (
 )
 
 var ingest *idx.IngestCtx
-var b transaction.Broadcaster
+var b *broadcaster.Arc
 
-func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) {
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) {
 	ingest = ingestCtx
-	b = broadcaster
+	b = arcBroadcaster
 	r.Post("/", BroadcastTx)
 	r.Get("/:txid", GetTxWithProof)
 	r.Get("/:txid/raw", GetRawTx)
@@ -186,15 +187,30 @@ func GetProof(c *fiber.Ctx) error {
 }
 
 func TxCallback(c *fiber.Ctx) error {
-	l := make(map[string]any)
-	l["headers"] = c.GetReqHeaders()
-	l["body"] = string(c.BodyRaw())
-	if out, err := json.MarshalIndent(l, "", "  "); err != nil {
-		return err
-	} else {
-		log.Println("TxCallback", string(out))
-		return c.SendStatus(200)
+	// Parse the ARC callback response
+	var arcResp broadcaster.ArcResponse
+	if err := c.BodyParser(&arcResp); err != nil {
+		log.Printf("Error parsing ARC callback: %v", err)
+		return c.Status(400).SendString("Invalid callback payload")
 	}
+
+	// Validate required fields
+	if arcResp.Txid == "" || arcResp.TxStatus == nil {
+		log.Printf("Missing required fields in callback: txid=%s, status=%v", arcResp.Txid, arcResp.TxStatus)
+		return c.Status(400).SendString("Missing txid or txStatus")
+	}
+
+	log.Printf("ARC callback received: txid=%s, status=%s", arcResp.Txid, *arcResp.TxStatus)
+
+	// Publish the status update to Redis for the broadcast listener
+	channel := "stat:" + arcResp.Txid
+	if jsonData, err := json.Marshal(arcResp); err != nil {
+		log.Printf("Error marshaling ARC response: %v", err)
+	} else if err := evt.Publish(c.Context(), channel, string(jsonData)); err != nil {
+		log.Printf("Error publishing to Redis channel %s: %v", channel, err)
+	}
+
+	return c.SendStatus(200)
 }
 
 func ParseTx(c *fiber.Ctx) (err error) {
