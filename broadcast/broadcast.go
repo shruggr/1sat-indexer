@@ -29,7 +29,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		Txid:   txid.String(),
 		Status: 500,
 	}
-	log.Println("Broadcasting", response.Txid, tx.Hex())
+	log.Println("Broadcasting", response.Txid)
 
 	// Load Inputs
 	spendOutpoints := make([]string, 0, len(tx.Inputs))

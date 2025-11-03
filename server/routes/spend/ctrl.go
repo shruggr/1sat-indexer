@@ -17,7 +17,7 @@ func GetSpend(c *fiber.Ctx) error {
 	outpoint := c.Params("outpoint")
 	if spend, err := ingest.Store.GetSpend(c.Context(), outpoint, true); err != nil {
 		return err
-	} else if len(spend) == 0 {
+	} else {
 		return c.JSON(spend)
 	}
 }

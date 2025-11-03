@@ -31,7 +31,9 @@ var currentSessions = sse.SessionsLock{
 }
 
 func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *fiber.App {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		BodyLimit: 100 * 1024 * 1024, // 100MB
+	})
 	// app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(compress.New())
@@ -163,7 +165,7 @@ func Initialize(ingestCtx *idx.IngestCtx, broadcaster transaction.Broadcaster) *
 					log.Println("Unsubscribing to", removedSubs)
 					pubsub.Unsubscribe(ctx, removedSubs...)
 				case msg := <-ch:
-					log.Println("Received Message", msg.Channel, msg.Payload)
+					log.Println("Received Message", msg.Channel)
 					for _, session := range currentSessions.Topics[msg.Channel] {
 						session.StateChannel <- msg
 					}

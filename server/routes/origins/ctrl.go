@@ -85,9 +85,9 @@ func OriginAncestors(c *fiber.Ctx) error {
 
 	if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 		return err
-	} else {
+	} else if originData, ok := data["origin"]; ok && originData != nil {
 		origin := onesat.Origin{}
-		if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
+		if err := json.Unmarshal([]byte(originData.Data.(json.RawMessage)), &origin); err != nil {
 			return err
 		}
 		outpoint = origin.Outpoint.String()
@@ -132,9 +132,9 @@ func OriginsAncestors(c *fiber.Ctx) error {
 	for _, outpoint := range outpoints {
 		if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 			return err
-		} else {
+		} else if originData, ok := data["origin"]; ok && originData != nil {
 			origin := onesat.Origin{}
-			if err := json.Unmarshal([]byte(data["origin"].Data.(json.RawMessage)), &origin); err != nil {
+			if err := json.Unmarshal([]byte(originData.Data.(json.RawMessage)), &origin); err != nil {
 				return err
 			}
 			if origin.Outpoint != nil {
