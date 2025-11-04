@@ -10,6 +10,7 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
+	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/blk"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
@@ -109,13 +110,13 @@ func GetTxWithProof(c *fiber.Ctx) error {
 	} else {
 		c.Set("Content-Type", "application/octet-stream")
 		buf := bytes.NewBuffer([]byte{})
-		buf.Write(transaction.VarInt(uint64(len(rawtx))).Bytes())
+		buf.Write(util.VarInt(uint64(len(rawtx))).Bytes())
 		buf.Write(rawtx)
 		if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
 			return err
 		} else {
 			if proof == nil {
-				buf.Write(transaction.VarInt(0).Bytes())
+				buf.Write(util.VarInt(0).Bytes())
 				c.Set("Cache-Control", "public,max-age=60")
 			} else if chaintip, err := blk.GetChaintip(c.Context()); err != nil {
 				return err
@@ -126,7 +127,7 @@ func GetTxWithProof(c *fiber.Ctx) error {
 					c.Set("Cache-Control", "public,max-age=60")
 				}
 				bin := proof.Bytes()
-				buf.Write(transaction.VarInt(uint64(len(bin))).Bytes())
+				buf.Write(util.VarInt(uint64(len(bin))).Bytes())
 				buf.Write(bin)
 			}
 		}
@@ -203,11 +204,10 @@ func TxCallback(c *fiber.Ctx) error {
 	log.Printf("ARC callback received: txid=%s, status=%s", arcResp.Txid, *arcResp.TxStatus)
 
 	// Publish the status update to Redis for the broadcast listener
-	channel := "stat:" + arcResp.Txid
 	if jsonData, err := json.Marshal(arcResp); err != nil {
 		log.Printf("Error marshaling ARC response: %v", err)
-	} else if err := evt.Publish(c.Context(), channel, string(jsonData)); err != nil {
-		log.Printf("Error publishing to Redis channel %s: %v", channel, err)
+	} else if err := evt.Publish(c.Context(), "arc", string(jsonData)); err != nil {
+		log.Printf("Error publishing to Redis channel arc: %v", err)
 	}
 
 	return c.SendStatus(200)

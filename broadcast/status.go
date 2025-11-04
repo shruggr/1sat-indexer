@@ -2,22 +2,26 @@ package broadcast
 
 import "github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 
-// IsFinalStatus returns true if the ARC status is considered final (terminal state)
-func IsFinalStatus(status broadcaster.ArcStatus) bool {
+// IsAcceptedStatus returns true if the Arc status indicates successful broadcast
+// This includes mempool acceptance, mined, and confirmed states
+func IsAcceptedStatus(status broadcaster.ArcStatus) bool {
 	switch status {
 	case broadcaster.ACCEPTED_BY_NETWORK,
 		broadcaster.SEEN_ON_NETWORK,
-		broadcaster.REJECTED:
+		broadcaster.MINED,
+		broadcaster.CONFIRMED:
 		return true
 	default:
 		return false
 	}
 }
 
-// IsErrorStatus returns true if the ARC status indicates an error/rejection
+// IsErrorStatus returns true if the Arc status indicates an error/rejection
 func IsErrorStatus(status broadcaster.ArcStatus) bool {
 	switch status {
-	case broadcaster.REJECTED:
+	case broadcaster.REJECTED,
+		broadcaster.DOUBLE_SPEND_ATTEMPTED,
+		broadcaster.SEEN_IN_ORPHAN_MEMPOOL:
 		return true
 	default:
 		return false

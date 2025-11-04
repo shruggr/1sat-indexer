@@ -231,7 +231,7 @@ func categorize() {
 						if bsv21Data, ok := txo.Data[onesat.BSV21_TAG]; ok {
 							bsv21 := bsv21Data.Data.(*onesat.Bsv21)
 							if bsv21.Op == "deploy+mint" {
-								if err = store.SaveTxo(ctx, txo, idxCtx.Height, idxCtx.Idx); err != nil {
+								if err = store.SaveTxos(idxCtx); err != nil {
 									panic(err)
 								}
 							} else {

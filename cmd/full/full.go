@@ -11,9 +11,9 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/v5/audit"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
+	"github.com/shruggr/1sat-indexer/v5/ingest"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server"
 )
@@ -47,27 +47,6 @@ func init() {
 
 func main() {
 	ctx := context.Background()
-	ingest := &idx.IngestCtx{
-		Tag:            TAG,
-		Key:            idx.QueueKey(QUEUE),
-		Indexers:       config.Indexers,
-		Network:        config.Network,
-		Concurrency:    CONCURRENCY,
-		Once:           true,
-		Store:          config.Store,
-		PageSize:       1000,
-		AncestorConfig: ancestorConfig,
-		Verbose:        VERBOSE > 0,
-	}
-
-	go func() {
-		for {
-			if err := ingest.Exec(ctx); err != nil {
-				log.Println("Ingest error", err)
-				time.Sleep(5 * time.Second)
-			}
-		}
-	}()
 
 	go func() {
 		for {
@@ -131,12 +110,25 @@ func main() {
 		}
 	}()
 
+	var redisClient *redis.Client
+	if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
+		log.Printf("Error parsing REDISEVT URL: %v", err)
+	} else {
+		redisClient = redis.NewClient(opts)
+	}
+
 	go func() {
-		audit.StartTxAudit(context.Background(), &idx.IngestCtx{
-			Indexers: config.Indexers,
-			Network:  config.Network,
-			Store:    config.Store,
-		}, config.Broadcaster, true)
+		ingest.Start(context.Background(), &idx.IngestCtx{
+			Tag:            TAG,
+			Key:            idx.QueueKey(QUEUE),
+			Indexers:       config.Indexers,
+			Network:        config.Network,
+			Concurrency:    CONCURRENCY,
+			Store:          config.Store,
+			PageSize:       1000,
+			AncestorConfig: ancestorConfig,
+			Verbose:        VERBOSE > 0,
+		}, config.Broadcaster, redisClient, true)
 	}()
 
 	app := server.Initialize(&idx.IngestCtx{

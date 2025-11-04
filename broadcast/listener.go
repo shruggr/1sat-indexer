@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
@@ -18,13 +17,14 @@ type registration struct {
 
 // StatusListener manages a shared Redis subscription for broadcast status updates
 type StatusListener struct {
-	mu            sync.Mutex
-	waiters       map[string]chan *broadcaster.ArcResponse
-	addWaiter     chan registration
-	removeWaiter  chan string
-	pubsub        *redis.PubSub
-	redisClient   *redis.Client
+	waiters      map[string]chan *broadcaster.ArcResponse
+	addWaiter    chan registration
+	removeWaiter chan string
+	pubsub       *redis.PubSub
+	redisClient  *redis.Client
 }
+
+const arcChannel = "arc"
 
 // Global listener instance
 var Listener *StatusListener
@@ -42,7 +42,7 @@ func InitListener(redisClient *redis.Client) *StatusListener {
 
 // Start begins listening for status updates on Redis
 func (sl *StatusListener) Start(ctx context.Context) {
-	sl.pubsub = sl.redisClient.Subscribe(ctx)
+	sl.pubsub = sl.redisClient.Subscribe(ctx, arcChannel)
 	ch := sl.pubsub.Channel()
 
 	go func() {
@@ -50,27 +50,13 @@ func (sl *StatusListener) Start(ctx context.Context) {
 		for {
 			select {
 			case reg := <-sl.addWaiter:
-				sl.mu.Lock()
 				sl.waiters[reg.txid] = reg.channel
-				// Subscribe to the specific channel for this txid
-				channel := "stat:" + reg.txid
-				if err := sl.pubsub.Subscribe(ctx, channel); err != nil {
-					log.Printf("Error subscribing to %s: %v", channel, err)
-				}
-				sl.mu.Unlock()
 
 			case txid := <-sl.removeWaiter:
-				sl.mu.Lock()
 				if ch, ok := sl.waiters[txid]; ok {
 					close(ch)
 					delete(sl.waiters, txid)
-					// Unsubscribe from the channel
-					channel := "stat:" + txid
-					if err := sl.pubsub.Unsubscribe(ctx, channel); err != nil {
-						log.Printf("Error unsubscribing from %s: %v", channel, err)
-					}
 				}
-				sl.mu.Unlock()
 
 			case msg := <-ch:
 				if msg == nil {
@@ -85,24 +71,21 @@ func (sl *StatusListener) Start(ctx context.Context) {
 					continue
 				}
 
-				// Extract txid from channel name (format: "stat:txid")
-				if len(msg.Channel) < 6 {
-					log.Printf("Invalid channel format: %s", msg.Channel)
+				// Extract txid from the message itself
+				if arcResp.Txid == "" {
+					log.Printf("ARC status update missing txid: %v", arcResp)
 					continue
 				}
-				txid := msg.Channel[5:] // Remove "stat:" prefix
 
 				// Send to waiter if registered
-				sl.mu.Lock()
-				if waiter, ok := sl.waiters[txid]; ok {
+				if waiter, ok := sl.waiters[arcResp.Txid]; ok {
 					select {
 					case waiter <- &arcResp:
-						log.Printf("Delivered status update for %s: %v", txid, arcResp.TxStatus)
+						log.Printf("Delivered status update for %s: %v", arcResp.Txid, arcResp.TxStatus)
 					default:
-						log.Printf("Waiter channel full for %s, skipping", txid)
+						log.Printf("Waiter channel full for %s, skipping", arcResp.Txid)
 					}
 				}
-				sl.mu.Unlock()
 
 			case <-ctx.Done():
 				log.Println("Context cancelled, shutting down status listener")
