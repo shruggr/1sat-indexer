@@ -2,7 +2,6 @@ package broadcast
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
@@ -118,92 +116,109 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 	}
 
-	// Register for status callbacks BEFORE broadcasting
-	var statusChan chan *broadcaster.ArcResponse
-	if Listener != nil {
-		statusChan = Listener.RegisterTxid(response.Txid, 45*time.Second)
-		defer Listener.UnregisterTxid(response.Txid)
-	} else {
-		statusChan = make(chan *broadcaster.ArcResponse, 10)
+	// Broadcast directly and handle immediate response
+	arcResp, err := arcBroadcaster.ArcBroadcast(ctx, tx)
+	if err != nil {
+		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+		response.Error = err.Error()
+		return
 	}
 
-	// Start broadcast in goroutine
-	go func() {
-		arcResp, err := arcBroadcaster.ArcBroadcast(ctx, tx)
-		if err != nil {
-			// Local error - send directly to statusChan
-			select {
-			case statusChan <- &broadcaster.ArcResponse{
-				Status:    500,
-				ExtraInfo: err.Error(),
-			}:
-			case <-time.After(1 * time.Second):
-			}
-			return
+	// Handle Arc HTTP error response
+	if arcResp.Status != 0 && arcResp.Status != 200 {
+		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+		response.Status = uint32(arcResp.Status)
+		response.Error = arcResp.ExtraInfo
+		return
+	}
+
+	/* ORIGINAL: Status listening logic - now handled by Arc callbacks
+		// Register for status callbacks BEFORE broadcasting
+		var statusChan chan *broadcaster.ArcResponse
+		if Listener != nil {
+			statusChan = Listener.RegisterTxid(response.Txid, 45*time.Second)
+			defer Listener.UnregisterTxid(response.Txid)
+		} else {
+			statusChan = make(chan *broadcaster.ArcResponse, 10)
 		}
-		// Success - publish to Redis, listener will route to statusChan
-		if jsonData, err := json.Marshal(arcResp); err != nil {
-			log.Printf("[ARC] %s Error marshaling ARC response: %v", response.Txid, err)
-		} else if err := evt.Publish(ctx, "arc", string(jsonData)); err != nil {
-			log.Printf("[ARC] %s Error publishing to Redis channel arc: %v", response.Txid, err)
-		}
-	}()
 
-	var arcResp *broadcaster.ArcResponse
-
-	// Wait for status updates from either source
-statusLoop:
-	for {
-		select {
-		case <-ctx.Done():
-			response.Status = 500
-			response.Error = "context cancelled"
-			return
-
-		case resp, ok := <-statusChan:
-			if !ok {
-				// Channel closed (timeout) - query ARC status directly as fallback
-				log.Printf("[ARC] %s Timeout waiting for accepted status, querying ARC directly (%.2fms)", txid, time.Since(start).Seconds()*1000)
-
-				if arcStatus, err := arcBroadcaster.Status(response.Txid); err != nil {
-					log.Printf("[ARC] %s Error querying ARC status: %v (%.2fms)", txid, err, time.Since(start).Seconds()*1000)
-				} else if arcStatus.TxStatus != nil {
-					log.Printf("[ARC] %s Queried status: %s (%.2fms)", txid, *arcStatus.TxStatus, time.Since(start).Seconds()*1000)
-					arcResp = arcStatus
+		// Start broadcast in goroutine
+		go func() {
+			arcResp, err := arcBroadcaster.ArcBroadcast(ctx, tx)
+			if err != nil {
+				// Local error - send directly to statusChan
+				select {
+				case statusChan <- &broadcaster.ArcResponse{
+					Status:    500,
+					ExtraInfo: err.Error(),
+				}:
+				case <-time.After(1 * time.Second):
 				}
-				break statusLoop
-			}
-
-			arcResp = resp
-
-			// Handle error response from broadcast (transaction never sent)
-			if arcResp.Status != 0 && arcResp.Status != 200 {
-				rollbackSpends(ctx, store, spendOutpoints, response.Txid)
-				response.Status = uint32(arcResp.Status)
-				response.Error = arcResp.ExtraInfo
 				return
 			}
-
-			// Check if this is the initial Arc response (has Txid set)
-			if arcResp.Txid != "" {
-				if arcResp.TxStatus != nil {
-					log.Printf("[ARC] %s initial response: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
-				}
-			} else if arcResp.TxStatus != nil {
-				log.Printf("[ARC] %s Received callback status: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
+			// Success - publish to Redis, listener will route to statusChan
+			if jsonData, err := json.Marshal(arcResp); err != nil {
+				log.Printf("[ARC] %s Error marshaling ARC response: %v", response.Txid, err)
+			} else if err := evt.Publish(ctx, "arc", string(jsonData)); err != nil {
+				log.Printf("[ARC] %s Error publishing to Redis channel arc: %v", response.Txid, err)
 			}
+		}()
 
-			// Check if we got accepted or error status - break and handle
-			if arcResp.TxStatus != nil {
-				if IsAcceptedStatus(*arcResp.TxStatus) || IsErrorStatus(*arcResp.TxStatus) {
+		var arcResp *broadcaster.ArcResponse
+
+		// Wait for status updates from either source
+	statusLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				response.Status = 500
+				response.Error = "context cancelled"
+				return
+
+			case resp, ok := <-statusChan:
+				if !ok {
+					// Channel closed (timeout) - query ARC status directly as fallback
+					log.Printf("[ARC] %s Timeout waiting for accepted status, querying ARC directly (%.2fms)", txid, time.Since(start).Seconds()*1000)
+
+					if arcStatus, err := arcBroadcaster.Status(response.Txid); err != nil {
+						log.Printf("[ARC] %s Error querying ARC status: %v (%.2fms)", txid, err, time.Since(start).Seconds()*1000)
+					} else if arcStatus.TxStatus != nil {
+						log.Printf("[ARC] %s Queried status: %s (%.2fms)", txid, *arcStatus.TxStatus, time.Since(start).Seconds()*1000)
+						arcResp = arcStatus
+					}
 					break statusLoop
-				} else {
-					log.Printf("[ARC] %s Intermediate status %s, waiting for accepted status (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
+				}
+
+				arcResp = resp
+
+				// Handle error response from broadcast (transaction never sent)
+				if arcResp.Status != 0 && arcResp.Status != 200 {
+					rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+					response.Status = uint32(arcResp.Status)
+					response.Error = arcResp.ExtraInfo
+					return
+				}
+
+				// Check if this is the initial Arc response (has Txid set)
+				if arcResp.Txid != "" {
+					if arcResp.TxStatus != nil {
+						log.Printf("[ARC] %s initial response: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
+					}
+				} else if arcResp.TxStatus != nil {
+					log.Printf("[ARC] %s Received callback status: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
+				}
+
+				// Check if we got accepted or error status - break and handle
+				if arcResp.TxStatus != nil {
+					if IsAcceptedStatus(*arcResp.TxStatus) || IsErrorStatus(*arcResp.TxStatus) {
+						break statusLoop
+					} else {
+						log.Printf("[ARC] %s Intermediate status %s, waiting for accepted status (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
+					}
 				}
 			}
 		}
-	}
-
+	*/
 	// Handle final response
 	if arcResp != nil && arcResp.TxStatus != nil {
 		if IsErrorStatus(*arcResp.TxStatus) {

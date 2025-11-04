@@ -287,35 +287,60 @@ func auditMinedTransactions(ctx context.Context, wg *sync.WaitGroup, limiter cha
 				wg.Done()
 			}()
 
-			// Load transaction with existing MerklePath
-			tx, err := jb.LoadTx(ctx, txid, false)
+			// Load transaction with MerklePath
+			tx, err := jb.LoadTx(ctx, txid, true)
 			if err != nil {
 				log.Printf("LoadTx error for %s: %v", txid, err)
 				return
 			}
 
-			if tx.MerklePath == nil {
-				log.Printf("No MerklePath for mined tx %s, skipping", txid)
-				return
-			}
-
-			// Validate the MerklePath
 			txidHash := tx.TxID()
-			root, err := tx.MerklePath.ComputeRoot(txidHash)
-			if err != nil {
-				log.Printf("ComputeRoot error for %s: %v", txid, err)
-				return
+			valid := false
+
+			// Validate MerklePath from JungleBus (if present)
+			if tx.MerklePath != nil {
+				root, err := tx.MerklePath.ComputeRoot(txidHash)
+				if err != nil {
+					log.Printf("ComputeRoot error for %s: %v", txid, err)
+					return
+				}
+				valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+				if err != nil {
+					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
+					return
+				}
 			}
 
-			valid, err := headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
-			if err != nil {
-				log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
-				return
-			}
-
+			// If not present or not valid, try Arc
 			if !valid {
-				log.Printf("Invalid MerklePath for %s", txid)
-				return
+				status, err := arc.Status(txid)
+				if err != nil {
+					log.Printf("Arc status error for %s: %v", txid, err)
+					return
+				}
+				if status.MerklePath != "" {
+					tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath)
+					if err != nil {
+						log.Printf("Error parsing Arc MerklePath for %s: %v", txid, err)
+						return
+					}
+					root, err := tx.MerklePath.ComputeRoot(txidHash)
+					if err != nil {
+						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
+						return
+					}
+					valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+					if err != nil {
+						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
+						return
+					}
+				}
+
+				// If still not present or not valid after checking both providers
+				if !valid {
+					log.Printf("No valid MerklePath from JungleBus or Arc for %s - may need rollback", txid)
+					return
+				}
 			}
 
 			// Re-ingest to recalculate score from MerklePath
@@ -376,8 +401,8 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 				wg.Done()
 			}()
 
-			// Load transaction
-			tx, err := jb.LoadTx(ctx, txid, false)
+			// Load transaction with proof
+			tx, err := jb.LoadTx(ctx, txid, true)
 			if err == jb.ErrNotFound {
 				log.Printf("Transaction not in JungleBus: %s", txid)
 				if rollback {
@@ -395,59 +420,53 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 				return
 			}
 
-			// If no MerklePath, check Arc for proof
-			if tx.MerklePath == nil {
+			txidHash := tx.TxID()
+			valid := false
+
+			// Validate MerklePath from JungleBus (if present)
+			if tx.MerklePath != nil {
+				root, err := tx.MerklePath.ComputeRoot(txidHash)
+				if err != nil {
+					log.Printf("ComputeRoot error for %s: %v", txid, err)
+					return
+				}
+				valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+				if err != nil {
+					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
+					return
+				}
+			}
+
+			// If not present or not valid, try Arc
+			if !valid {
 				status, err := arc.Status(txid)
 				if err != nil {
 					log.Printf("Arc status error for %s: %v", txid, err)
 					return
 				}
-
-				if status.Status == 404 {
-					// Try JungleBus proof
-					if proof, err := jb.LoadProof(ctx, txid); err == nil && proof != nil {
-						tx.MerklePath = proof
+				if status.MerklePath != "" {
+					tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath)
+					if err != nil {
+						log.Printf("Error parsing Arc MerklePath for %s: %v", txid, err)
+						return
 					}
-				} else if status.MerklePath != "" {
-					if tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath); err != nil {
-						log.Printf("Error parsing MerklePath for %s: %v", txid, err)
+					root, err := tx.MerklePath.ComputeRoot(txidHash)
+					if err != nil {
+						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
+						return
+					}
+					valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+					if err != nil {
+						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
 						return
 					}
 				}
-			}
 
-			// If still no MerklePath after 2 hours, rollback
-			if tx.MerklePath == nil {
-				if rollback && score < float64(time.Now().Add(-2*time.Hour).UnixNano()) {
-					log.Printf("Rolling back old mempool tx: %s", txid)
-					if err := ingest.Store.Rollback(ctx, txid); err != nil {
-						log.Printf("Rollback error for %s: %v", txid, err)
-						return
-					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
-						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
-					}
+				// If still not present or not valid after checking both providers
+				if !valid {
+					log.Printf("No valid MerklePath from JungleBus or Arc for %s - may need rollback", txid)
+					return
 				}
-				return
-			}
-
-			// Has MerklePath - validate and re-ingest
-			txidHash := tx.TxID()
-			root, err := tx.MerklePath.ComputeRoot(txidHash)
-			if err != nil {
-				log.Printf("ComputeRoot error for %s: %v", txid, err)
-				return
-			}
-
-			valid, err := headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
-			if err != nil {
-				log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
-				return
-			}
-
-			if !valid {
-				log.Printf("Invalid MerklePath for %s", txid)
-				return
 			}
 
 			// Re-ingest with MerklePath
