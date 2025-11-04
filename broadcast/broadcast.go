@@ -54,7 +54,12 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 
 		if input.SourceTxOutput() == nil {
 			if sourceTx, err := jb.LoadTx(ctx, spendOutpoint.TxidHex(), false); err != nil {
-				response.Error = err.Error()
+				response.Status = 404
+				response.Error = fmt.Sprintf("input %d has no source transaction: %s - %s", vin, spendOutpoint.TxidHex(), err.Error())
+				return
+			} else if sourceTx == nil {
+				response.Status = 404
+				response.Error = fmt.Sprintf("input %d has no source transaction: %s not found", vin, spendOutpoint.TxidHex())
 				return
 			} else {
 				input.SourceTransaction = sourceTx
