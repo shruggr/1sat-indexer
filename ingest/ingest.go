@@ -159,6 +159,9 @@ func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transac
 }
 
 func AuditTransactions(ctx context.Context, rollback bool) {
+	start := time.Now()
+	log.Println("[AUDIT] Starting transaction audit")
+
 	limiter := make(chan struct{}, 20)
 	var wg sync.WaitGroup
 
@@ -173,6 +176,7 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	auditOldMempool(ctx, rollback, &wg, limiter)
 
 	wg.Wait()
+	log.Printf("[AUDIT] Completed transaction audit (%.2fs)", time.Since(start).Seconds())
 }
 
 func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan struct{}) {
@@ -187,11 +191,14 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 
 	items, err := ingest.Store.Search(ctx, cfg)
 	if err != nil {
-		log.Println("Search negative scores error:", err)
+		log.Println("[AUDIT] Search negative scores error:", err)
 		return
 	}
 
-	log.Println("Audit negative score txs:", len(items))
+	count := len(items)
+	if count > 0 {
+		log.Printf("[AUDIT] Checking %d unconfirmed broadcast txs (>2min old)", count)
+	}
 	for _, item := range items {
 		select {
 		case <-ctx.Done():
@@ -257,11 +264,14 @@ func auditMinedTransactions(ctx context.Context, wg *sync.WaitGroup, limiter cha
 
 	items, err := ingest.Store.Search(ctx, cfg)
 	if err != nil {
-		log.Println("Search mined txs error:", err)
+		log.Println("[AUDIT] Search mined txs error:", err)
 		return
 	}
 
-	log.Println("Audit mined txs:", len(items))
+	count := len(items)
+	if count > 0 {
+		log.Printf("[AUDIT] Verifying %d mined txs for immutability", count)
+	}
 	for _, item := range items {
 		select {
 		case <-ctx.Done():
@@ -343,11 +353,14 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 
 	items, err := ingest.Store.Search(ctx, cfg)
 	if err != nil {
-		log.Println("Search old mempool txs error:", err)
+		log.Println("[AUDIT] Search old mempool txs error:", err)
 		return
 	}
 
-	log.Println("Audit old mempool txs:", len(items))
+	count := len(items)
+	if count > 0 {
+		log.Printf("[AUDIT] Checking %d old mempool txs (>1hr) for proof", count)
+	}
 	for _, item := range items {
 		select {
 		case <-ctx.Done():
