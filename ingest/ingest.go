@@ -12,6 +12,7 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/blk"
+	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
@@ -206,8 +207,8 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 				wg.Done()
 			}()
 
-			// Load transaction from JungleBus first
-			tx, err := jb.LoadTx(ctx, txid, false)
+			// Check if transaction exists in JungleBus
+			_, err := jb.LoadTx(ctx, txid, false)
 			if err == jb.ErrNotFound {
 				log.Println("Archive Missing", txid)
 				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
