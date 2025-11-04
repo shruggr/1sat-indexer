@@ -27,12 +27,13 @@ type BroadcastResponse struct {
 }
 
 func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transaction, arcBroadcaster *broadcaster.Arc) (response *BroadcastResponse) {
+	start := time.Now()
 	txid := tx.TxID()
 	response = &BroadcastResponse{
 		Txid:   txid.String(),
 		Status: 500,
 	}
-	log.Println("Broadcasting", txid)
+	log.Printf("[ARC] %s Broadcasting", txid)
 
 	// Load Inputs
 	spendOutpoints := make([]string, 0, len(tx.Inputs))
@@ -53,7 +54,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 	}
 
-	log.Println("Load Spends", response.Txid)
+	log.Printf("[ARC] %s Load Spends (%.2fms)", response.Txid, time.Since(start).Seconds()*1000)
 	rawtx := tx.Bytes()
 	if fees, err := tx.GetFee(); err != nil {
 		response.Error = err.Error()
@@ -132,9 +133,9 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		}
 		// Success - publish to Redis, listener will route to statusChan
 		if jsonData, err := json.Marshal(arcResp); err != nil {
-			log.Printf("Error marshaling ARC response: %v", err)
+			log.Printf("[ARC] %s Error marshaling ARC response: %v", response.Txid, err)
 		} else if err := evt.Publish(ctx, "arc", string(jsonData)); err != nil {
-			log.Printf("Error publishing to Redis channel arc: %v", err)
+			log.Printf("[ARC] %s Error publishing to Redis channel arc: %v", response.Txid, err)
 		}
 	}()
 
@@ -152,12 +153,12 @@ statusLoop:
 		case resp, ok := <-statusChan:
 			if !ok {
 				// Channel closed (timeout) - query ARC status directly as fallback
-				log.Printf("Timeout waiting for accepted status for %s, querying ARC directly", txid)
+				log.Printf("[ARC] %s Timeout waiting for accepted status, querying ARC directly (%.2fms)", txid, time.Since(start).Seconds()*1000)
 
 				if arcStatus, err := arcBroadcaster.Status(response.Txid); err != nil {
-					log.Printf("Error querying ARC status for %s: %v", txid, err)
+					log.Printf("[ARC] %s Error querying ARC status: %v (%.2fms)", txid, err, time.Since(start).Seconds()*1000)
 				} else if arcStatus.TxStatus != nil {
-					log.Printf("Queried status for %s: %s", txid, *arcStatus.TxStatus)
+					log.Printf("[ARC] %s Queried status: %s (%.2fms)", txid, *arcStatus.TxStatus, time.Since(start).Seconds()*1000)
 					arcResp = arcStatus
 				}
 				break statusLoop
@@ -176,10 +177,10 @@ statusLoop:
 			// Check if this is the initial Arc response (has Txid set)
 			if arcResp.Txid != "" {
 				if arcResp.TxStatus != nil {
-					log.Printf("Arc initial response for %s: %s", txid, *arcResp.TxStatus)
+					log.Printf("[ARC] %s initial response: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
 				}
 			} else if arcResp.TxStatus != nil {
-				log.Printf("Received callback status for %s: %s", txid, *arcResp.TxStatus)
+				log.Printf("[ARC] %s Received callback status: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
 			}
 
 			// Check if we got accepted or error status - break and handle
@@ -187,7 +188,7 @@ statusLoop:
 				if IsAcceptedStatus(*arcResp.TxStatus) || IsErrorStatus(*arcResp.TxStatus) {
 					break statusLoop
 				} else {
-					log.Printf("Intermediate status %s for %s, waiting for accepted status", *arcResp.TxStatus, txid)
+					log.Printf("[ARC] %s Intermediate status %s, waiting for accepted status (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
 				}
 			}
 		}
@@ -209,9 +210,9 @@ statusLoop:
 	// Success
 	store.Log(ctx, idx.PendingTxLog, response.Txid, score)
 	if arcResp != nil && arcResp.TxStatus != nil {
-		log.Printf("Broadcasted %s with status: %s", txid, *arcResp.TxStatus)
+		log.Printf("[ARC] %s Broadcasted with status: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
 	} else {
-		log.Printf("Broadcasted %s (status unknown after timeout)", txid)
+		log.Printf("[ARC] %s Broadcasted (status unknown after timeout) (%.2fms)", txid, time.Since(start).Seconds()*1000)
 	}
 	response.Success = true
 	response.Status = 200

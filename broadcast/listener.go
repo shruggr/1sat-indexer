@@ -46,7 +46,7 @@ func (sl *StatusListener) Start(ctx context.Context) {
 	ch := sl.pubsub.Channel()
 
 	go func() {
-		log.Println("Broadcast status listener started")
+		log.Println("[ARC] Broadcast status listener started")
 		for {
 			select {
 			case reg := <-sl.addWaiter:
@@ -60,20 +60,20 @@ func (sl *StatusListener) Start(ctx context.Context) {
 
 			case msg := <-ch:
 				if msg == nil {
-					log.Println("Redis channel closed, exiting status listener")
+					log.Println("[ARC] Redis channel closed, exiting status listener")
 					return
 				}
 
 				// Parse the message
 				var arcResp broadcaster.ArcResponse
 				if err := json.Unmarshal([]byte(msg.Payload), &arcResp); err != nil {
-					log.Printf("Error parsing ARC status update: %v", err)
+					log.Printf("[ARC] Error parsing ARC status update: %v", err)
 					continue
 				}
 
 				// Extract txid from the message itself
 				if arcResp.Txid == "" {
-					log.Printf("ARC status update missing txid: %v", arcResp)
+					log.Printf("[ARC] ARC status update missing txid: %v", arcResp)
 					continue
 				}
 
@@ -81,14 +81,14 @@ func (sl *StatusListener) Start(ctx context.Context) {
 				if waiter, ok := sl.waiters[arcResp.Txid]; ok {
 					select {
 					case waiter <- &arcResp:
-						log.Printf("Delivered status update for %s: %v", arcResp.Txid, arcResp.TxStatus)
+						log.Printf("[ARC] %s Delivered status update: %v", arcResp.Txid, arcResp.TxStatus)
 					default:
-						log.Printf("Waiter channel full for %s, skipping", arcResp.Txid)
+						log.Printf("[ARC] %s Waiter channel full, skipping", arcResp.Txid)
 					}
 				}
 
 			case <-ctx.Done():
-				log.Println("Context cancelled, shutting down status listener")
+				log.Println("[ARC] Context cancelled, shutting down status listener")
 				sl.pubsub.Close()
 				return
 			}

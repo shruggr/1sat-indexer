@@ -191,23 +191,23 @@ func TxCallback(c *fiber.Ctx) error {
 	// Parse the ARC callback response
 	var arcResp broadcaster.ArcResponse
 	if err := c.BodyParser(&arcResp); err != nil {
-		log.Printf("Error parsing ARC callback: %v", err)
+		log.Printf("[ARC] Error parsing ARC callback: %v", err)
 		return c.Status(400).SendString("Invalid callback payload")
 	}
 
 	// Validate required fields
 	if arcResp.Txid == "" || arcResp.TxStatus == nil {
-		log.Printf("Missing required fields in callback: txid=%s, status=%v", arcResp.Txid, arcResp.TxStatus)
+		log.Printf("[ARC] Missing required fields in callback: txid=%s, status=%v", arcResp.Txid, arcResp.TxStatus)
 		return c.Status(400).SendString("Missing txid or txStatus")
 	}
 
-	log.Printf("ARC callback received: txid=%s, status=%s", arcResp.Txid, *arcResp.TxStatus)
+	log.Printf("[ARC] %s Callback received: status=%s", arcResp.Txid, *arcResp.TxStatus)
 
 	// Publish the status update to Redis for the broadcast listener
 	if jsonData, err := json.Marshal(arcResp); err != nil {
-		log.Printf("Error marshaling ARC response: %v", err)
+		log.Printf("[ARC] %s Error marshaling ARC response: %v", arcResp.Txid, err)
 	} else if err := evt.Publish(c.Context(), "arc", string(jsonData)); err != nil {
-		log.Printf("Error publishing to Redis channel arc: %v", err)
+		log.Printf("[ARC] %s Error publishing to Redis channel arc: %v", arcResp.Txid, err)
 	}
 
 	return c.SendStatus(200)
