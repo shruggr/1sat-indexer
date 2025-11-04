@@ -35,21 +35,31 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 	log.Printf("[ARC] %s Broadcasting", txid)
 
-	// Load Inputs
+	// Load Inputs and check for existing spends
 	spendOutpoints := make([]string, 0, len(tx.Inputs))
 	for vin, input := range tx.Inputs {
 		spendOutpoint := lib.NewOutpointFromHash(input.SourceTXID, input.SourceTxOutIndex)
 		spendOutpoints = append(spendOutpoints, spendOutpoint.String())
+
+		// Check if already spent in JungleBus
+		if spend, err := jb.GetSpend(spendOutpoint.String()); err != nil {
+			// 404 means JungleBus doesn't know about this outpoint
+			response.Status = 404
+			response.Error = fmt.Sprintf("unknown-input: %s:%d - %s", response.Txid, vin, err.Error())
+			return
+		} else if spend != "" {
+			// Already spent by another transaction
+			response.Status = 409
+			response.Error = fmt.Sprintf("input-already-spent: %s:%d - %s spent by %s", response.Txid, vin, spendOutpoint.String(), spend)
+			return
+		}
+
 		if input.SourceTxOutput() == nil {
 			if sourceTx, err := jb.LoadTx(ctx, spendOutpoint.TxidHex(), false); err != nil {
 				response.Error = err.Error()
 				return
-			} else if sourceTx == nil {
-				response.Status = 404
-				response.Error = fmt.Sprintf("missing-input: %s:%d -  %s", response.Txid, vin, spendOutpoint.String())
-				return
 			} else {
-				input.SetSourceTxOutput(sourceTx.Outputs[input.SourceTxOutIndex])
+				input.SourceTransaction = sourceTx
 			}
 		}
 	}
