@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/bsv-blockchain/go-sdk/spv"
+	"github.com/bsv-blockchain/go-sdk/script/interpreter"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
@@ -52,22 +52,42 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			return
 		}
 
-		if input.SourceTxOutput() == nil {
+		if input.SourceTransaction == nil {
 			if sourceTx, err := jb.LoadTx(ctx, spendOutpoint.TxidHex(), false); err != nil {
 				response.Status = 404
 				response.Error = fmt.Sprintf("input %d has no source transaction: %s - %s", vin, spendOutpoint.TxidHex(), err.Error())
+				log.Print("Broadcast error:", response.Error)
 				return
 			} else if sourceTx == nil {
 				response.Status = 404
 				response.Error = fmt.Sprintf("input %d has no source transaction: %s not found", vin, spendOutpoint.TxidHex())
+				log.Print("Broadcast error:", response.Error)
+				return
+			} else if int(input.SourceTxOutIndex) >= len(sourceTx.Outputs) {
+				response.Status = 400
+				response.Error = fmt.Sprintf("input %d references invalid output index: %s has %d outputs but input references output %d", vin, spendOutpoint.TxidHex(), len(sourceTx.Outputs), input.SourceTxOutIndex)
+				log.Print("Broadcast error:", response.Error)
 				return
 			} else {
-				input.SourceTransaction = sourceTx
+				tx.Inputs[vin].SourceTransaction = sourceTx
+				sourceOutput := sourceTx.Outputs[input.SourceTxOutIndex]
+
+				// Verify script for this input
+				if err := interpreter.NewEngine().Execute(
+					interpreter.WithTx(tx, vin, sourceOutput),
+					interpreter.WithForkID(),
+					interpreter.WithAfterGenesis(),
+				); err != nil {
+					response.Status = 400
+					response.Error = fmt.Sprintf("script verification failed for input %d: %s", vin, err.Error())
+					return
+				}
 			}
 		}
 	}
 
-	log.Printf("[ARC] %s Load Spends (%.2fms)", response.Txid, time.Since(start).Seconds()*1000)
+	log.Printf("[ARC] %s Load Spends and Verified Scripts (%.2fms)", response.Txid, time.Since(start).Seconds()*1000)
+
 	rawtx := tx.Bytes()
 	if fees, err := tx.GetFee(); err != nil {
 		response.Error = err.Error()
@@ -82,16 +102,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 	score := idx.HeightScore(0, 0)
 
-	// TODO: Verify Fees
-	// Verify Transaction locally
-	if valid, err := spv.VerifyScripts(ctx, tx); err != nil {
-		response.Error = err.Error()
-		return
-	} else if !valid {
-		response.Status = 400
-		response.Error = fmt.Sprintf("validation-failed: %s", txid)
-		return
-	} else if err := jb.Cache.Set(ctx, jb.TxKey(response.Txid), tx.Bytes(), 0).Err(); err != nil { //
+	if err := jb.Cache.Set(ctx, jb.TxKey(response.Txid), tx.Bytes(), 0).Err(); err != nil { //
 		response.Error = err.Error()
 		return
 		// Log Transaction Status as pending
