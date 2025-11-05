@@ -23,6 +23,9 @@ var ingest *idx.IngestCtx
 var immutableScore float64
 var arc *broadcaster.Arc
 
+// OldMempoolTimeout is the duration after which mempool transactions without proof should be rolled back
+const OldMempoolTimeout = 3 * time.Hour
+
 func Start(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc, redisClient *redis.Client, rollback bool) {
 	ingest = ingestCtx
 	arc = bcast
@@ -92,8 +95,8 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 			// Scenario 2: Arc Error - Transaction rejected
 			status := broadcaster.ArcStatus(*arcResp.TxStatus)
 			if status == broadcaster.REJECTED ||
-				status == "DOUBLE_SPEND_ATTEMPTED" ||
-				status == "SEEN_IN_ORPHAN_MEMPOOL" {
+				status == broadcaster.DOUBLE_SPEND_ATTEMPTED ||
+				status == broadcaster.SEEN_IN_ORPHAN_MEMPOOL {
 				go func(txidStr string) {
 					if err := ingest.Store.Rollback(ctx, txidStr); err != nil {
 						log.Printf("Error rolling back tx %s: %v", txidStr, err)
@@ -170,10 +173,10 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 	auditNegativeScores(ctx, &wg, limiter)
 
 	// Scenario 2: Mined transactions (0 to immutableScore) - Verify MerklePath and check for immutability
-	auditMinedTransactions(ctx, &wg, limiter)
+	auditMinedTransactions(ctx, rollback, &wg, limiter)
 
-	// Scenario 3: Old mempool transactions (older than 1 hour) - Check if they finally got mined
-	auditOldMempool(ctx, rollback, &wg, limiter)
+	// Scenario 3: Old mempool transactions (>OldMempoolTimeout) - Check if they got mined
+	auditMempool(ctx, rollback, &wg, limiter)
 
 	wg.Wait()
 	log.Printf("[AUDIT] Completed transaction audit (%.2fs)", time.Since(start).Seconds())
@@ -253,7 +256,7 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 	}
 }
 
-func auditMinedTransactions(ctx context.Context, wg *sync.WaitGroup, limiter chan struct{}) {
+func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
 	from := 0.0
 	cfg := &idx.SearchCfg{
 		Keys:  []string{idx.PendingTxLog},
@@ -335,12 +338,25 @@ func auditMinedTransactions(ctx context.Context, wg *sync.WaitGroup, limiter cha
 						return
 					}
 				}
+			}
 
-				// If still not present or not valid after checking both providers
-				if !valid {
-					log.Printf("No valid MerklePath from JungleBus or Arc for %s - may need rollback", txid)
-					return
+			// If still not present or not valid after checking both providers
+			// This transaction was mined >10 blocks ago but no longer has a valid proof
+			// This indicates it was reorged out and not re-mined - should be rolled back
+			if !valid {
+				if rollback {
+					log.Printf("Rolling back reorg victim (>10 blocks): %s", txid)
+					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+						log.Printf("Rollback error for %s: %v", txid, err)
+						return
+					}
+					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
+					}
+				} else {
+					log.Printf("Reorg victim (>10 blocks) without proof, rollback disabled: %s", txid)
 				}
+				return
 			}
 
 			// Re-ingest to recalculate score from MerklePath
@@ -366,9 +382,9 @@ func auditMinedTransactions(ctx context.Context, wg *sync.WaitGroup, limiter cha
 	}
 }
 
-func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
-	until := time.Now().Add(-time.Hour)
-	to := float64(until.UnixNano())
+func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
+	// Get mempool transactions older than 2 minutes
+	to := float64(time.Now().Add(-2 * time.Minute).UnixNano())
 	cfg := &idx.SearchCfg{
 		Keys:  []string{idx.PendingTxLog},
 		From:  &idx.MempoolScore,
@@ -378,13 +394,13 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 
 	items, err := ingest.Store.Search(ctx, cfg)
 	if err != nil {
-		log.Println("[AUDIT] Search old mempool txs error:", err)
+		log.Println("[AUDIT] Search mempool txs error:", err)
 		return
 	}
 
 	count := len(items)
 	if count > 0 {
-		log.Printf("[AUDIT] Checking %d old mempool txs (>1hr) for proof", count)
+		log.Printf("[AUDIT] Checking %d mempool txs (>2min old)", count)
 	}
 	for _, item := range items {
 		select {
@@ -401,17 +417,35 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 				wg.Done()
 			}()
 
+			// Determine age of mempool transaction (score is UnixNano timestamp)
+			txTime := time.Unix(0, int64(score))
+			age := time.Since(txTime)
+			isOld := age > OldMempoolTimeout
+
 			// Load transaction with proof
 			tx, err := jb.LoadTx(ctx, txid, true)
 			if err == jb.ErrNotFound {
-				log.Printf("Transaction not in JungleBus: %s", txid)
-				if rollback {
-					if err := ingest.Store.Rollback(ctx, txid); err != nil {
-						log.Printf("Rollback error for %s: %v", txid, err)
-						return
+				// Transaction doesn't exist in JungleBus
+				// All transactions here are >2min old (filtered by query)
+				if isOld {
+					// >3hr old: Rollback if flag enabled
+					if rollback {
+						log.Printf("Rolling back missing mempool tx (age: %v): %s", age.Round(time.Second), txid)
+						if err := ingest.Store.Rollback(ctx, txid); err != nil {
+							log.Printf("Rollback error for %s: %v", txid, err)
+							return
+						}
+						if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+							log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
+						}
+					} else {
+						log.Printf("Missing mempool tx (age: %v), rollback disabled: %s", age.Round(time.Second), txid)
 					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
-						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
+				} else {
+					// 2min-3hr old: Delog from queue (transaction must exist if >2min)
+					log.Printf("Removing missing mempool tx (age: %v) from queue: %s", age.Round(time.Second), txid)
+					if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+						log.Printf("Delog error for %s: %v", txid, err)
 					}
 				}
 				return
@@ -462,11 +496,24 @@ func auditOldMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, lim
 					}
 				}
 
-				// If still not present or not valid after checking both providers
-				if !valid {
-					log.Printf("No valid MerklePath from JungleBus or Arc for %s - may need rollback", txid)
-					return
+			}
+			// If still not present or not valid after checking both providers
+			// This transaction has been in mempool for >OldMempoolTimeout without being mined
+			// If rollback flag is enabled, remove it from the index
+			if !valid {
+				if rollback {
+					log.Printf("Rolling back old mempool tx (>%v): %s", OldMempoolTimeout, txid)
+					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+						log.Printf("Rollback error for %s: %v", txid, err)
+						return
+					}
+					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
+					}
+				} else {
+					log.Printf("Old mempool tx (>%v) without proof, rollback disabled: %s", OldMempoolTimeout, txid)
 				}
+				return
 			}
 
 			// Re-ingest with MerklePath
