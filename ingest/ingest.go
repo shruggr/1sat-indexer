@@ -292,7 +292,24 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 
 			// Load transaction with MerklePath
 			tx, err := jb.LoadTx(ctx, txid, true)
-			if err != nil {
+			if err == jb.ErrNotFound {
+				// Transaction was supposedly mined >10 blocks ago but doesn't exist
+				// This is a reorg victim - rollback
+				if rollback {
+					log.Printf("Rolling back missing mined tx (>10 blocks): %s", txid)
+					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+						log.Printf("Rollback error for %s: %v", txid, err)
+						return
+					}
+					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
+					}
+				} else {
+					log.Printf("Missing mined tx (>10 blocks), rollback disabled: %s", txid)
+				}
+				return
+			} else if err != nil {
+				// Other errors (network, timeout, etc.) - skip and retry later
 				log.Printf("LoadTx error for %s: %v", txid, err)
 				return
 			}
@@ -603,7 +620,7 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 						inflight[txid] = struct{}{}
 						limiter <- struct{}{}
 						wg.Add(1)
-						go func(txid string) {
+						go func(txid string, score float64) {
 							defer func() {
 								if r := recover(); r != nil {
 									log.Println("Recovered from panic in queue processor:", r)
@@ -613,7 +630,11 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 								done <- txid
 							}()
 							if tx, err := jb.LoadTx(ctx, txid, true); err == jb.ErrNotFound {
-								cfg.Store.Log(ctx, cfg.Key, txid, float64(time.Now().Add(15*time.Second).UnixNano()))
+								// Transaction not found in JungleBus - remove from queue
+								log.Printf("[QUEUE] Transaction not found, removing from queue: %s", txid)
+								if err := cfg.Store.Delog(ctx, cfg.Key, txid); err != nil {
+									log.Printf("Delog error for %s: %v", txid, err)
+								}
 								return
 							} else if err != nil {
 								log.Printf("LoadTx error %s: %v", txid, err)
@@ -631,7 +652,7 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 									return
 								}
 							}
-						}(txid)
+						}(txid, l.Score)
 					}
 				}
 			}
