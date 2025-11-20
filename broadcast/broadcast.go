@@ -15,7 +15,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
-const MIN_SAT_PER_KB = 1.0
+const MIN_SAT_PER_KB = 100.0
 
 type BroadcastResponse struct {
 	Success bool   `json:"success"`
