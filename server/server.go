@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,7 +69,51 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 		if len(topics) == 0 {
 			return c.SendStatus(400)
 		}
-		log.Println("Subscribing to", topics)
+
+		// Get starting score from Last-Event-ID header or from query param
+		fromScore := -1.0
+		lastEventID := c.Get("Last-Event-ID")
+		if lastEventID != "" {
+			if parsed, err := strconv.ParseFloat(lastEventID, 64); err == nil {
+				fromScore = parsed
+			}
+		} else if fromParam := c.Query("from"); fromParam != "" {
+			if parsed, err := strconv.ParseFloat(fromParam, 64); err == nil {
+				fromScore = parsed
+			}
+		}
+
+		log.Println("Subscribing to", topics, "from score", fromScore)
+
+		// Perform catchup query for historical events since fromScore
+		if fromScore >= 0 {
+			ctx := context.Background()
+			for _, topic := range topics {
+				catchupTxos, err := ingestCtx.Store.SearchTxos(ctx, &idx.SearchCfg{
+					Keys:    []string{topic},
+					From:    &fromScore,
+					Limit:   1000,
+					Reverse: false,
+				})
+				if err != nil {
+					log.Printf("Error fetching catchup txos for topic %s: %v\n", topic, err)
+					continue
+				}
+
+				// Send catchup events
+				for _, txo := range catchupTxos {
+					sseMessage, err := sse.FormatSSEMessage(topic, txo, txo.Score)
+					if err != nil {
+						log.Printf("Error formatting catchup message: %v\n", err)
+						continue
+					}
+					if _, err := c.WriteString(sseMessage); err != nil {
+						log.Printf("Error writing catchup message: %v\n", err)
+						return err
+					}
+				}
+			}
+		}
 
 		stateChan := make(chan *redis.Message)
 
@@ -103,7 +149,15 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 
 			case ev := <-stateChan:
 				log.Println("Sending Event", ev.Channel, ev.Payload)
-				sseMessage, err := sse.FormatSSEMessage(ev.Channel, ev.Payload)
+
+				// Parse the payload to extract score
+				var txo idx.Txo
+				if err := json.Unmarshal([]byte(ev.Payload), &txo); err != nil {
+					log.Printf("Error unmarshaling txo: %v\n", err)
+					continue
+				}
+
+				sseMessage, err := sse.FormatSSEMessage(ev.Channel, ev.Payload, txo.Score)
 				if err != nil {
 					log.Printf("Error formatting sse message: %v\n", err)
 					continue
@@ -111,7 +165,7 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 
 				// send sse formatted message
 				if _, err := c.WriteString(sseMessage); err != nil {
-					log.Printf("Error while writing keepalive: %v\n", err)
+					log.Printf("Error while writing message: %v\n", err)
 				}
 				// if _, err = fmt.Fprintf(w, sseMessage); err != nil {
 				// 	log.Printf("Error while writing Data: %v\n", err)

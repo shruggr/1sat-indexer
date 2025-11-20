@@ -68,7 +68,7 @@ func (sl *SessionsLock) RemoveSession(s *Session) {
 	}
 }
 
-func FormatSSEMessage(eventType string, data any) (string, error) {
+func FormatSSEMessage(eventType string, data any, id float64) (string, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 
@@ -81,6 +81,7 @@ func FormatSSEMessage(eventType string, data any) (string, error) {
 		return "", nil
 	}
 	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("id: %.0f\n", id))
 	sb.WriteString(fmt.Sprintf("event: %s\n", eventType))
 	if data != nil {
 		sb.WriteString(fmt.Sprintf("data: %v\n\n", buf.String()))
