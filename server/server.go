@@ -25,7 +25,23 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tag"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tx"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/txos"
+
+	_ "github.com/shruggr/1sat-indexer/v5/docs"
+	fiberSwagger "github.com/swaggo/fiber-swagger"
 )
+
+// @title 1Sat Indexer API
+// @version 5.0
+// @description BSV blockchain indexer API for transaction outputs, blocks, and related data
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url https://github.com/shruggr/1sat-indexer
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @BasePath /
 
 var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
@@ -40,6 +56,11 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	app.Use(compress.New())
 	app.Use(cors.New(cors.Config{AllowOrigins: "*"}))
 
+	// @Summary Health check
+	// @Description Simple health check endpoint
+	// @Tags health
+	// @Success 200 {string} string "yo"
+	// @Router /yo [get]
 	app.Get("/yo", func(c *fiber.Ctx) error {
 		return c.SendString("yo")
 	})
@@ -56,6 +77,15 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
+	app.Get("/swagger/*", fiberSwagger.WrapHandler)
+
+	// @Summary Subscribe to server-sent events
+	// @Description Subscribe to real-time updates via server-sent events. Provide comma-separated topic names.
+	// @Tags sse
+	// @Param topic query string true "Comma-separated list of topics to subscribe to"
+	// @Success 200 {string} string "Event stream"
+	// @Failure 400 {string} string "Bad request"
+	// @Router /v5/sse [get]
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")
 		c.Set("Cache-Control", "no-cache")

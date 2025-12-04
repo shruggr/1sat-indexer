@@ -15,6 +15,13 @@ func RegisterRoutes(r fiber.Router) {
 	r.Get("/list/:from", ListBlocks)
 }
 
+// @Summary Get chain tip
+// @Description Get the current blockchain tip (highest block)
+// @Tags blocks
+// @Produce json
+// @Success 200 {object} blk.BlockHeaderResponse
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/blocks/tip [get]
 func GetChaintip(c *fiber.Ctx) error {
 	if chaintip, err := blk.GetChaintip(context.Background()); err != nil {
 		return err
@@ -23,6 +30,16 @@ func GetChaintip(c *fiber.Ctx) error {
 	}
 }
 
+// @Summary Get block by height
+// @Description Get block header information by block height
+// @Tags blocks
+// @Produce json
+// @Param height path int true "Block height"
+// @Success 200 {object} blk.BlockHeaderResponse
+// @Failure 400 {string} string "Invalid height"
+// @Failure 404 {string} string "Block not found"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/blocks/height/{height} [get]
 func GetBlockByHeight(c *fiber.Ctx) error {
 	if height, err := strconv.ParseUint(c.Params("height"), 10, 32); err != nil {
 		return c.SendStatus(400)
@@ -42,6 +59,15 @@ func GetBlockByHeight(c *fiber.Ctx) error {
 	}
 }
 
+// @Summary Get block by hash
+// @Description Get block header information by block hash
+// @Tags blocks
+// @Produce json
+// @Param hash path string true "Block hash"
+// @Success 200 {object} blk.BlockHeaderResponse
+// @Failure 404 {string} string "Block not found"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/blocks/hash/{hash} [get]
 func GetBlockByHash(c *fiber.Ctx) error {
 	if block, err := blk.BlockByHash(c.Context(), c.Params("hash")); err != nil {
 		return err
@@ -53,6 +79,15 @@ func GetBlockByHash(c *fiber.Ctx) error {
 	}
 }
 
+// @Summary List blocks
+// @Description List up to 10,000 block headers starting from a given height
+// @Tags blocks
+// @Produce json
+// @Param from path int true "Starting block height"
+// @Success 200 {array} blk.BlockHeaderResponse
+// @Failure 400 {string} string "Invalid height"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/blocks/list/{from} [get]
 func ListBlocks(c *fiber.Ctx) error {
 	if fromHeight, err := strconv.ParseUint(c.Params("from"), 10, 32); err != nil {
 		return c.SendStatus(400)

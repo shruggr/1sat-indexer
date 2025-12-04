@@ -28,16 +28,14 @@ type BlockHeaderState struct {
 }
 
 type BlockHeaderResponse struct {
-	Height     uint32         `json:"height"`
-	Hash       chainhash.Hash `json:"hash"`
-	Version    uint32         `json:"version"`
-	MerkleRoot chainhash.Hash `json:"merkleRoot"`
-	Timestamp  uint32         `json:"creationTimestamp"`
-	Bits       uint32         `json:"bits"`
-	Nonce      uint32         `json:"nonce"`
-	// ChainWork     *big.Int       `json:"chainWork"`
-	// CumulatedWork *big.Int       `json:"work"`
-	PreviousBlock chainhash.Hash `json:"prevBlockHash"`
+	Height        uint32         `json:"height"`
+	Hash          chainhash.Hash `json:"hash" swaggertype:"string"`
+	Version       uint32         `json:"version"`
+	MerkleRoot    chainhash.Hash `json:"merkleRoot" swaggertype:"string"`
+	Timestamp     uint32         `json:"creationTimestamp"`
+	Bits          uint32         `json:"bits"`
+	Nonce         uint32         `json:"nonce"`
+	PreviousBlock chainhash.Hash `json:"prevBlockHash" swaggertype:"string"`
 }
 
 func NewBlockHeaderResponse(header *BlockHeader) *BlockHeaderResponse {

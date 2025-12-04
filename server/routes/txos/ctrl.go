@@ -15,6 +15,18 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Post("/", GetTxos)
 }
 
+// @Summary Get transaction output
+// @Description Get a transaction output by outpoint
+// @Tags txos
+// @Produce json
+// @Param outpoint path string true "Transaction outpoint (txid_vout)"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param script query bool false "Include script data"
+// @Param spend query bool false "Include spend information"
+// @Success 200 {object} idx.Txo
+// @Failure 404 {string} string "TXO not found"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/txo/{outpoint} [get]
 func GetTxo(c *fiber.Ctx) error {
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
@@ -30,6 +42,19 @@ func GetTxo(c *fiber.Ctx) error {
 	}
 }
 
+// @Summary Get multiple transaction outputs
+// @Description Get multiple transaction outputs by outpoints
+// @Tags txos
+// @Accept json
+// @Produce json
+// @Param outpoints body []string true "Array of outpoints"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param script query bool false "Include script data"
+// @Param spend query bool false "Include spend information"
+// @Success 200 {array} idx.Txo
+// @Failure 400 {string} string "Invalid request body"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/txo [post]
 func GetTxos(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {
