@@ -76,7 +76,7 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
-	app.Static("/api-spec", "./docs")
+	app.Static("/api-spec", "../../docs")
 
 	app.Get("/docs", func(c *fiber.Ctx) error {
 		html := `<!doctype html>
