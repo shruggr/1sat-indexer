@@ -77,21 +77,35 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
-	// Determine docs path - try ./docs first, then ../../docs
-	docsPath := "./docs"
-	if stat, err := os.Stat(docsPath); os.IsNotExist(err) || !stat.IsDir() {
-		docsPath = "../../docs"
-	}
-	absPath, _ := filepath.Abs(docsPath)
-	log.Printf("API docs path (relative): %s", docsPath)
-	log.Printf("API docs path (absolute): %s", absPath)
+	// Get current working directory
+	cwd, _ := os.Getwd()
+	log.Printf("Server working directory: %s", cwd)
 
-	// Verify swagger.json exists
-	swaggerPath := filepath.Join(docsPath, "swagger.json")
-	if _, err := os.Stat(swaggerPath); err == nil {
-		log.Println("✓ swagger.json found")
-	} else {
-		log.Printf("✗ swagger.json not found at: %s", swaggerPath)
+	// Try to find docs folder in multiple locations
+	possiblePaths := []string{
+		"./docs",
+		"../../docs",
+		filepath.Join(cwd, "docs"),
+	}
+
+	var docsPath string
+	for _, p := range possiblePaths {
+		absPath, _ := filepath.Abs(p)
+		swaggerPath := filepath.Join(absPath, "swagger.json")
+		if _, err := os.Stat(swaggerPath); err == nil {
+			docsPath = absPath
+			log.Printf("✓ Found swagger.json at: %s", swaggerPath)
+			break
+		}
+	}
+
+	if docsPath == "" {
+		log.Printf("✗ swagger.json not found in any of these locations:")
+		for _, p := range possiblePaths {
+			absPath, _ := filepath.Abs(p)
+			log.Printf("  - %s", filepath.Join(absPath, "swagger.json"))
+		}
+		docsPath = "./docs" // fallback
 	}
 
 	app.Static("/api-spec", docsPath)
