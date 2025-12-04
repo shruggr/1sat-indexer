@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,7 +77,15 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
-	app.Static("/api-spec", "../../docs")
+	// Determine docs path - try ./docs first, then ../../docs
+	docsPath := "./docs"
+	if _, err := os.Stat(docsPath); os.IsNotExist(err) {
+		docsPath = "../../docs"
+	}
+	if absPath, err := filepath.Abs(docsPath); err == nil {
+		log.Println("Serving API docs from:", absPath)
+	}
+	app.Static("/api-spec", docsPath)
 
 	app.Get("/docs", func(c *fiber.Ctx) error {
 		html := `<!doctype html>
