@@ -79,12 +79,21 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 
 	// Determine docs path - try ./docs first, then ../../docs
 	docsPath := "./docs"
-	if _, err := os.Stat(docsPath); os.IsNotExist(err) {
+	if stat, err := os.Stat(docsPath); os.IsNotExist(err) || !stat.IsDir() {
 		docsPath = "../../docs"
 	}
-	if absPath, err := filepath.Abs(docsPath); err == nil {
-		log.Println("Serving API docs from:", absPath)
+	absPath, _ := filepath.Abs(docsPath)
+	log.Printf("API docs path (relative): %s", docsPath)
+	log.Printf("API docs path (absolute): %s", absPath)
+
+	// Verify swagger.json exists
+	swaggerPath := filepath.Join(docsPath, "swagger.json")
+	if _, err := os.Stat(swaggerPath); err == nil {
+		log.Println("✓ swagger.json found")
+	} else {
+		log.Printf("✗ swagger.json not found at: %s", swaggerPath)
 	}
+
 	app.Static("/api-spec", docsPath)
 
 	app.Get("/docs", func(c *fiber.Ctx) error {
