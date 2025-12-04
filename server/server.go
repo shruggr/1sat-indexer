@@ -27,7 +27,6 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/server/routes/txos"
 
 	_ "github.com/shruggr/1sat-indexer/v5/docs"
-	fiberSwagger "github.com/swaggo/fiber-swagger"
 )
 
 // @title 1Sat Indexer API
@@ -77,7 +76,24 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
-	app.Get("/swagger/*", fiberSwagger.WrapHandler)
+	app.Get("/docs", func(c *fiber.Ctx) error {
+		html := `<!doctype html>
+<html>
+<head>
+    <title>1Sat Indexer API</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+    <script id="api-reference" data-url="/docs/swagger.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+</body>
+</html>`
+		c.Set("Content-Type", "text/html")
+		return c.SendString(html)
+	})
+
+	app.Static("/docs", "./docs")
 
 	// @Summary Subscribe to server-sent events
 	// @Description Subscribe to real-time updates via server-sent events. Provide comma-separated topic names.
