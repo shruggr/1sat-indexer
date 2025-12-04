@@ -76,6 +76,8 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
+	app.Static("/api-spec", "./docs")
+
 	app.Get("/docs", func(c *fiber.Ctx) error {
 		html := `<!doctype html>
 <html>
@@ -85,15 +87,13 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 </head>
 <body>
-    <script id="api-reference" data-url="/docs/swagger.json"></script>
+    <script id="api-reference" data-url="/api-spec/swagger.json"></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>`
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
 	})
-
-	app.Static("/docs", "./docs")
 
 	// @Summary Subscribe to server-sent events
 	// @Description Subscribe to real-time updates via server-sent events. Provide comma-separated topic names.
