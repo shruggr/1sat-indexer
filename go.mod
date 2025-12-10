@@ -212,4 +212,4 @@ replace github.com/bsv-blockchain/go-sdk => github.com/bsv-blockchain/go-sdk v1.
 
 replace github.com/bsv-blockchain/arcade => github.com/bsv-blockchain/arcade v0.0.0-20251209225635-81fbab23d6ce
 
-replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251210193225-96eb77b72601
+replace github.com/b-open-io/overlay => github.com/b-open-io/overlay v0.3.1-0.20251210204032-66b6c1fd25d2

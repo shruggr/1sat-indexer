@@ -53,8 +53,8 @@ github.com/aws/aws-sdk-go-v2/service/sts v1.38.5 h1:+LVB0xBqEgjQoqr9bGZbRzvg212B
 github.com/aws/aws-sdk-go-v2/service/sts v1.38.5/go.mod h1:xoaxeqnnUaZjPjaICgIy5B+MHCSb/ZSOn4MvkFNOUA0=
 github.com/aws/smithy-go v1.23.0 h1:8n6I3gXzWJB2DxBDnfxgBaSX6oe0d/t10qGz7OKqMCE=
 github.com/aws/smithy-go v1.23.0/go.mod h1:t1ufH5HMublsJYulve2RKmHDC15xu1f26kHCp/HgceI=
-github.com/b-open-io/overlay v0.3.1-0.20251210193225-96eb77b72601 h1:LB88xk3rLU8XLFGEJWMTn+KrrX5w65KJNaLkyiE5E4s=
-github.com/b-open-io/overlay v0.3.1-0.20251210193225-96eb77b72601/go.mod h1:Eg0A94oi6vV0C2u0XA/LK8Mtr5i16Mx57HgWvsTksX4=
+github.com/b-open-io/overlay v0.3.1-0.20251210204032-66b6c1fd25d2 h1:7Q+0c+YHt87vHrFadt99ghMWgx5AIFJNjGpAuXgPGiE=
+github.com/b-open-io/overlay v0.3.1-0.20251210204032-66b6c1fd25d2/go.mod h1:Eg0A94oi6vV0C2u0XA/LK8Mtr5i16Mx57HgWvsTksX4=
 github.com/benbjohnson/clock v1.3.5 h1:VvXlSJBzZpA/zum6Sj74hxwYI2DIxRWuNIoXAzHZz5o=
 github.com/benbjohnson/clock v1.3.5/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
