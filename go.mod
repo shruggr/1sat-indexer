@@ -197,4 +197,4 @@ require (
 
 replace github.com/bsv-blockchain/go-sdk => github.com/bsv-blockchain/go-sdk v1.2.13-0.20251209215739-b6f7f75a3d9d
 
-replace github.com/bsv-blockchain/arcade => /Users/davidcase/Source/bsv-stack/arcade
+replace github.com/bsv-blockchain/arcade => github.com/bsv-blockchain/arcade v0.0.0-20251209225635-81fbab23d6ce
