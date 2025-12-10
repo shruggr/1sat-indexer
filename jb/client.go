@@ -14,17 +14,18 @@ import (
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
+	"github.com/bsv-blockchain/arcade"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/joho/godotenv"
 	"github.com/ordishs/go-bitcoin"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/v5/blk"
 )
 
 var JUNGLEBUS string
 var Cache *redis.Client
 var JB *junglebus.Client
 var bit *bitcoin.Bitcoind
+var Chaintracks arcade.Chaintracks
 
 var ErrNotFound = errors.New("not-found")
 var ErrBadRequest = errors.New("bad-request")
@@ -234,14 +235,11 @@ func LoadProof(ctx context.Context, txid string) (proof *transaction.MerklePath,
 	if len(prf) > 0 {
 		if proof, err = transaction.NewMerklePathFromBinary(prf); err != nil {
 			return
-		} else if chaintip, err := blk.GetChaintip(ctx); err != nil {
-			return nil, err
-		} else if proof.BlockHeight+5 < uint32(chaintip.Height) {
+		} else if proof.BlockHeight+5 < Chaintracks.GetHeight(ctx) {
 			Cache.Set(ctx, cacheKey, prf, 0)
 		} else {
 			Cache.Set(ctx, cacheKey, prf, time.Hour)
 		}
-
 	}
 	return
 }

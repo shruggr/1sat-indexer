@@ -12,8 +12,8 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/v5/blk"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
@@ -147,10 +147,8 @@ func GetTxWithProof(c *fiber.Ctx) error {
 			if proof == nil {
 				buf.Write(util.VarInt(0).Bytes())
 				c.Set("Cache-Control", "public,max-age=60")
-			} else if chaintip, err := blk.GetChaintip(c.Context()); err != nil {
-				return err
 			} else {
-				if proof.BlockHeight < chaintip.Height-5 {
+				if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
 					c.Set("Cache-Control", "public,max-age=31536000,immutable")
 				} else {
 					c.Set("Cache-Control", "public,max-age=60")
@@ -215,10 +213,8 @@ func GetProof(c *fiber.Ctx) error {
 		return err
 	} else if proof == nil {
 		return c.SendStatus(404)
-	} else if chaintip, err := blk.GetChaintip(c.Context()); err != nil {
-		return err
 	} else {
-		if proof.BlockHeight < chaintip.Height-5 {
+		if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")

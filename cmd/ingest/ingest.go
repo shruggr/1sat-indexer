@@ -10,6 +10,7 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/ingest"
+	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var CONCURRENCY uint
@@ -34,6 +35,11 @@ func init() {
 
 func main() {
 	ctx := context.Background()
+
+	if err := config.InitChaintracks(ctx); err != nil {
+		log.Fatal("Failed to initialize chaintracks:", err)
+	}
+	jb.Chaintracks = config.Chaintracks
 
 	// Setup Redis client for event publishing
 	var redisClient *redis.Client
