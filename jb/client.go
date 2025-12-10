@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/GorillaPool/go-junglebus"
@@ -32,9 +31,7 @@ var ErrBadRequest = errors.New("bad-request")
 var ErrMalformed = errors.New("malformed")
 
 func init() {
-	wd, _ := os.Getwd()
-	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+	godotenv.Load(".env")
 	var err error
 	JUNGLEBUS = os.Getenv("JUNGLEBUS")
 	if JUNGLEBUS == "" {
@@ -48,50 +45,19 @@ func init() {
 		log.Panic(err)
 	}
 
-	log.Println("REDISCACHE", os.Getenv("REDISCACHE"))
-	if opts, err := redis.ParseURL(os.Getenv("REDISCACHE")); err != nil {
-		panic(err)
-	} else {
-		Cache = redis.NewClient(opts)
-	}
-
 	// Initialize BEEF storage with Redis + JungleBus fallback
-	beefConn := os.Getenv("BEEF_STORAGE")
+	beefConn := os.Getenv("BEEF_URL")
 	if beefConn == "" {
 		// Build default connection string: lru -> redis -> junglebus
-		redisURL := os.Getenv("REDISCACHE")
-		jbHost := strings.TrimPrefix(JUNGLEBUS, "https://")
-		jbHost = strings.TrimPrefix(jbHost, "http://")
-		if jbHost == "" {
-			jbHost = "junglebus.gorillapool.io"
-		}
-		beefConn = fmt.Sprintf("lru://?size=100mb,%s,junglebus://%s", redisURL, jbHost)
+		beefConn = "lru://?size=100mb,~/.1sat/beef,junglebus://"
 	}
-	log.Println("BEEF_STORAGE", beefConn)
+	log.Println("BEEF_URL", beefConn)
 	// Note: Chaintracks may not be initialized yet in init(), so we pass nil
 	// The caller should call InitBeefStorage after Chaintracks is ready
 	BeefStorage, err = beef.NewStorage(beefConn, nil)
 	if err != nil {
 		log.Panic(err)
 	}
-}
-
-// InitBeefStorage reinitializes BEEF storage with chaintracker for SPV validation
-// Call this after Chaintracks is initialized
-func InitBeefStorage(ct arcade.Chaintracks) error {
-	beefConn := os.Getenv("BEEF_STORAGE")
-	if beefConn == "" {
-		redisURL := os.Getenv("REDISCACHE")
-		jbHost := strings.TrimPrefix(JUNGLEBUS, "https://")
-		jbHost = strings.TrimPrefix(jbHost, "http://")
-		if jbHost == "" {
-			jbHost = "junglebus.gorillapool.io"
-		}
-		beefConn = fmt.Sprintf("lru://?size=100mb,%s,junglebus://%s", redisURL, jbHost)
-	}
-	var err error
-	BeefStorage, err = beef.NewStorage(beefConn, ct)
-	return err
 }
 
 func LoadTx(ctx context.Context, txid string, withProof bool) (tx *transaction.Transaction, err error) {
