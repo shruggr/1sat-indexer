@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -11,7 +10,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/server"
 )
 
@@ -32,12 +30,6 @@ func init() {
 }
 
 func main() {
-	ctx := context.Background()
-	if err := config.InitChaintracks(ctx); err != nil {
-		log.Fatal("Failed to initialize chaintracks:", err)
-	}
-	jb.Chaintracks = config.Chaintracks
-
 	app := server.Initialize(&idx.IngestCtx{
 		Tag:         idx.IngestTag,
 		Indexers:    config.Indexers,
