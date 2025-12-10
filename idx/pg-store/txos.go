@@ -155,6 +155,7 @@ func (p *PGStore) LoadTxosByTxid(ctx context.Context, txid string, tags []string
 			log.Panic(err)
 			return nil, err
 		}
+		outpoints = append(outpoints, outpoint)
 	}
 	return p.LoadTxos(ctx, outpoints, tags, script, spend)
 }
