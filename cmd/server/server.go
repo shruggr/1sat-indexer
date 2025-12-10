@@ -22,7 +22,7 @@ var VERBOSE int
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+	godotenv.Load(".env")
 
 	PORT, _ = strconv.Atoi(os.Getenv("PORT"))
 	flag.IntVar(&PORT, "p", PORT, "Port to listen on")

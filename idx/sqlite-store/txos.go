@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -31,6 +33,18 @@ var getSpend *sql.Stmt
 var insOwnerAcct *sql.Stmt
 
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
+	if strings.HasPrefix(connString, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("unable to get home directory: %w", err)
+		}
+		connString = filepath.Join(home, connString[2:])
+	}
+
+	if err := os.MkdirAll(filepath.Dir(connString), 0755); err != nil {
+		return nil, fmt.Errorf("unable to create database directory: %w", err)
+	}
+
 	writeDb, err := sql.Open("sqlite3", connString)
 	if err != nil {
 		log.Panic(err)
@@ -54,6 +68,10 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	} else if _, err := writeDb.Exec("PRAGMA busy_timeout = 10000"); err != nil {
 		log.Panic(err)
 		return nil, err
+	}
+
+	if err := initSchema(writeDb); err != nil {
+		return nil, fmt.Errorf("unable to initialize schema: %w", err)
 	}
 
 	if getTxo, err = readDb.Prepare(`SELECT outpoint, height, idx, satoshis, owners, spend
@@ -564,4 +582,45 @@ func toInterfaceSlice(strs []string) []interface{} {
 		ifaces[i] = s
 	}
 	return ifaces
+}
+
+func initSchema(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS txos (
+		outpoint TEXT PRIMARY KEY,
+		height INTEGER DEFAULT (unixepoch()),
+		idx BIGINT DEFAULT 0,
+		spend TEXT NOT NULL DEFAULT '',
+		satoshis BIGINT,
+		owners TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_txos_height_idx ON txos (height, idx);
+	CREATE INDEX IF NOT EXISTS idx_txos_spend ON txos (spend);
+
+	CREATE TABLE IF NOT EXISTS txo_data (
+		outpoint TEXT,
+		tag TEXT,
+		data TEXT,
+		PRIMARY KEY (outpoint, tag)
+	);
+	CREATE INDEX IF NOT EXISTS idx_txo_data_outpoint_tag ON txo_data (outpoint, tag);
+
+	CREATE TABLE IF NOT EXISTS logs (
+		search_key TEXT,
+		member TEXT,
+		score REAL,
+		PRIMARY KEY (search_key, member)
+	);
+	CREATE INDEX IF NOT EXISTS idx_logs_score ON logs (search_key, score);
+	CREATE INDEX IF NOT EXISTS idx_logs_member ON logs (member, score);
+
+	CREATE TABLE IF NOT EXISTS owner_accounts (
+		owner TEXT PRIMARY KEY,
+		account TEXT,
+		sync_height INT DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_owner_accounts_account ON owner_accounts (account);
+	`
+	_, err := db.Exec(schema)
+	return err
 }
