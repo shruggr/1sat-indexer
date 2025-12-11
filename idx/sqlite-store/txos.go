@@ -51,18 +51,26 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 	readDb.SetMaxIdleConns(4)
 	readDb.SetMaxOpenConns(15)
 
-	// Set PRAGMA commands on both connections
-	if _, err := readDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if _, err := writeDb.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Panic(err)
-		return nil, err
-	} else if _, err := writeDb.Exec("PRAGMA busy_timeout = 30000"); err != nil {
-		log.Panic(err)
-		return nil, err
+	// Set PRAGMA commands for better concurrency
+	pragmas := []string{
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA busy_timeout = 60000",  // 60 seconds timeout
+		"PRAGMA synchronous = NORMAL",  // Better performance, still safe with WAL
+		"PRAGMA cache_size = -2000000", // 2GB cache (negative = KB)
+		"PRAGMA temp_store = MEMORY",
+		"PRAGMA mmap_size = 2147483648", // 2GB memory-mapped I/O
 	}
 
+	for _, pragma := range pragmas {
+		if _, err := writeDb.Exec(pragma); err != nil {
+			log.Panic(err)
+			return nil, fmt.Errorf("failed to execute %s on writeDb: %w", pragma, err)
+		}
+		if _, err := readDb.Exec(pragma); err != nil {
+			log.Panic(err)
+			return nil, fmt.Errorf("failed to execute %s on readDb: %w", pragma, err)
+		}
+	}
 	if err := initSchema(writeDb); err != nil {
 		return nil, fmt.Errorf("unable to initialize schema: %w", err)
 	}
