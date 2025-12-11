@@ -3,7 +3,6 @@ package onesat
 import (
 	"encoding/json"
 
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 	"github.com/shruggr/1sat-indexer/v5/mod/bitcom"
@@ -60,7 +59,7 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 	if mapData != nil {
 		origin.Map = mapData.Data.(bitcom.Map)
 	}
-	events := make([]*evt.Event, 0)
+	events := make([]*idx.Event, 0)
 	deps := make([]*lib.Outpoint, 0)
 	satsIn := uint64(0)
 	for _, spend := range idxCtx.Spends {
@@ -70,7 +69,7 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 		deps = append(deps, spend.Outpoint)
 		if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height >= TRIGGER {
 			origin.Parent = spend.Outpoint
-			events = append(events, &evt.Event{
+			events = append(events, &idx.Event{
 				Id:    "parent",
 				Value: spend.Outpoint.String(),
 			})
@@ -98,7 +97,7 @@ func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 	if origin.Outpoint != nil {
 		outpoint = origin.Outpoint.String()
 	}
-	events = append(events, &evt.Event{
+	events = append(events, &idx.Event{
 		Id:    "outpoint",
 		Value: outpoint,
 	})

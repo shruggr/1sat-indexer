@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -59,7 +58,7 @@ func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDat
 			lock.Until = binary.LittleEndian.Uint32(until)
 			return &idx.IndexData{
 				Data: lock,
-				Events: []*evt.Event{
+				Events: []*idx.Event{
 					{Id: "owner", Value: lock.Address},
 				},
 			}

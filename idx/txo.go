@@ -1,9 +1,6 @@
 package idx
 
 import (
-	"context"
-
-	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
@@ -30,13 +27,4 @@ func (t *Txo) AddOwner(owner string) {
 		}
 	}
 	t.Owners = append(t.Owners, owner)
-}
-
-func (txo *Txo) LoadScript(ctx context.Context) error {
-	if tx, err := jb.LoadTx(ctx, txo.Outpoint.TxidHex(), false); err != nil {
-		return err
-	} else {
-		txo.Script = *tx.Outputs[txo.Outpoint.Vout()].LockingScript
-	}
-	return nil
 }

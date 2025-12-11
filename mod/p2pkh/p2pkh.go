@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/bsv-blockchain/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -52,7 +51,7 @@ func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				Data: &P2PKH{
 					Address: add.AddressString,
 				},
-				Events: []*evt.Event{
+				Events: []*idx.Event{
 					{
 						Id:    "own",
 						Value: add.AddressString,

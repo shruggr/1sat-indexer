@@ -24,7 +24,7 @@ var ingest = &idx.IngestCtx{
 }
 
 func TestIngest(t *testing.T) {
-	idxCtx, err := ingest.IngestTxid(ctx, hexId, idx.AncestorConfig{Load: true, Parse: true, Save: true})
+	idxCtx, err := ingest.IngestTxid(ctx, hexId)
 	assert.NoError(t, err)
 
 	out, err := json.MarshalIndent(idxCtx, "", "  ")

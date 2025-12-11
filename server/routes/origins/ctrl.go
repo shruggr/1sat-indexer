@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/mod/onesat"
 )
@@ -17,7 +16,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Post("/ancestors", OriginsAncestors)
 	r.Get("/ancestors/:outpoint", OriginAncestors)
 	r.Post("/history", OriginsHistory)
-	r.Get("/history/:outpoint", OriginsHistory)
+	r.Get("/history/:outpoint", OriginHistory)
 }
 
 // @Summary Get origin history
@@ -26,8 +25,6 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Produce json
 // @Param outpoint path string true "Origin outpoint"
 // @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
-// @Param txo query bool false "Include TXO data"
-// @Param script query bool false "Include script data"
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/origins/history/{outpoint} [get]
@@ -38,20 +35,26 @@ func OriginHistory(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Keys: []string{evt.EventKey("origin", &evt.Event{
+	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+		Keys: []string{idx.EventKey("origin", &idx.Event{
 			Id:    "outpoint",
 			Value: outpoint,
 		})},
-		IncludeTxo:    c.QueryBool("txo", false),
-		IncludeTags:   tags,
-		IncludeScript: c.QueryBool("script", false),
-	}); err != nil {
+	})
+	if err != nil {
+		return err
+	}
+
+	outpoints := make([]string, 0, len(logs))
+	for _, log := range logs {
+		outpoints = append(outpoints, log.Member)
+	}
+
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)
 	}
-
 }
 
 // @Summary Get multiple origins history
@@ -61,17 +64,15 @@ func OriginHistory(c *fiber.Ctx) error {
 // @Produce json
 // @Param outpoints body []string true "Array of origin outpoints"
 // @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
-// @Param txo query bool false "Include TXO data"
-// @Param script query bool false "Include script data"
 // @Success 200 {array} idx.Txo
 // @Failure 400 {string} string "Invalid request"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/origins/history [post]
 func OriginsHistory(c *fiber.Ctx) error {
-	var outpoints []string
-	if err := c.BodyParser(&outpoints); err != nil {
+	var reqOutpoints []string
+	if err := c.BodyParser(&reqOutpoints); err != nil {
 		return c.SendStatus(400)
-	} else if len(outpoints) == 0 {
+	} else if len(reqOutpoints) == 0 {
 		return c.SendStatus(400)
 	}
 
@@ -80,23 +81,27 @@ func OriginsHistory(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	history := make([]*idx.Txo, 0, len(outpoints))
-	for _, outpoint := range outpoints {
-		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-			Keys: []string{evt.EventKey("origin", &evt.Event{
+	allOutpoints := make([]string, 0)
+	for _, outpoint := range reqOutpoints {
+		logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+			Keys: []string{idx.EventKey("origin", &idx.Event{
 				Id:    "outpoint",
 				Value: outpoint,
 			})},
-			IncludeTxo:    c.QueryBool("txo", false),
-			IncludeTags:   tags,
-			IncludeScript: c.QueryBool("script", false),
-		}); err != nil {
+		})
+		if err != nil {
 			return err
-		} else {
-			history = append(history, txos...)
+		}
+		for _, log := range logs {
+			allOutpoints = append(allOutpoints, log.Member)
 		}
 	}
-	return c.JSON(history)
+
+	if txos, err := ingest.Store.LoadTxos(c.Context(), allOutpoints, tags, true); err != nil {
+		return err
+	} else {
+		return c.JSON(txos)
+	}
 }
 
 // @Summary Get origin ancestors
@@ -105,8 +110,6 @@ func OriginsHistory(c *fiber.Ctx) error {
 // @Produce json
 // @Param outpoint path string true "Origin outpoint"
 // @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
-// @Param txo query bool false "Include TXO data"
-// @Param script query bool false "Include script data"
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/origins/ancestors/{outpoint} [get]
@@ -128,25 +131,28 @@ func OriginAncestors(c *fiber.Ctx) error {
 		outpoint = origin.Outpoint.String()
 	}
 
-	ancestors := make([]*idx.Txo, 0)
-	if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Keys: []string{evt.EventKey("origin", &evt.Event{
+	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+		Keys: []string{idx.EventKey("origin", &idx.Event{
 			Id:    "outpoint",
 			Value: outpoint,
 		})},
-		IncludeTxo:    c.QueryBool("txo", false),
-		IncludeTags:   tags,
-		IncludeScript: c.QueryBool("script", false),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
-	} else {
-		for _, txo := range txos {
-			if txo.Outpoint.String() != outpoint {
-				ancestors = append(ancestors, txo)
-			}
+	}
+
+	outpoints := make([]string, 0, len(logs))
+	for _, log := range logs {
+		if log.Member != outpoint {
+			outpoints = append(outpoints, log.Member)
 		}
 	}
-	return c.JSON(ancestors)
+
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true); err != nil {
+		return err
+	} else {
+		return c.JSON(txos)
+	}
 }
 
 // @Summary Get ancestors for multiple origins
@@ -156,17 +162,15 @@ func OriginAncestors(c *fiber.Ctx) error {
 // @Produce json
 // @Param outpoints body []string true "Array of origin outpoints"
 // @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
-// @Param txo query bool false "Include TXO data"
-// @Param script query bool false "Include script data"
 // @Success 200 {array} idx.Txo
 // @Failure 400 {string} string "Invalid request"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/origins/ancestors [post]
 func OriginsAncestors(c *fiber.Ctx) error {
-	var outpoints []string
-	if err := c.BodyParser(&outpoints); err != nil {
+	var reqOutpoints []string
+	if err := c.BodyParser(&reqOutpoints); err != nil {
 		return c.SendStatus(400)
-	} else if len(outpoints) == 0 {
+	} else if len(reqOutpoints) == 0 {
 		return c.SendStatus(400)
 	}
 
@@ -175,9 +179,9 @@ func OriginsAncestors(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 
-	origins := make([]string, 0, len(outpoints))
-	outpointMap := make(map[string]struct{}, len(outpoints))
-	for _, outpoint := range outpoints {
+	origins := make([]string, 0, len(reqOutpoints))
+	outpointMap := make(map[string]struct{}, len(reqOutpoints))
+	for _, outpoint := range reqOutpoints {
 		if data, err := ingest.Store.LoadData(c.Context(), outpoint, []string{"origin"}); err != nil {
 			return err
 		} else if originData, ok := data["origin"]; ok && originData != nil {
@@ -191,28 +195,29 @@ func OriginsAncestors(c *fiber.Ctx) error {
 		}
 	}
 
-	ancestors := make([]*idx.Txo, 0, len(origins))
+	allOutpoints := make([]string, 0)
 	for _, outpoint := range origins {
-		if txos, err := ingest.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-			Keys: []string{evt.EventKey("origin", &evt.Event{
+		logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+			Keys: []string{idx.EventKey("origin", &idx.Event{
 				Id:    "outpoint",
 				Value: outpoint,
 			})},
-			IncludeTxo:    c.QueryBool("txo", false),
-			IncludeTags:   tags,
-			IncludeScript: c.QueryBool("script", false),
-		}); err != nil {
+		})
+		if err != nil {
 			return err
-		} else {
-			for _, txo := range txos {
-				op := txo.Outpoint.String()
-				if _, ok := outpointMap[op]; !ok {
-					outpointMap[op] = struct{}{}
-					ancestors = append(ancestors, txo)
-				}
+		}
+		for _, log := range logs {
+			op := log.Member
+			if _, ok := outpointMap[op]; !ok {
+				outpointMap[op] = struct{}{}
+				allOutpoints = append(allOutpoints, op)
 			}
 		}
 	}
 
-	return c.JSON(ancestors)
+	if txos, err := ingest.Store.LoadTxos(c.Context(), allOutpoints, tags, true); err != nil {
+		return err
+	} else {
+		return c.JSON(txos)
+	}
 }

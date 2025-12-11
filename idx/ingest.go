@@ -6,8 +6,9 @@ import (
 	"log"
 	"time"
 
+	"github.com/b-open-io/overlay/beef"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
@@ -17,18 +18,18 @@ const ImmutableTxLog = "immutable"
 const RejectedTxLog = "rejected"
 
 type IngestCtx struct {
-	Tag            string
-	Key            string
-	Indexers       []Indexer
-	Concurrency    uint
-	Verbose        bool
-	PageSize       uint32
-	Limit          uint32
-	Network        lib.Network
-	OnIngest       *func(ctx context.Context, idxCtx *IndexContext) error
-	Once           bool
-	Store          TxoStore
-	AncestorConfig AncestorConfig
+	Tag         string
+	Key         string
+	Indexers    []Indexer
+	Concurrency uint
+	Verbose     bool
+	PageSize    uint32
+	Limit       uint32
+	Network     lib.Network
+	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
+	Once        bool
+	Store       *QueueStore
+	BeefStorage *beef.Storage
 }
 
 func (cfg *IngestCtx) IndexedTags() []string {
@@ -39,21 +40,25 @@ func (cfg *IngestCtx) IndexedTags() []string {
 	return indexedTags
 }
 
-func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
-	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
+func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string) (*IndexContext, error) {
+	hash, err := chainhash.NewHashFromHex(txid)
+	if err != nil {
 		return nil, err
-	} else {
-		return cfg.ParseTx(ctx, tx, ancestorCfg)
 	}
+	tx, err := cfg.BeefStorage.LoadTx(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.ParseTx(ctx, tx)
 }
 
-func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
-	idxCtx = NewIndexContext(ctx, cfg.Store, tx, cfg.Indexers, ancestorCfg, cfg.Network)
+func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction) (idxCtx *IndexContext, err error) {
+	idxCtx = NewIndexContext(ctx, cfg.Store, tx, cfg.Indexers, cfg.Network)
 	err = idxCtx.ParseTxn()
 	return
 }
 
-func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg AncestorConfig) (*IndexContext, error) {
+func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string) (*IndexContext, error) {
 	if cfg.Once {
 		if score, err := cfg.Store.LogScore(ctx, LogKey(cfg.Tag), txid); err != nil {
 			log.Panic(err)
@@ -63,19 +68,24 @@ func (cfg *IngestCtx) IngestTxid(ctx context.Context, txid string, ancestorCfg A
 			return nil, nil
 		}
 	}
-	if tx, err := jb.LoadTx(ctx, txid, true); err != nil {
+	hash, err := chainhash.NewHashFromHex(txid)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := cfg.BeefStorage.LoadTx(ctx, hash)
+	if err != nil {
 		log.Println("LoadTx error", txid, err)
 		return nil, err
-	} else if tx == nil {
-		return nil, fmt.Errorf("missing-txn %s", txid)
-	} else {
-		return cfg.IngestTx(ctx, tx, ancestorCfg)
 	}
+	if tx == nil {
+		return nil, fmt.Errorf("missing-txn %s", txid)
+	}
+	return cfg.IngestTx(ctx, tx)
 }
 
-func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction, ancestorCfg AncestorConfig) (idxCtx *IndexContext, err error) {
+func (cfg *IngestCtx) IngestTx(ctx context.Context, tx *transaction.Transaction) (idxCtx *IndexContext, err error) {
 	start := time.Now()
-	if idxCtx, err = cfg.ParseTx(ctx, tx, ancestorCfg); err != nil {
+	if idxCtx, err = cfg.ParseTx(ctx, tx); err != nil {
 		return nil, err
 	}
 
@@ -99,28 +109,3 @@ func (cfg *IngestCtx) Save(ctx context.Context, idxCtx *IndexContext) (err error
 	}
 	return
 }
-
-// func (cfg *IngestCtx) Rollback(ctx context.Context, txid string) error {
-// 	if idxCtx, err := cfg.ParseTxid(ctx, txid, AncestorConfig{Load: true, Parse: true}); err != nil {
-// 		return err
-// 	} else {
-// 		for _, spend := range idxCtx.Spends {
-// 			if err = cfg.Store.RollbackSpend(ctx, spend, txid); err != nil {
-// 				return err
-// 			}
-// 		}
-
-// 		for _, txo := range idxCtx.Txos {
-// 			if err = cfg.Store.RollbackTxo(ctx, txo); err != nil {
-// 				return err
-// 			}
-// 		}
-
-// 		// if err = cfg.Store.Log(ctx, RollbackTxLog, txid, float64(time.Now().UnixNano())); err != nil {
-// 		// 	return err
-// 		// } else if err = cfg.Store.Delog(ctx, PendingTxLog, txid); err != nil {
-// 		// 	return err
-// 		// }
-// 	}
-// 	return nil
-// }

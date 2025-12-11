@@ -2,14 +2,13 @@ package idx
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
@@ -20,40 +19,32 @@ func HeightScore(height uint32, idx uint64) float64 {
 	return float64(uint64(height)*1000000000 + idx)
 }
 
-type AncestorConfig struct {
-	Load  bool
-	Parse bool
-	Save  bool
-}
-
 type IndexContext struct {
-	Tx             *transaction.Transaction `json:"-"`
-	Txid           *chainhash.Hash          `json:"txid" swaggertype:"string"`
-	TxidHex        string                   `json:"-"`
-	Height         uint32                   `json:"height"`
-	Idx            uint64                   `json:"idx"`
-	Score          float64                  `json:"score"`
-	Txos           []*Txo                   `json:"txos"`
-	Spends         []*Txo                   `json:"spends"`
-	Indexers       []Indexer                `json:"-"`
-	Ctx            context.Context          `json:"-"`
-	Network        lib.Network              `json:"-"`
-	tags           []string                 `json:"-"`
-	ancestorConfig AncestorConfig           `json:"-"`
-	Store          TxoStore                 `json:"-"`
+	Tx       *transaction.Transaction `json:"-"`
+	Txid     *chainhash.Hash          `json:"txid" swaggertype:"string"`
+	TxidHex  string                   `json:"-"`
+	Height   uint32                   `json:"height"`
+	Idx      uint64                   `json:"idx"`
+	Score    float64                  `json:"score"`
+	Txos     []*Txo                   `json:"txos"`
+	Spends   []*Txo                   `json:"spends"`
+	Indexers []Indexer                `json:"-"`
+	Ctx      context.Context          `json:"-"`
+	Network  lib.Network              `json:"-"`
+	Store    *QueueStore              `json:"-"`
+	tags     []string                 `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, store TxoStore, tx *transaction.Transaction, indexers []Indexer, ancestorConfig AncestorConfig, network ...lib.Network) *IndexContext {
+func NewIndexContext(ctx context.Context, store *QueueStore, tx *transaction.Transaction, indexers []Indexer, network ...lib.Network) *IndexContext {
 	if tx == nil {
 		return nil
 	}
 	idxCtx := &IndexContext{
-		Tx:             tx,
-		Txid:           tx.TxID(),
-		Indexers:       indexers,
-		Ctx:            ctx,
-		Store:          store,
-		ancestorConfig: ancestorConfig,
+		Tx:       tx,
+		Txid:     tx.TxID(),
+		Indexers: indexers,
+		Ctx:      ctx,
+		Store:    store,
 	}
 	if len(network) > 0 {
 		idxCtx.Network = network[0]
@@ -85,55 +76,18 @@ func (idxCtx *IndexContext) ParseTxn() (err error) {
 	return idxCtx.ParseTxos()
 }
 
-func (idxCtx *IndexContext) ParseSpends() (err error) {
+func (idxCtx *IndexContext) ParseSpends() error {
 	if idxCtx.Tx.IsCoinbase() {
-		return
+		return nil
 	}
 	for _, txin := range idxCtx.Tx.Inputs {
-		outpoint := lib.NewOutpointFromHash(txin.SourceTXID, txin.SourceTxOutIndex)
-		op := outpoint.String()
-		if spend, err := idxCtx.Store.LoadTxo(idxCtx.Ctx, op, idxCtx.tags, false, false); err != nil {
-			log.Panic(err)
-			return err
-		} else if spend != nil {
-			for i, indexer := range idxCtx.Indexers {
-				tag := idxCtx.tags[i]
-				if data, ok := spend.Data[tag]; ok {
-					if data.Data, err = indexer.FromBytes(data.Data.(json.RawMessage)); err != nil {
-						log.Panic(err)
-						return err
-					}
-				}
-			}
-			idxCtx.Spends = append(idxCtx.Spends, spend)
-		} else if idxCtx.ancestorConfig.Load || idxCtx.ancestorConfig.Parse {
-			parentTxid := outpoint.TxidHex()
-			if tx, err := jb.LoadTx(idxCtx.Ctx, parentTxid, true); err != nil {
-				return err
-			} else if idxCtx.ancestorConfig.Parse {
-				spendCtx := NewIndexContext(idxCtx.Ctx, idxCtx.Store, tx, idxCtx.Indexers, AncestorConfig{}, idxCtx.Network)
-				spendCtx.ParseTxos()
-				idxCtx.Spends = append(idxCtx.Spends, spendCtx.Txos[outpoint.Vout()])
-				if idxCtx.ancestorConfig.Save {
-					if err := spendCtx.Store.SaveTxos(spendCtx); err != nil {
-						log.Panic(err)
-						return err
-					}
-				}
-			} else {
-				idxCtx.Spends = append(idxCtx.Spends, &Txo{
-					Outpoint: outpoint,
-					Satoshis: &tx.Outputs[outpoint.Vout()].Satoshis,
-					Script:   *tx.Outputs[outpoint.Vout()].LockingScript,
-					Data:     make(map[string]*IndexData),
-				})
-			}
-		} else {
-			idxCtx.Spends = append(idxCtx.Spends, &Txo{
-				Outpoint: outpoint,
-				Data:     make(map[string]*IndexData),
-			})
+		if txin.SourceTransaction == nil {
+			return fmt.Errorf("missing source transaction for input %s", txin.SourceTXID)
 		}
+		// TODO: optimize to parse only the specific output being spent rather than full parent tx
+		spendCtx := NewIndexContext(idxCtx.Ctx, nil, txin.SourceTransaction, idxCtx.Indexers, idxCtx.Network)
+		spendCtx.ParseTxos()
+		idxCtx.Spends = append(idxCtx.Spends, spendCtx.Txos[txin.SourceTxOutIndex])
 	}
 	return nil
 }

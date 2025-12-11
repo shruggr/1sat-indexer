@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bsv-blockchain/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 	"github.com/shruggr/1sat-indexer/v5/mod/bitcom"
@@ -65,7 +64,7 @@ func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.I
 				if insc.File != nil {
 					parts := strings.Split(insc.File.Type, ";")
 					if len(parts) > 0 {
-						idxCtx.Events = append(idxCtx.Events, &evt.Event{
+						idxCtx.Events = append(idxCtx.Events, &idx.Event{
 							Id:    "type",
 							Value: parts[0],
 						})

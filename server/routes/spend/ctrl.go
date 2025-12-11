@@ -23,7 +23,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Router /v5/spends/{outpoint} [get]
 func GetSpend(c *fiber.Ctx) error {
 	outpoint := c.Params("outpoint")
-	if spend, err := ingest.Store.GetSpend(c.Context(), outpoint, true); err != nil {
+	if spend, err := ingest.Store.GetSpend(c.Context(), outpoint); err != nil {
 		return err
 	} else {
 		return c.JSON(spend)
@@ -45,7 +45,7 @@ func GetSpends(c *fiber.Ctx) error {
 	if err := c.BodyParser(&outpoints); err != nil {
 		return err
 	}
-	if spends, err := ingest.Store.GetSpends(c.Context(), outpoints, true); err != nil {
+	if spends, err := ingest.Store.GetSpends(c.Context(), outpoints); err != nil {
 		return err
 	} else {
 		return c.JSON(spends)

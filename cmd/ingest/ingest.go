@@ -18,7 +18,6 @@ var VERBOSE int
 var QUEUE string
 var TAG string
 var ROLLBACK bool
-var ancestorConfig idx.AncestorConfig
 
 func init() {
 	flag.StringVar(&TAG, "tag", idx.IngestTag, "Log tag")
@@ -26,11 +25,7 @@ func init() {
 	flag.UintVar(&CONCURRENCY, "c", 1, "Concurrency")
 	flag.IntVar(&VERBOSE, "v", 0, "Verbose")
 	flag.BoolVar(&ROLLBACK, "r", false, "Enable rollback for old mempool transactions")
-	flag.BoolVar(&ancestorConfig.Load, "l", false, "Load ancestors")
-	flag.BoolVar(&ancestorConfig.Parse, "p", true, "Parse ancestors")
-	flag.BoolVar(&ancestorConfig.Save, "s", true, "Save ancestors")
 	flag.Parse()
-	log.Println(ancestorConfig)
 }
 
 func main() {
@@ -49,15 +44,14 @@ func main() {
 	}
 
 	ingestCtx := &idx.IngestCtx{
-		Tag:            TAG,
-		Key:            idx.QueueKey(QUEUE),
-		Indexers:       config.Indexers,
-		Network:        config.Network,
-		Concurrency:    CONCURRENCY,
-		Store:          config.Store,
-		PageSize:       1000,
-		AncestorConfig: ancestorConfig,
-		Verbose:        VERBOSE > 0,
+		Tag:         TAG,
+		Key:         idx.QueueKey(QUEUE),
+		Indexers:    config.Indexers,
+		Network:     config.Network,
+		Concurrency: CONCURRENCY,
+		Store:       config.Store,
+		PageSize:    1000,
+		Verbose:     VERBOSE > 0,
 	}
 
 	// Start the ingest service with queue processing, Arc callbacks, and audits

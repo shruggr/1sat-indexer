@@ -32,7 +32,7 @@ func GetTxo(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txo, err := ingest.Store.LoadTxo(c.Context(), c.Params("outpoint"), tags, c.QueryBool("script", false), c.QueryBool("spend", false)); err != nil {
+	if txo, err := ingest.Store.LoadTxo(c.Context(), c.Params("outpoint"), tags, c.QueryBool("spend", false)); err != nil {
 		return err
 	} else if txo == nil {
 		return c.SendStatus(404)
@@ -64,7 +64,7 @@ func GetTxos(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, c.QueryBool("script", false), c.QueryBool("spend", false)); err != nil {
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
 		c.Set("Cache-Control", "public,max-age=60")

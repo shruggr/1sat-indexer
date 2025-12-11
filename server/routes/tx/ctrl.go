@@ -8,15 +8,15 @@ import (
 	"log"
 	"strings"
 
+	"github.com/b-open-io/overlay/beef"
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
 	"github.com/shruggr/1sat-indexer/v5/config"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var ingest *idx.IngestCtx
@@ -78,14 +78,10 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 
 	response := broadcast.Broadcast(c.Context(), ingest.Store, tx, b)
 	if response.Success {
-		if _, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
+		if _, err := ingest.IngestTx(c.Context(), tx); err != nil {
 			log.Println("Ingest Error", tx.TxID().String(), err)
-			// } else if out, err := json.MarshalIndent(idxCtx, "", "  "); err != nil {
-			// 	log.Println("Ingest Error", tx.TxID().String(), err)
-			// } else {
-			// 	log.Println("Ingest", tx.TxID().String(), string(out))
 		}
-		evt.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
+		config.PubSub.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
 	} else {
 		log.Println("Broadcast Error", tx.TxID().String(), response.Error)
 	}
@@ -104,18 +100,19 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/beef [get]
 func GetTxBEEF(c *fiber.Ctx) error {
-	if tx, err := jb.BuildTxBEEF(c.Context(), c.Params("txid")); err != nil {
-		if err == jb.ErrNotFound {
-			return c.SendStatus(404)
-		} else {
-			return err
-		}
-	} else if beef, err := tx.AtomicBEEF(true); err != nil {
-		return err
-	} else {
-		c.Set("Content-Type", "application/octet-stream")
-		return c.Send(beef)
+	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
+	if err != nil {
+		return c.SendStatus(400)
 	}
+	beefBytes, err := config.BeefStorage.LoadBeef(c.Context(), hash)
+	if err != nil {
+		if err == beef.ErrNotFound {
+			return c.SendStatus(404)
+		}
+		return err
+	}
+	c.Set("Content-Type", "application/octet-stream")
+	return c.Send(beefBytes)
 }
 
 // @Summary Get transaction with proof
@@ -128,38 +125,47 @@ func GetTxBEEF(c *fiber.Ctx) error {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid} [get]
 func GetTxWithProof(c *fiber.Ctx) error {
-	txid := c.Params("txid")
-	if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
-		if err == jb.ErrNotFound {
+	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
+	if err != nil {
+		return c.SendStatus(400)
+	}
+	rawtx, err := config.BeefStorage.LoadRawTx(c.Context(), hash)
+	if err != nil {
+		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
 		}
 		return err
-	} else if len(rawtx) == 0 {
-		return c.SendStatus(404)
-	} else {
-		c.Set("Content-Type", "application/octet-stream")
-		buf := bytes.NewBuffer([]byte{})
-		buf.Write(util.VarInt(uint64(len(rawtx))).Bytes())
-		buf.Write(rawtx)
-		if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
-			return err
-		} else {
-			if proof == nil {
-				buf.Write(util.VarInt(0).Bytes())
-				c.Set("Cache-Control", "public,max-age=60")
-			} else {
-				if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
-					c.Set("Cache-Control", "public,max-age=31536000,immutable")
-				} else {
-					c.Set("Cache-Control", "public,max-age=60")
-				}
-				bin := proof.Bytes()
-				buf.Write(util.VarInt(uint64(len(bin))).Bytes())
-				buf.Write(bin)
-			}
-		}
-		return c.Send(buf.Bytes())
 	}
+	if len(rawtx) == 0 {
+		return c.SendStatus(404)
+	}
+
+	c.Set("Content-Type", "application/octet-stream")
+	buf := bytes.NewBuffer([]byte{})
+	buf.Write(util.VarInt(uint64(len(rawtx))).Bytes())
+	buf.Write(rawtx)
+
+	proofBytes, err := config.BeefStorage.LoadProof(c.Context(), hash)
+	if err != nil && err != beef.ErrNotFound {
+		return err
+	}
+	if proofBytes == nil || len(proofBytes) == 0 {
+		buf.Write(util.VarInt(0).Bytes())
+		c.Set("Cache-Control", "public,max-age=60")
+	} else {
+		proof, err := transaction.NewMerklePathFromBinary(proofBytes)
+		if err != nil {
+			return err
+		}
+		if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
+			c.Set("Cache-Control", "public,max-age=31536000,immutable")
+		} else {
+			c.Set("Cache-Control", "public,max-age=60")
+		}
+		buf.Write(util.VarInt(uint64(len(proofBytes))).Bytes())
+		buf.Write(proofBytes)
+	}
+	return c.Send(buf.Bytes())
 }
 
 // @Summary Get raw transaction
@@ -173,27 +179,35 @@ func GetTxWithProof(c *fiber.Ctx) error {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/raw [get]
 func GetRawTx(c *fiber.Ctx) error {
-	txid := c.Params("txid")
-	if rawtx, err := jb.LoadRawtx(c.Context(), txid); err != nil {
-		return err
-	} else if rawtx == nil {
-		return c.SendStatus(404)
-	} else {
-		c.Set("Cache-Control", "public,max-age=31536000,immutable")
-		switch c.Query("fmt", "bin") {
-		case "json":
-			if tx, err := transaction.NewMerklePathFromBinary(rawtx); err != nil {
-				return err
-			} else {
-				return c.JSON(tx)
-			}
-		case "hex":
-			c.Set("Content-Type", "text/plain")
-			return c.SendString(hex.EncodeToString(rawtx))
-		default:
-			c.Set("Content-Type", "application/octet-stream")
-			return c.Send(rawtx)
+	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
+	if err != nil {
+		return c.SendStatus(400)
+	}
+	rawtx, err := config.BeefStorage.LoadRawTx(c.Context(), hash)
+	if err != nil {
+		if err == beef.ErrNotFound {
+			return c.SendStatus(404)
 		}
+		return err
+	}
+	if rawtx == nil {
+		return c.SendStatus(404)
+	}
+
+	c.Set("Cache-Control", "public,max-age=31536000,immutable")
+	switch c.Query("fmt", "bin") {
+	case "json":
+		if tx, err := transaction.NewTransactionFromBytes(rawtx); err != nil {
+			return err
+		} else {
+			return c.JSON(tx)
+		}
+	case "hex":
+		c.Set("Content-Type", "text/plain")
+		return c.SendString(hex.EncodeToString(rawtx))
+	default:
+		c.Set("Content-Type", "application/octet-stream")
+		return c.Send(rawtx)
 	}
 }
 
@@ -208,27 +222,40 @@ func GetRawTx(c *fiber.Ctx) error {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/proof [get]
 func GetProof(c *fiber.Ctx) error {
-	txid := c.Params("txid")
-	if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
+	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
+	if err != nil {
+		return c.SendStatus(400)
+	}
+	proofBytes, err := config.BeefStorage.LoadProof(c.Context(), hash)
+	if err != nil {
+		if err == beef.ErrNotFound {
+			return c.SendStatus(404)
+		}
 		return err
-	} else if proof == nil {
+	}
+	if proofBytes == nil || len(proofBytes) == 0 {
 		return c.SendStatus(404)
+	}
+
+	proof, err := transaction.NewMerklePathFromBinary(proofBytes)
+	if err != nil {
+		return err
+	}
+
+	if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
+		c.Set("Cache-Control", "public,max-age=31536000,immutable")
 	} else {
-		if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
-			c.Set("Cache-Control", "public,max-age=31536000,immutable")
-		} else {
-			c.Set("Cache-Control", "public,max-age=60")
-		}
-		switch c.Query("fmt", "bin") {
-		case "json":
-			return c.JSON(proof)
-		case "hex":
-			c.Set("Content-Type", "text/plain")
-			return c.SendString(proof.Hex())
-		default:
-			c.Set("Content-Type", "application/octet-stream")
-			return c.Send(proof.Bytes())
-		}
+		c.Set("Cache-Control", "public,max-age=60")
+	}
+	switch c.Query("fmt", "bin") {
+	case "json":
+		return c.JSON(proof)
+	case "hex":
+		c.Set("Content-Type", "text/plain")
+		return c.SendString(proof.Hex())
+	default:
+		c.Set("Content-Type", "application/octet-stream")
+		return c.Send(proofBytes)
 	}
 }
 
@@ -256,11 +283,11 @@ func TxCallback(c *fiber.Ctx) error {
 
 	log.Printf("[ARC] %s Callback received: status=%s", arcResp.Txid, *arcResp.TxStatus)
 
-	// Publish the status update to Redis for the broadcast listener
+	// Publish the status update for the broadcast listener
 	if jsonData, err := json.Marshal(arcResp); err != nil {
 		log.Printf("[ARC] %s Error marshaling ARC response: %v", arcResp.Txid, err)
-	} else if err := evt.Publish(c.Context(), "arc", string(jsonData)); err != nil {
-		log.Printf("[ARC] %s Error publishing to Redis channel arc: %v", arcResp.Txid, err)
+	} else if err := config.PubSub.Publish(c.Context(), "arc", string(jsonData)); err != nil {
+		log.Printf("[ARC] %s Error publishing to arc channel: %v", arcResp.Txid, err)
 	}
 
 	return c.SendStatus(200)
@@ -280,13 +307,21 @@ func TxCallback(c *fiber.Ctx) error {
 // @Router /v5/tx/{txid}/parse [get]
 // @Router /v5/tx/parse [post]
 func ParseTx(c *fiber.Ctx) (err error) {
-	txid := c.Params("txid")
+	txidStr := c.Params("txid")
 	var tx *transaction.Transaction
 	var rawtx []byte
-	if txid != "" {
-		if tx, err = jb.LoadTx(c.Context(), txid, false); err != nil {
-			return
-		} else if tx == nil {
+	if txidStr != "" {
+		hash, err := chainhash.NewHashFromHex(txidStr)
+		if err != nil {
+			return c.SendStatus(400)
+		}
+		if tx, err = config.BeefStorage.LoadTx(c.Context(), hash); err != nil {
+			if err == beef.ErrNotFound {
+				return c.SendStatus(404)
+			}
+			return err
+		}
+		if tx == nil {
 			return c.SendStatus(404)
 		}
 	} else if err = c.BodyParser(rawtx); err != nil {
@@ -296,7 +331,7 @@ func ParseTx(c *fiber.Ctx) (err error) {
 	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
 		return
 	}
-	if idxCtx, err := ingest.ParseTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true, Save: true}); err != nil {
+	if idxCtx, err := ingest.ParseTx(c.Context(), tx); err != nil {
 		return err
 	} else {
 		return c.JSON(idxCtx)
@@ -313,12 +348,21 @@ func ParseTx(c *fiber.Ctx) (err error) {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/ingest [post]
 func IngestTx(c *fiber.Ctx) error {
-	txid := c.Params("txid")
-	if tx, err := jb.LoadTx(c.Context(), txid, true); err != nil {
+	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
+	if err != nil {
+		return c.SendStatus(400)
+	}
+	tx, err := config.BeefStorage.LoadTx(c.Context(), hash)
+	if err != nil {
+		if err == beef.ErrNotFound {
+			return c.SendStatus(404)
+		}
 		return err
-	} else if tx == nil {
+	}
+	if tx == nil {
 		return c.SendStatus(404)
-	} else if idxCtx, err := ingest.IngestTx(c.Context(), tx, idx.AncestorConfig{Load: true, Parse: true}); err != nil {
+	}
+	if idxCtx, err := ingest.IngestTx(c.Context(), tx); err != nil {
 		return err
 	} else {
 		return c.JSON(idxCtx)
@@ -343,7 +387,7 @@ func TxosByTxid(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("script", false), c.QueryBool("spend", false)); err != nil {
+	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	bip32 "github.com/bsv-blockchain/go-sdk/compat/bip32"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -137,7 +136,7 @@ func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 
 		return &idx.IndexData{
 			Data: bsv20,
-			Events: []*evt.Event{
+			Events: []*idx.Event{
 				{
 					Id:    "tick",
 					Value: bsv20.Ticker,

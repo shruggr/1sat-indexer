@@ -25,10 +25,3 @@ CREATE TABLE logs (
 );
 CREATE INDEX idx_logs_score ON logs (search_key, score);
 CREATE INDEX idx_logs_member ON logs (member, score);
-
-CREATE TABLE owner_accounts (
-    owner TEXT PRIMARY KEY,
-    account TEXT,
-    sync_height INT DEFAULT 0
-);
-CREATE INDEX idx_owner_accounts_account ON owner_accounts (account);

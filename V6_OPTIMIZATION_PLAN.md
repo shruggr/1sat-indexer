@@ -1,51 +1,72 @@
 # 1sat-indexer v6 Optimization Plan
 
 ## Overview
-Transform 1sat-indexer from relational database-centric to stream-based architecture, eliminating database read bottlenecks and enabling efficient UTXO tracking through dual-event streams.
+Transform 1sat-indexer from relational database-centric to stream-based architecture, eliminating database read bottlenecks and enabling efficient UTXO tracking through dual-event streams. **Leverage overlay package's `QueueStorage` for all storage - txos stored as hashes, events stored as sorted sets.**
 
 ---
 
 ## Architectural Decisions
 
-### 1. **Dual-Event Stream Architecture**
-- **Single sorted set per index key** with event type prefixes
-- **Unspent events**: `u:{outpoint}` (e.g., `u:abc123_0`)
-- **Spent events**: `s:{outpoint}` (e.g., `s:abc123_0`)
-- Both events logged to all relevant keys (owners, tags, event keys)
-- Chronologically ordered by score: `height * 1e9 + blockIndex`
+### 1. **Dual-Event Stream Architecture** (REVISED)
+- **Separate event keys for unspent vs spent** (NOT prefixes within a single key)
+- **Unspent events**: `own:{address}` - outpoint logged when TXO created
+- **Spent events**: `osp:{address}` (owner spent) - outpoint logged when TXO spent
+- Events stored as sorted sets via `QueueStorage.ZAdd()` from overlay package
+- Query via `QueueStorage.ZRange()` with score-based pagination
 
-**Example sorted set**:
+**Example data storage**:
 ```
-own:1PKH... -> {
-  u:abc123_0: 800000000000.0,  // unspent (created) at height 800000
-  s:abc123_0: 800001500000.0,  // spent at height 800001
-  u:def456_1: 800001000000.0   // unspent at height 800001
+# TXO stored as hash
+txo:abc123_0 -> {
+  height: "800000",
+  idx: "0",
+  satoshis: "1000",
+  owners: '["1PKH..."]',
+  events: '["txid:abc123", "ord", "ord:origin:xyz_0", "own:1PKH..."]',
+  spend: "",
+  ord: '{"origin": "xyz_0", ...}'   # tag-specific data
 }
+
+# Events stored as sorted sets (score = height * 1e6 + idx)
+own:1PKH... -> [{member: "abc123_0", score: 800000000000.0}]   // unspent
+osp:1PKH... -> [{member: "abc123_0", score: 800001500000.0}]   // spent
+txid:abc123 -> [{member: "abc123_0", score: 800000000000.0}]   // lookup by txid
+ord -> [{member: "abc123_0", score: 800000000000.0}]           // tag index
 ```
 
-### 2. **Mandatory Ancestor Re-parsing**
-- Remove database lookup path in `ParseSpends()` (idx/index-context.go:95)
-- Always load source transactions from JungleBus and re-parse
+### 2. **Use overlay's QueueStorage**
+- Replace custom database implementations with `QueueStorage` interface
+- Redis-like abstraction supporting multiple backends (Redis, SQLite, MongoDB, Postgres)
+- Operations:
+  - **Hash ops**: `HSet`, `HGet`, `HGetAll`, `HDel`, `HMSet`, `HMGet` - for txo data
+  - **Sorted set ops**: `ZAdd`, `ZRem`, `ZRange`, `ZScore`, `ZCard` - for event indexes
+  - **Set ops**: `SAdd`, `SMembers`, `SRem`, `SIsMember` - for general sets
+- Score-based pagination via `ZRange` with `ScoreRange{Min, Max, Count}`
+
+### 3. **Mandatory Ancestor Re-parsing**
+- Transactions arrive with `SourceTransaction` populated on each input
+- `ParseSpends()` creates IndexContext for each parent tx and parses outputs
 - Database becomes **write-mostly derived view**, not source of truth during indexing
 - Source transactions are **required** for proper indexing (hard requirement)
 
-### 3. **API Strategy**
-- **Priority**: New stream-focused endpoints first
-  - `/api/v2/events/{owner}` - Paginated event catchup
-  - `/api/v2/events/{owner}/stream` - SSE with dual events
-  - Stream APIs expose `u:` and `s:` event types with scores
-- **Legacy APIs**: De-prioritized, may not function during transition
-  - Search functionality will likely be completely reworked
-  - Disable/stub old endpoints as needed to maintain buildability
-  - Backward compatibility decisions deferred until v6 architecture is proven
+### 4. **Remove Account Abstraction** ✅ COMPLETED
+- Accounts mapped multiple owner addresses to a single identifier (server-side convenience)
+- This creates DB read dependencies during indexing (`AcctOwners()` lookups)
+- **V6 approach**: Clients subscribe to multiple `own:{address}` streams and merge client-side
 
-### 4. **Storage Layer**
-- **Primary**: SQLite (embedded, serverless)
-- **Primary**: Redis (production, native pub/sub)
-- **Pub/Sub**: Add abstraction layer with in-memory implementation
-- **Future**: BadgerDB exploration deferred
+### 5. **API Strategy**
+- **Priority**: New stream-focused endpoints using `QueueStorage`
+  - `/api/v2/events/{event}` - Paginated event lookup via `ZRange`
+  - `/api/v2/owner/{address}` - Query `own:` and `osp:` events
+  - SSE via overlay's `SSEManager`
+- **Legacy APIs**: De-prioritized, updated to use QueueStore under the hood
 
-### 5. **Migration Strategy**
+### 6. **Storage Layer**
+- **Primary**: overlay's `QueueStorage` with Redis, SQLite, MongoDB, or Postgres backends
+- **Data model**: TXOs as hashes, events as sorted sets
+- **Shared services**: BEEF storage, PubSub, QueueStorage from overlay
+
+### 7. **Migration Strategy**
 - v6 requires **fresh re-index from genesis** (no migration tools)
 - Clean slate ensures all data has dual-event format
 - Users can run v5/v6 side-by-side during transition
@@ -54,148 +75,234 @@ own:1PKH... -> {
 
 ## Integration with overlay Package
 
-### Components to Adopt from `/Users/davidcase/Source/wallet/overlay`:
+### Components Adopted from `github.com/b-open-io/overlay`:
 
-#### **1. BEEF Storage** (overlay/beef/storage.go)
-- **Interface**: `BeefStorage` with `LoadBeef()`, `SaveBeef()`, `UpdateMerklePath()`
-- **Purpose**: Replace JungleBus direct calls with hierarchical BEEF caching
-- **Implementations available**:
-  - LRU cache (overlay/beef/lru.go) - in-memory with size limits
-  - Redis (overlay/beef/redis.go)
-  - SQLite (overlay/beef/sqlite.go)
-  - Filesystem (overlay/beef/filesystem.go)
-  - JungleBus (overlay/beef/junglebus.go) - network fallback
-- **Factory**: Chainable storage layers via connection strings (overlay/beef/factory.go)
-  - Example: `"lru://100mb,redis://localhost:6379,junglebus://"`
-  - Creates: LRU → Redis → JungleBus fallback chain
+#### **1. BEEF Storage** ✅ INTEGRATED
+- Chainable storage layers: `LRU → Redis/SQLite → JungleBus`
+- `config.BeefStorage` used for transaction loading
 
-**Benefit**: Optimized ancestor transaction loading with multi-tier caching
+#### **2. Pub/Sub Abstraction** ✅ INTEGRATED
+- `pubsub.PubSub` interface from overlay package
+- Supports Redis (`redis://`) or in-memory channels (`channels://`)
+- `config.PubSub` initialized via `pubsub.CreatePubSub()`
 
-#### **2. In-Memory Pub/Sub** (overlay/pubsub/channels.go)
-- **Type**: `ChannelPubSub` - pure Go, no dependencies
-- **Interface**: `PubSub` with `Publish()`, `Subscribe()`, `Unsubscribe()`
-- **Features**:
-  - sync.Map for topic subscriptions
-  - Buffered channels (100 events)
-  - Context-based cleanup
-  - Handles slow consumers gracefully
-- **Use case**: SQLite standalone mode without Redis
-
-**Benefit**: Enables SSE functionality without Redis server
-
-#### **3. Pub/Sub Abstraction** (overlay/pubsub/pubsub.go)
-- **Unified Event structure**: `Topic`, `Member`, `Score`, `Source`, `Data`
-- **Implementations**:
-  - Redis pub/sub (overlay/pubsub/redis.go)
-  - Channels (in-memory) (overlay/pubsub/channels.go)
-- **Configuration**: `SubscriberConfig` for flexible backend selection
-
-**Benefit**: Clean abstraction allows swapping Redis/in-memory based on deployment
+#### **3. QueueStorage** ✅ INTEGRATED
+- `queue.QueueStorage` for all storage operations (txos as hashes, events as sorted sets)
+- Added bulk operations: `HMSet`, `HMGet` for efficient multi-field reads/writes
+- Implemented in Redis, SQLite, MongoDB, Postgres backends
+- New `QueueStore` implementation: [idx/queue-store/txos.go](idx/queue-store/txos.go)
 
 ---
 
 ## Implementation Sequence
 
-### **Phase 1: Core Architecture Changes**
-1. **Modify ParseSpends** (idx/index-context.go:88-138)
-   - Remove `Store.LoadTxo()` database lookup
-   - Make ancestor re-parsing mandatory
-   - Integrate BEEF storage from overlay package
+### **Phase 0: Cleanup** ✅ COMPLETED
+- ✅ Removed Account Abstraction (accounts.go, owner_accounts table, routes, interface methods)
+- ✅ Build passes
 
-2. **Integrate BEEF Storage**
-   - Add overlay/beef as dependency
-   - Replace JungleBus direct calls with `beef.LoadTx()`
-   - Configure layered caching: `LRU → Redis/SQLite → JungleBus`
+### **Phase 1: Config & Infrastructure** ✅ COMPLETED
+- ✅ Viper-based configuration (config.yaml + env var overrides)
+- ✅ Adopted Pub/Sub from overlay package
+- ✅ Replaced jb package with go-junglebus + BeefStorage
+- ✅ Deleted jb package
 
-3. **Dual-Event Logging**
-   - Update `SaveTxos()` to log `u:{outpoint}` events (idx/redis-store/txos.go:144, idx/pg-store/txos.go)
-   - Update `SaveSpends()` to log `s:{outpoint}` events (idx/redis-store/txos.go:217)
-   - Log spend events to all relevant keys (owners, tags, evt keys)
+### **Phase 2: Simplify IndexContext** ✅ COMPLETED
+- ✅ Removed `AncestorConfig` struct
+- ✅ Removed `ancestorConfig` and `BeefStorage` fields from `IndexContext`
+- ✅ Simplified `NewIndexContext()` signature (removed beefStorage, ancestorConfig params)
+- ✅ Simplified `ParseSpends()` to use `SourceTransaction` directly
+- ✅ Updated all callers (ingest.go, ingest/ingest.go, server/routes/tx/ctrl.go, cmd/*)
+- ✅ Build passes
 
-### **Phase 2: Pub/Sub Abstraction**
-4. **Add Pub/Sub Interface**
-   - Adopt `pubsub.PubSub` interface from overlay
-   - Implement wrapper for existing Redis pub/sub (evt/event.go)
-   - Add ChannelPubSub for standalone mode
+### **Phase 3: Integrate QueueStorage** ✅ COMPLETED
 
-5. **Update Event Publishing**
-   - Modify `evt.Publish()` to use new abstraction
-   - Publish both creation and spend events
-   - Include event type in published data
+**Goal**: Replace custom TxoStore implementations with QueueStorage-based implementation.
 
-### **Phase 3: New Stream APIs**
-6. **Implement v2 Stream Endpoints**
-   - `/api/v2/events/{owner}` - paginated event catchup
-   - `/api/v2/events/{owner}/stream` - SSE with dual events
-   - Expose event types (`u:`/`s:`) and scores
-   - Build UTXO sets by processing events in order
+#### 3.1 Revert u:/s: Prefix Changes ✅ COMPLETED
+- ✅ Removed `u:` and `s:` prefix logic from SaveTxos (Redis, SQLite)
+- ✅ Removed `ParseOwnerMember()` helper from keys.go
+- ✅ Added `OwnerSpentKey()` helper for `osp:` events
+- ✅ Stubbed SaveSpends() - reimplemented in QueueStore
+- ✅ Updated owner routes to filter by spend status via LoadTxos (temporary)
 
-7. **Legacy API Handling** (Deferred)
-   - Stub or disable incompatible v1 endpoints as needed
-   - Focus on buildability, not backward compatibility
-   - Search functionality redesign happens after v6 core is stable
+#### 3.2 Add Bulk Hash Operations to QueueStorage ✅ COMPLETED
+- ✅ Added `HMSet(ctx, key, fields map[string]string)` to interface
+- ✅ Added `HMGet(ctx, key, fields ...string)` to interface
+- ✅ Implemented in Redis ([overlay/queue/redis.go](../overlay/queue/redis.go))
+- ✅ Implemented in SQLite ([overlay/queue/sqlite.go](../overlay/queue/sqlite.go))
+- ✅ Implemented in MongoDB ([overlay/queue/mongo.go](../overlay/queue/mongo.go))
+- ✅ Implemented in Postgres ([overlay/queue/postgres.go](../overlay/queue/postgres.go))
 
-### **Phase 4: Storage Implementation**
-8. **SQLite Dual-Event Support**
-   - Update schema/queries for `u:` and `s:` prefixes
-   - Test UTXO queries with event filtering
+#### 3.3 Create QueueStore TxoStore Implementation ✅ COMPLETED
+- ✅ Created [idx/store.go](idx/store.go) - QueueStore with all storage methods
+- ✅ Created [idx/search.go](idx/search.go) - SearchCfg, Log types, search methods
+- ✅ Uses QueueStorage for all operations (no direct database access)
+- ✅ Simplified event keys (no `tag:` or `evt:` prefixes)
 
-9. **Redis Dual-Event Support**
-   - Update sorted set operations
-   - Verify score-based range queries
+#### 3.4 Wire Up QueueStore ✅ COMPLETED
+- ✅ Added QueueStorage to config via `config.QueueStorage`
+- ✅ Added PubSub field to QueueStore struct
+- ✅ Created `config.Store` as unified `*idx.QueueStore` instance
+- ✅ Updated all routes to use `ingestCtx.Store` for lookups
+- ✅ Moved `Event` type and `EventKey()` to [idx/index-data.go](idx/index-data.go)
+- ✅ Changed all mod files to use `idx.Event` instead of `evt.Event`
+- ✅ Changed all routes to use `idx.EventKey()` instead of `evt.EventKey()`
+- ✅ Updated [ingest/ingest.go](ingest/ingest.go) to use `config.PubSub.Publish()`
+
+#### 3.5 Remove Old Store Implementations ✅ COMPLETED
+- ✅ Removed `idx/redis-store/` directory
+- ✅ Removed `idx/sqlite-store/` directory
+- ✅ Removed `idx/pg-store/` directory
+- ✅ Removed `idx/queue-store/` directory (consolidated into idx/store.go)
+- ✅ Removed `evt/` package entirely (Event moved to idx package)
+
+**Event Key Strategy** (simplified):
+```
+# TXO lookup by txid
+txid:{txid}                    - All outpoints for a transaction
+
+# Owner events
+own:{address}                  - TXO owned by address
+osp:{address}                  - TXO spent by address
+
+# Tag events (no prefix)
+{tag}                          - TXO has this tag (e.g., "ord", "bsv21")
+{tag}:{id}:{value}             - Protocol event (e.g., "ord:origin:abc123_0")
+```
+
+**Data Model**:
+```
+# TXO stored as hash
+txo:{outpoint} -> {
+  height, idx, satoshis,       # Core fields
+  owners,                      # JSON array of owner addresses
+  events,                      # JSON array of event keys (for rollback cleanup)
+  spend,                       # Spending txid (empty if unspent)
+  {tag}: {tag-specific JSON}   # Indexer data (e.g., "ord": {"origin": ...})
+}
+```
+
+### **Phase 4: New Stream APIs** ⬅️ NEXT
+Implement v2 event stream endpoints using QueueStore:
+- `/api/v2/events/{event}` - `Search()` with event key
+- `/api/v2/owner/{address}` - Query `own:` and `osp:` events
+- `/api/v2/owner/{address}/utxos` - Query `own:` excluding spent
+- SSE via overlay's `SSEManager`
 
 ### **Phase 5: Testing & Migration**
-10. **Testing**
-    - Unit tests for dual-event logic
-    - Integration tests with BEEF storage chain
-    - Performance benchmarks vs v5
-
-11. **Documentation**
-    - v6 architecture guide
-    - Fresh re-index instructions
-    - BEEF storage configuration examples
+- Unit tests for QueueStore operations
+- Integration tests with different QueueStorage backends
+- Performance benchmarks vs v5
+- Documentation (v6 architecture guide, fresh re-index instructions)
 
 ---
 
 ## Key Benefits
 
-1. **Performance**: Eliminate N database queries per transaction (where N = input count)
-2. **Throughput**: Database becomes write-mostly, reducing contention
-3. **Scalability**: Stream architecture enables horizontal scaling
-4. **Flexibility**: Layered BEEF caching adapts to deployment needs
-5. **Consistency**: Source of truth is blockchain (via BEEF), database is derived view
-6. **Features**: Complete event lifecycle tracking enables new query patterns
+1. **Unified Storage**: Leverage overlay's battle-tested QueueStorage abstraction
+2. **Performance**: Eliminate N database queries per transaction (where N = input count)
+3. **Throughput**: Database becomes write-mostly, reducing contention
+4. **Scalability**: Stream architecture enables horizontal scaling
+5. **Flexibility**: Multiple backend support (Redis, SQLite, MongoDB, Postgres)
+6. **Consistency**: Source of truth is blockchain (via BEEF), database is derived view
+7. **Simplicity**: Single storage interface for all operations
 
 ---
 
-## Files to Modify
+## Files Modified (Phase 3)
 
-### Core Indexing
-- idx/index-context.go:88-138 - Remove DB lookups, integrate BEEF
-- idx/keys.go - Document prefix conventions
+### overlay Package (bulk operations added)
+- ✅ `queue/queue.go` - Added `HMSet`, `HMGet` to interface
+- ✅ `queue/redis.go` - Implemented bulk hash operations
+- ✅ `queue/sqlite.go` - Implemented bulk hash operations
+- ✅ `queue/mongo.go` - Implemented bulk hash operations
+- ✅ `queue/postgres.go` - Implemented bulk hash operations
 
-### Storage Implementations
-- idx/redis-store/txos.go - Dual-event logging
-- idx/pg-store/txos.go - Dual-event logging (deprecate or maintain)
-- idx/redis-store/search.go - UTXO filtering with events
-- idx/pg-store/search.go - UTXO filtering with events
+### New QueueStore Implementation
+- ✅ `idx/store.go` - QueueStore struct with PubSub, all storage methods
+- ✅ `idx/search.go` - SearchCfg, Log types, ComparisonType
 
-### Event System
-- evt/event.go - Pub/sub abstraction, spend events
+### Event/IndexData Consolidation
+- ✅ `idx/index-data.go` - Added `Event` type and `EventKey()` function
+- ✅ `idx/keys.go` - `OwnerKey()`, `OwnerSpentKey()`, `BalanceKey()`, `QueueKey()`, `LogKey()`
 
-### API
-- server/routes/ - New v2 stream endpoints
-- server/server.go - SSE with dual events
+### Config Updates
+- ✅ `config/config.go` - Initialize PubSub before QueueStore, pass to `NewQueueStore()`
 
-### Configuration
-- Add BEEF storage configuration
-- Add pub/sub backend selection
+### Mod Files (evt.Event → idx.Event)
+- ✅ `mod/shrug/shrug.go`
+- ✅ `mod/onesat/origin.go`
+- ✅ `mod/onesat/inscription.go`
+- ✅ `mod/onesat/ordlock.go`
+- ✅ `mod/onesat/bsv20.go`
+- ✅ `mod/onesat/bsv21.go`
+- ✅ `mod/cosign/cosign.go`
+- ✅ `mod/p2pkh/p2pkh.go`
+- ✅ `mod/lock/lock.go`
+
+### Route Files (evt.EventKey → idx.EventKey)
+- ✅ `server/routes/tag/ctrl.go` - Uses tag directly (no TagKey needed)
+- ✅ `server/routes/origins/ctrl.go` - Uses `idx.EventKey()`
+- ✅ `server/routes/evt/ctrl.go` - Uses `idx.EventKey()`
+
+### Ingest Updates
+- ✅ `ingest/ingest.go` - Changed `evt.Publish()` to `config.PubSub.Publish()`
+
+### Removed Directories/Files
+- ✅ `evt/` - Package deleted (Event moved to idx)
+- ✅ `idx/redis-store/` - Removed
+- ✅ `idx/sqlite-store/` - Removed
+- ✅ `idx/pg-store/` - Removed
+- ✅ `idx/queue-store/` - Consolidated into idx/store.go
 
 ---
 
-## Next Steps
+## Event Key Reference
 
-1. Review and approve this plan
-2. Prioritize which phases to tackle first
-3. Validate BEEF storage integration approach
-4. Confirm any additional overlay utilities to adopt
+| Event Pattern | Description | Example |
+|--------------|-------------|---------|
+| `txid:{txid}` | All outpoints for a txid | `txid:abc123...` |
+| `own:{address}` | TXO owned by address | `own:1PKH...` |
+| `osp:{address}` | TXO spent by address | `osp:1PKH...` |
+| `{tag}` | TXO has this tag | `ord`, `bsv21` |
+| `{tag}:{id}:{value}` | Protocol event | `ord:origin:abc123_0` |
+
+---
+
+## Query Patterns with QueueStore
+
+### Load TXO by outpoint
+```go
+txo, err := store.LoadTxo(ctx, "abc123_0", []string{"ord"}, true)
+```
+
+### Load TXOs by txid
+```go
+txos, err := store.LoadTxosByTxid(ctx, "abc123...", []string{"ord"}, true)
+```
+
+### Search by event key
+```go
+logs, err := store.Search(ctx, &SearchCfg{
+    Keys:  []string{"own:1PKH..."},
+    From:  &fromScore,
+    Limit: 100,
+})
+```
+
+### Get outpoints, then load with spend status
+```go
+logs, _ := store.Search(ctx, &SearchCfg{Keys: []string{"own:addr"}})
+txos, _ := store.LoadTxos(ctx, outpoints, tags, true)
+// Filter by txo.Spend == "" for unspent
+```
+
+---
+
+## Resolved Decisions
+
+- **Storage abstraction**: Use overlay's `QueueStorage` for all operations
+- **Overlay package**: `github.com/b-open-io/overlay`
+- **TxoStore implementation**: `QueueStore` in `idx/queue-store/txos.go`
+- **Event key strategy**: No `tag:` or `evt:` prefixes - use tag directly
+- **Bulk operations**: Added `HMSet`, `HMGet` to QueueStorage interface

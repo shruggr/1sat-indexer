@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GorillaPool/go-junglebus"
-	"github.com/GorillaPool/go-junglebus/models"
+	"github.com/b-open-io/go-junglebus"
+	"github.com/b-open-io/go-junglebus/models"
+	"github.com/b-open-io/overlay/queue"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 const ProgressKey = "progress"
@@ -33,7 +33,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 	queueKey := idx.QueueKey(cfg.Queue)
 	var sub *junglebus.Subscription
 	txcount := 0
-	logs := make([]idx.Log, 0, 100000)
+	logs := make([]queue.ScoredMember, 0, 100000)
 	lastActivity := time.Now()
 
 	go func() {
@@ -58,14 +58,14 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 					if err := config.Store.LogMany(ctx, queueKey, logs); err != nil {
 						errors <- err
 					}
-					logs = make([]idx.Log, 0, 100000)
+					logs = make([]queue.ScoredMember, 0, 100000)
 				}
 			case 200:
 				if len(logs) > 0 {
 					if err := config.Store.LogMany(ctx, queueKey, logs); err != nil {
 						errors <- err
 					}
-					logs = make([]idx.Log, 0, 100000)
+					logs = make([]queue.ScoredMember, 0, 100000)
 				}
 				if err := config.Store.Log(ctx, ProgressKey, cfg.Tag, float64(status.Block)); err != nil {
 					errors <- err
@@ -90,7 +90,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
-			logs = append(logs, idx.Log{
+			logs = append(logs, queue.ScoredMember{
 				Member: txn.Id,
 				Score:  idx.HeightScore(txn.BlockHeight, txn.BlockIndex),
 			})
@@ -120,7 +120,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		}
 	}
 	log.Println("Subscribing to Junglebus from block", cfg.FromBlock)
-	if sub, err = jb.JB.SubscribeWithQueue(ctx,
+	if sub, err = config.JungleBus.SubscribeWithQueue(ctx,
 		cfg.Topic,
 		uint64(cfg.FromBlock),
 		0,

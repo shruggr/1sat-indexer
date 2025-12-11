@@ -7,7 +7,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -89,7 +88,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 		}
 
 		for _, tag := range ordLock.Tags {
-			idxData.Events = append(idxData.Events, &evt.Event{
+			idxData.Events = append(idxData.Events, &idx.Event{
 				Id:    "list",
 				Value: tag,
 			})
@@ -113,7 +112,7 @@ func (i *OrdLockIndexer) PreSave(idxCtx *idx.IndexContext) {
 			if bytes.Contains(*idxCtx.Tx.Inputs[0].UnlockingScript, OrdLockSuffix) {
 				ordLock.State = OrdLockSale
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    "sale",
 						Value: tag,
 					})
@@ -121,7 +120,7 @@ func (i *OrdLockIndexer) PreSave(idxCtx *idx.IndexContext) {
 			} else {
 				ordLock.State = OrdLockCancel
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    "cancel",
 						Value: tag,
 					})

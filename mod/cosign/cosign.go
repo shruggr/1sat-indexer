@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/bsv-blockchain/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -44,7 +43,7 @@ func (i *CosignIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 		txo.AddOwner(cosign.Address)
 		return &idx.IndexData{
 			Data: cosign,
-			Events: []*evt.Event{
+			Events: []*idx.Event{
 				{
 					Id:    "own",
 					Value: cosign.Address,

@@ -6,12 +6,13 @@ import (
 	"log"
 	"time"
 
+	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/script/interpreter"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
@@ -24,7 +25,7 @@ type BroadcastResponse struct {
 	Error   string `json:"error"`
 }
 
-func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transaction, arcBroadcaster *broadcaster.Arc) (response *BroadcastResponse) {
+func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Transaction, arcBroadcaster *broadcaster.Arc) (response *BroadcastResponse) {
 	start := time.Now()
 	txid := tx.TxID()
 	response = &BroadcastResponse{
@@ -40,20 +41,21 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 		spendOutpoints = append(spendOutpoints, spendOutpoint.String())
 
 		// Check if already spent in JungleBus
-		if spend, err := jb.GetSpend(spendOutpoint.String()); err != nil {
+		if spendBytes, err := config.JungleBus.GetSpend(ctx, spendOutpoint.TxidHex(), spendOutpoint.Vout()); err != nil {
 			// 404 means JungleBus doesn't know about this outpoint
 			response.Status = 404
 			response.Error = fmt.Sprintf("unknown-input: %s:%d - %s", response.Txid, vin, err.Error())
 			return
-		} else if spend != "" {
+		} else if len(spendBytes) > 0 {
 			// Already spent by another transaction
 			response.Status = 409
-			response.Error = fmt.Sprintf("input-already-spent: %s:%d - %s spent by %s", response.Txid, vin, spendOutpoint.String(), spend)
+			response.Error = fmt.Sprintf("input-already-spent: %s:%d - %s spent by %x", response.Txid, vin, spendOutpoint.String(), spendBytes)
 			return
 		}
 
 		if input.SourceTransaction == nil {
-			if sourceTx, err := jb.LoadTx(ctx, spendOutpoint.TxidHex(), false); err != nil {
+			sourceTxid, _ := chainhash.NewHashFromHex(spendOutpoint.TxidHex())
+			if sourceTx, err := config.BeefStorage.LoadTx(ctx, sourceTxid); err != nil {
 				response.Status = 404
 				response.Error = fmt.Sprintf("input %d has no source transaction: %s - %s", vin, spendOutpoint.TxidHex(), err.Error())
 				log.Print("Broadcast error:", response.Error)
@@ -102,10 +104,13 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 	score := idx.HeightScore(0, 0)
 
-	if err := jb.Cache.Set(ctx, jb.TxKey(response.Txid), tx.Bytes(), 0).Err(); err != nil { //
-		response.Error = err.Error()
+	// Save transaction as BEEF (it has source transactions populated from validation)
+	if beefBytes, err := tx.AtomicBEEF(false); err != nil {
+		response.Error = fmt.Sprintf("failed to create BEEF: %s", err.Error())
 		return
-		// Log Transaction Status as pending
+	} else if err := config.BeefStorage.SaveBeef(ctx, txid, beefBytes); err != nil {
+		response.Error = fmt.Sprintf("failed to save BEEF: %s", err.Error())
+		return
 	} else if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
@@ -119,7 +124,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 			response.Error = err.Error()
 			return
 		} else if !added {
-			if spend, err := store.GetSpend(ctx, spendOutpoint, false); err != nil {
+			if spend, err := store.GetSpend(ctx, spendOutpoint); err != nil {
 				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
 				response.Error = err.Error()
 				return
@@ -261,12 +266,12 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 
 }
 
-func rollbackSpends(ctx context.Context, store idx.TxoStore, outpoints []string, txid string) error {
+func rollbackSpends(ctx context.Context, store *idx.QueueStore, outpoints []string, txid string) error {
 	if len(outpoints) == 0 {
 		return nil
 	}
 	deletes := make([]string, 0, len(outpoints))
-	if spends, err := store.GetSpends(ctx, outpoints, false); err != nil {
+	if spends, err := store.GetSpends(ctx, outpoints); err != nil {
 		return err
 	} else {
 		for i, spend := range spends {

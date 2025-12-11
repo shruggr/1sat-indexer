@@ -5,7 +5,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/script/interpreter"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -36,7 +35,7 @@ func (i *ShrugIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		if shrug.Id == nil {
 			shrug.Status = Valid
 			id := lib.NewOutpointFromHash(idxCtx.Txid, vout)
-			idxData.Events = []*evt.Event{
+			idxData.Events = []*idx.Event{
 				{
 					Id: "deploy",
 				}, {
@@ -45,13 +44,13 @@ func (i *ShrugIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				},
 			}
 			if shrug.Amount.Cmp(interpreter.Zero) == 0 {
-				idxData.Events = append(idxData.Events, &evt.Event{
+				idxData.Events = append(idxData.Events, &idx.Event{
 					Id:    "mint",
 					Value: id.String(),
 				})
 			}
 		} else {
-			idxData.Events = []*evt.Event{
+			idxData.Events = []*idx.Event{
 				{
 					Id:    shrug.Status.String(),
 					Value: shrug.Id.String(),
@@ -180,14 +179,14 @@ func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 		for _, idxData := range token.outputs {
 			if shrug, ok := idxData.Data.(*Shrug); ok {
 				shrug.Status = token.status
-				idxData.Events = []*evt.Event{
+				idxData.Events = []*idx.Event{
 					{
 						Id:    shrug.Status.String(),
 						Value: tokenId,
 					},
 				}
 				if shrug.Amount.Cmp(interpreter.Zero) == 0 && token.status == Valid {
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    "mint",
 						Value: shrug.Id.String(),
 					})

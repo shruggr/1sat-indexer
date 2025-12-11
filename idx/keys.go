@@ -1,15 +1,12 @@
 package idx
 
-func AccountKey(account string) string {
-	return "acct:" + account
-}
-
 func OwnerKey(owner string) string {
 	return "own:" + owner
 }
 
-func LockKey(outpoint string) string {
-	return "lock:" + outpoint
+// OwnerSpentKey returns the key for spent events for an owner address
+func OwnerSpentKey(owner string) string {
+	return "osp:" + owner
 }
 
 func BalanceKey(key string) string {
@@ -17,7 +14,6 @@ func BalanceKey(key string) string {
 }
 
 const OwnerSyncKey = "own:sync"
-const OwnerAccountKey = "own:acct"
 
 func QueueKey(tag string) string {
 	return "que:" + tag

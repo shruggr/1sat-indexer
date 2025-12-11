@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/bsv-blockchain/go-sdk/script"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -108,7 +107,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			bsv21.Decimals = uint8(val)
 		}
 
-		events := []*evt.Event{}
+		events := []*idx.Event{}
 
 		switch bsv21.Op {
 		case "deploy+mint":
@@ -138,7 +137,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 				bsv21.FundAddress = add.AddressString
 			}
 
-			events = append(events, &evt.Event{
+			events = append(events, &idx.Event{
 				Id:    IssueEvent,
 				Value: "",
 			})
@@ -154,7 +153,7 @@ func (i *Bsv21Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 			return nil
 		}
 
-		events = append(events, &evt.Event{
+		events = append(events, &idx.Event{
 			Id:    IdEvent,
 			Value: bsv21.Id,
 		})
@@ -252,21 +251,21 @@ func (i *Bsv21Indexer) PreSave(idxCtx *idx.IndexContext) {
 		for _, idxData := range token.outputs {
 			if bsv21, ok := idxData.Data.(*Bsv21); ok {
 				if isPending {
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    PendingEvent,
 						Value: tokenId,
 					})
 				} else if reason, ok := reasons[tokenId]; ok {
 					bsv21.Status = Invalid
 					bsv21.Reason = &reason
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    InvalidEvent,
 						Value: tokenId,
 					})
 					idxData.Deps = append(idxData.Deps, token.deps...)
 				} else {
 					bsv21.Status = Valid
-					idxData.Events = append(idxData.Events, &evt.Event{
+					idxData.Events = append(idxData.Events, &idx.Event{
 						Id:    ValidEvent,
 						Value: tokenId,
 					})

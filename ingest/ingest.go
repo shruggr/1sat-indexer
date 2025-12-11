@@ -3,18 +3,18 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/b-open-io/overlay/beef"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/config"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
 var ingest *idx.IngestCtx
@@ -73,7 +73,8 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 			// Scenario 1: Arc Success - Transaction mined with MerklePath
 			if arcResp.MerklePath != "" {
 				go func(txidStr, merklePath string) {
-					tx, err := jb.LoadTx(ctx, txidStr, false)
+					txidHash, _ := chainhash.NewHashFromHex(txidStr)
+					tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
 					if err != nil {
 						log.Printf("Error loading tx %s: %v", txidStr, err)
 						return
@@ -140,9 +141,7 @@ func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transac
 	}
 
 	log.Println("Reingest", txid, newScore)
-	if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{
-		Parse: true,
-	}); err != nil {
+	if _, err := ingest.IngestTx(ctx, tx); err != nil {
 		log.Println("IngestTx error", txid, err)
 		return err
 	}
@@ -216,9 +215,10 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 				wg.Done()
 			}()
 
-			// Check if transaction exists in JungleBus
-			_, err := jb.LoadTx(ctx, txid, false)
-			if err == jb.ErrNotFound {
+			// Check if transaction exists in BeefStorage
+			txidHash, _ := chainhash.NewHashFromHex(txid)
+			_, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			if errors.Is(err, beef.ErrNotFound) {
 				log.Println("Archive Missing", txid)
 				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Delog error for %s: %v", txid, err)
@@ -247,7 +247,7 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 				// Arc has it - publish to Redis, Arc callback listener will handle ingestion
 				if jsonData, err := json.Marshal(status); err != nil {
 					log.Printf("Error marshaling Arc status for %s: %v", txid, err)
-				} else if err := evt.Publish(ctx, "arc", string(jsonData)); err != nil {
+				} else if err := config.PubSub.Publish(ctx, "arc", string(jsonData)); err != nil {
 					log.Printf("Error publishing Arc status for %s: %v", txid, err)
 				}
 			}
@@ -290,8 +290,9 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 			}()
 
 			// Load transaction with MerklePath
-			tx, err := jb.LoadTx(ctx, txid, true)
-			if err == jb.ErrNotFound {
+			txidHash, _ := chainhash.NewHashFromHex(txid)
+			tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			if errors.Is(err, beef.ErrNotFound) {
 				// Transaction was supposedly mined >10 blocks ago but doesn't exist
 				// This is a reorg victim - rollback
 				if rollback {
@@ -313,7 +314,6 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 				return
 			}
 
-			txidHash := tx.TxID()
 			valid := false
 
 			// Validate MerklePath from JungleBus (if present)
@@ -377,7 +377,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 
 			// Re-ingest to recalculate score from MerklePath
 			log.Printf("Re-ingesting mined tx: %s", txid)
-			if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{Parse: true}); err != nil {
+			if _, err := ingest.IngestTx(ctx, tx); err != nil {
 				log.Printf("IngestTx error for %s: %v", txid, err)
 				return
 			}
@@ -439,9 +439,10 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 			isOld := age > OldMempoolTimeout
 
 			// Load transaction with proof
-			tx, err := jb.LoadTx(ctx, txid, true)
-			if err == jb.ErrNotFound {
-				// Transaction doesn't exist in JungleBus
+			txidHash, _ := chainhash.NewHashFromHex(txid)
+			tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			if errors.Is(err, beef.ErrNotFound) {
+				// Transaction doesn't exist in BeefStorage
 				// All transactions here are >2min old (filtered by query)
 				if isOld {
 					// >3hr old: Rollback if flag enabled
@@ -470,7 +471,6 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 				return
 			}
 
-			txidHash := tx.TxID()
 			valid := false
 
 			// Validate MerklePath from JungleBus (if present)
@@ -534,7 +534,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 
 			// Re-ingest with MerklePath
 			log.Printf("Re-ingesting old mempool tx: %s", txid)
-			if _, err := ingest.IngestTx(ctx, tx, idx.AncestorConfig{Parse: true}); err != nil {
+			if _, err := ingest.IngestTx(ctx, tx); err != nil {
 				log.Printf("IngestTx error for %s: %v", txid, err)
 				return
 			}
@@ -557,7 +557,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 
 func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 	limiter := make(chan struct{}, cfg.Concurrency)
-	errors := make(chan error)
+	errChan := make(chan error)
 	done := make(chan string)
 	inflight := make(map[string]struct{})
 	ticker := time.NewTicker(15 * time.Second)
@@ -584,7 +584,7 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 			delete(inflight, txid)
 			ingestcount++
 
-		case err := <-errors:
+		case err := <-errChan:
 			log.Println("Queue processing error:", err)
 			if cfg.Once {
 				return
@@ -593,10 +593,9 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 		default:
 			to := float64(time.Now().UnixNano())
 			if logs, err := cfg.Store.Search(ctx, &idx.SearchCfg{
-				Keys:    []string{cfg.Key},
-				Limit:   cfg.PageSize,
-				Verbose: cfg.Verbose,
-				To:      &to,
+				Keys:  []string{cfg.Key},
+				Limit: cfg.PageSize,
+				To:    &to,
 			}); err != nil {
 				log.Println("Queue search error:", err)
 				time.Sleep(time.Second)
@@ -628,8 +627,10 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 								wg.Done()
 								done <- txid
 							}()
-							if tx, err := jb.LoadTx(ctx, txid, true); err == jb.ErrNotFound {
-								// Transaction not found in JungleBus - remove from queue
+							txidHash, _ := chainhash.NewHashFromHex(txid)
+							tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+							if errors.Is(err, beef.ErrNotFound) {
+								// Transaction not found in BeefStorage - remove from queue
 								log.Printf("[QUEUE] Transaction not found, removing from queue: %s", txid)
 								if err := cfg.Store.Delog(ctx, cfg.Key, txid); err != nil {
 									log.Printf("Delog error for %s: %v", txid, err)
@@ -637,13 +638,13 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 								return
 							} else if err != nil {
 								log.Printf("LoadTx error %s: %v", txid, err)
-								errors <- err
-							} else if idxCtx, err := cfg.IngestTx(ctx, tx, cfg.AncestorConfig); err != nil {
+								errChan <- err
+							} else if idxCtx, err := cfg.IngestTx(ctx, tx); err != nil {
 								log.Printf("Ingest error %s: %v", txid, err)
-								errors <- err
+								errChan <- err
 							} else if cfg.OnIngest != nil {
 								if err := (*cfg.OnIngest)(ctx, idxCtx); err != nil {
-									errors <- err
+									errChan <- err
 								}
 							} else if len(cfg.Key) > 0 {
 								if err = cfg.Store.Delog(ctx, cfg.Key, txid); err != nil {

@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/v5/config"
-	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -25,28 +23,32 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Param from query number false "Starting score for pagination"
 // @Param rev query bool false "Reverse order"
 // @Param limit query int false "Maximum number of results" default(100)
-// @Param txo query bool false "Include TXO data"
-// @Param script query bool false "Include script data"
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tag/{tag} [get]
 func TxosByTag(c *fiber.Ctx) error {
-
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ingest.IndexedTags()
 	}
 
 	from := c.QueryFloat("from", 0)
-	if txos, err := config.Store.SearchTxos(c.Context(), &idx.SearchCfg{
-		Keys:          []string{evt.TagKey(c.Params("tag"))},
-		From:          &from,
-		Reverse:       c.QueryBool("rev", false),
-		Limit:         uint32(c.QueryInt("limit", 100)),
-		IncludeTxo:    c.QueryBool("txo", false),
-		IncludeTags:   tags,
-		IncludeScript: c.QueryBool("script", false),
-	}); err != nil {
+	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+		Keys:    []string{c.Params("tag")},
+		From:    &from,
+		Reverse: c.QueryBool("rev", false),
+		Limit:   uint32(c.QueryInt("limit", 100)),
+	})
+	if err != nil {
+		return err
+	}
+
+	outpoints := make([]string, 0, len(logs))
+	for _, log := range logs {
+		outpoints = append(outpoints, log.Member)
+	}
+
+	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)
