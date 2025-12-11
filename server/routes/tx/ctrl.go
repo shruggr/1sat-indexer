@@ -182,7 +182,7 @@ func GetRawTx(c *fiber.Ctx) error {
 		c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		switch c.Query("fmt", "bin") {
 		case "json":
-			if tx, err := transaction.NewMerklePathFromBinary(rawtx); err != nil {
+			if tx, err := transaction.NewTransactionFromBytes(rawtx); err != nil {
 				return err
 			} else {
 				return c.JSON(tx)
