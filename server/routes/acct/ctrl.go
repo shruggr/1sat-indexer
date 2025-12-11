@@ -1,6 +1,7 @@
 package acct
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
@@ -40,12 +41,19 @@ func RegisterAccount(c *fiber.Ctx) error {
 		return c.SendStatus(400)
 	}
 
+	log.Printf("RegisterAccount: registering account %s with %d owners", account, len(owners))
 	if err := ingest.Store.UpdateAccount(c.Context(), account, owners); err != nil {
-		return err
-	} else if err := idx.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+		log.Printf("RegisterAccount: error updating account %s: %v", account, err)
 		return err
 	}
 
+	log.Printf("RegisterAccount: starting sync for account %s", account)
+	if err := idx.SyncAcct(c.Context(), idx.IngestTag, account, ingest); err != nil {
+		log.Printf("RegisterAccount: error syncing account %s: %v", account, err)
+		return err
+	}
+
+	log.Printf("RegisterAccount: successfully registered account %s", account)
 	return c.SendStatus(204)
 }
 

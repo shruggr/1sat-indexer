@@ -56,24 +56,32 @@ func (p *PGStore) AcctOwners(ctx context.Context, account string) ([]string, err
 }
 
 func (p *PGStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
-	for _, owner := range owners {
+	log.Printf("UpdateAccount: starting update for account %s with %d owners", account, len(owners))
+	for i, owner := range owners {
 		if owner == "" {
 			continue
 		}
+		log.Printf("UpdateAccount: processing owner %d/%d: %s", i+1, len(owners), owner)
 		if _, err := p.DB.Exec(ctx, `INSERT INTO owner_accounts(owner, account)
 			VALUES ($1, $2)
-			ON CONFLICT(owner) DO UPDATE 
+			ON CONFLICT(owner) DO UPDATE
 				SET account=$2
 				WHERE owner_accounts.account!=$2`,
 			owner,
 			account,
 		); err != nil {
-			log.Panic(err)
-			return err
-		} else if _, err := p.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+			log.Printf("UpdateAccount: error inserting owner %s: %v", owner, err)
 			log.Panic(err)
 			return err
 		}
+		log.Printf("UpdateAccount: inserted/updated owner %s, now calling LogOnce", owner)
+		if _, err := p.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+			log.Printf("UpdateAccount: error in LogOnce for owner %s: %v", owner, err)
+			log.Panic(err)
+			return err
+		}
+		log.Printf("UpdateAccount: completed LogOnce for owner %s", owner)
 	}
+	log.Printf("UpdateAccount: completed update for account %s", account)
 	return nil
 }

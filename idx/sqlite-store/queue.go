@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -27,31 +28,23 @@ func (s *SQLiteStore) Log(ctx context.Context, key string, member string, score 
 }
 
 func (s *SQLiteStore) LogMany(ctx context.Context, key string, logs []idx.Log) error {
-	// Use a transaction for bulk inserts to avoid locking issues
-	tx, err := s.WRITEDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	if len(logs) == 0 {
+		return nil
 	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+
+	query := "INSERT INTO logs(search_key, member, score) VALUES "
+	args := make([]interface{}, 0, len(logs)*3)
+	placeholders := make([]string, 0, len(logs))
 
 	for _, l := range logs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO logs(search_key, member, score)
-			VALUES (?, ?, ?)
-			ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
-			key,
-			l.Member,
-			l.Score,
-			l.Score,
-		); err != nil {
-			return err
-		}
+		placeholders = append(placeholders, "(?, ?, ?)")
+		args = append(args, key, l.Member, l.Score)
 	}
 
-	return tx.Commit()
+	query += strings.Join(placeholders, ", ") + " ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
+
+	_, err := s.WRITEDB.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (s *SQLiteStore) LogOnce(ctx context.Context, key string, member string, score float64) (bool, error) {

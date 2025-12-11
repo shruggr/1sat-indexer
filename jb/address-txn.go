@@ -20,6 +20,7 @@ func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err err
 		return
 	}
 	url := fmt.Sprintf("%s/v1/address/get/%s/%d", JUNGLEBUS, address, lastHeight)
+	log.Printf("FetchOwnerTxns: fetching from %s", url)
 	if resp, err := http.Get(url); err != nil {
 		log.Panic(err)
 	} else if resp.StatusCode == 200 {
@@ -27,9 +28,12 @@ func FetchOwnerTxns(address string, lastHeight int) (txns []*AddressTxn, err err
 		if err := decoder.Decode(&txns); err != nil {
 			log.Panic(err)
 		}
+		log.Printf("FetchOwnerTxns: received %d transactions for %s from height %d", len(txns), address, lastHeight)
 	} else if resp.StatusCode == 400 {
+		log.Printf("FetchOwnerTxns: bad request (400) for %s", address)
 		return nil, ErrBadRequest
 	} else if resp.StatusCode == 404 {
+		log.Printf("FetchOwnerTxns: not found (404) for %s", address)
 		return nil, ErrNotFound
 	} else {
 		log.Panic("Bad status ", resp.StatusCode, " from ", url)

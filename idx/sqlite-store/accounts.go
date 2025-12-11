@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -53,45 +54,52 @@ func (s *SQLiteStore) AcctOwners(ctx context.Context, account string) ([]string,
 }
 
 func (s *SQLiteStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
-	// Use a transaction to ensure atomicity
-	tx, err := s.WRITEDB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Panic(err)
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	log.Printf("UpdateAccount: starting update for account %s with %d owners", account, len(owners))
 
-	for _, owner := range owners {
+	for i, owner := range owners {
 		if owner == "" {
 			continue
 		}
 
+		log.Printf("UpdateAccount: processing owner %d/%d: %s", i+1, len(owners), owner)
 		// Insert or update owner account mapping
-		if _, err := tx.ExecContext(ctx, `INSERT INTO owner_accounts(owner, account)
+		if _, err := s.WRITEDB.ExecContext(ctx, `INSERT INTO owner_accounts(owner, account)
 			VALUES (?, ?)
 			ON CONFLICT(owner) DO UPDATE SET account = ?`,
 			owner,
 			account,
 			account,
 		); err != nil {
-			log.Panic(err)
-			return err
-		}
-
-		// Log the owner for syncing (insert only once)
-		if _, err := s.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+			log.Printf("UpdateAccount: error inserting owner %s: %v", owner, err)
 			log.Panic(err)
 			return err
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		log.Panic(err)
-		return err
+	// Batch insert logs for all owners in one query
+	if len(owners) > 0 {
+		log.Printf("UpdateAccount: batch inserting logs for %d owners", len(owners))
+		query := "INSERT INTO logs(search_key, member, score) VALUES "
+		args := make([]interface{}, 0, len(owners)*3)
+		placeholders := make([]string, 0, len(owners))
+
+		for _, owner := range owners {
+			if owner == "" {
+				continue
+			}
+			placeholders = append(placeholders, "(?, ?, ?)")
+			args = append(args, idx.OwnerSyncKey, owner, 0)
+		}
+
+		query += strings.Join(placeholders, ", ") + " ON CONFLICT DO NOTHING"
+
+		if _, err := s.WRITEDB.ExecContext(ctx, query, args...); err != nil {
+			log.Printf("UpdateAccount: error batch inserting logs: %v", err)
+			log.Panic(err)
+			return err
+		}
 	}
+
+	log.Printf("UpdateAccount: completed update for account %s", account)
 	return nil
 }

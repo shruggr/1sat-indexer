@@ -232,22 +232,21 @@ func (s *SQLiteStore) LoadData(ctx context.Context, outpoint string, tags []stri
 
 func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 	ctx := idxCtx.Ctx
-	tx, err := s.WRITEDB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Panic(err)
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
 
+	// Prepare batch data
+	type txoInsert struct {
+		outpoint string
+		owners   string
+		datas    map[string]any
+		events   []string
+	}
+
+	txoInserts := make([]txoInsert, 0, len(idxCtx.Txos))
 	outpoints := make([]string, 0, len(idxCtx.Txos))
+
 	for _, txo := range idxCtx.Txos {
 		outpoint := txo.Outpoint.String()
 		outpoints = append(outpoints, outpoint)
-		score := idxCtx.Score
 
 		txo.Events = make([]string, 0, 100)
 		datas := make(map[string]any, len(txo.Data))
@@ -278,64 +277,77 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 			return err
 		}
 
-		// Insert/Update txo
-		if _, err := tx.ExecContext(ctx, `INSERT INTO txos(outpoint, height, idx, satoshis, owners)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT (outpoint)
-			DO UPDATE SET height = ?, idx = ?, satoshis = ?, owners = ?`,
-			outpoint,
-			idxCtx.Height,
-			idxCtx.Idx,
-			*txo.Satoshis,
-			string(owners),
-			idxCtx.Height,
-			idxCtx.Idx,
-			*txo.Satoshis,
-			string(owners),
-		); err != nil {
-			log.Panicln("insert txos Err:", err)
-			return err
-		}
+		txoInserts = append(txoInserts, txoInsert{
+			outpoint: outpoint,
+			owners:   string(owners),
+			datas:    datas,
+			events:   txo.Events,
+		})
+	}
 
-		// Insert/Update logs for events
-		for _, event := range txo.Events {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO logs(search_key, member, score)
-				VALUES (?, ?, ?)
-				ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
-				event,
-				outpoint,
-				score,
-				score,
-			); err != nil {
-				log.Panicln("insert logs Err:", err)
-				return err
+	// Batch insert txo_data
+	if len(txoInserts) > 0 {
+		var dataArgs []interface{}
+		var dataPlaceholders []string
+		for _, ti := range txoInserts {
+			for tag, data := range ti.datas {
+				dataPlaceholders = append(dataPlaceholders, "(?, ?, ?)")
+				dataArgs = append(dataArgs, ti.outpoint, tag, data)
 			}
 		}
-
-		// Insert/Update txo_data
-		for tag, data := range datas {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO txo_data(outpoint, tag, data)
-				VALUES (?, ?, ?)
-				ON CONFLICT (outpoint, tag) DO UPDATE SET data = ?`,
-				outpoint,
-				tag,
-				data,
-				data,
-			); err != nil {
+		if len(dataArgs) > 0 {
+			query := "INSERT INTO txo_data(outpoint, tag, data) VALUES " +
+				strings.Join(dataPlaceholders, ", ") +
+				" ON CONFLICT (outpoint, tag) DO UPDATE SET data = excluded.data"
+			if _, err := s.WRITEDB.ExecContext(ctx, query, dataArgs...); err != nil {
 				log.Panicln("insert txo_data Err:", err)
 				return err
 			}
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		log.Panic(err)
-		return err
+	// Batch insert txos
+	if len(txoInserts) > 0 {
+		var txoArgs []interface{}
+		var txoPlaceholders []string
+		for _, ti := range txoInserts {
+			txoPlaceholders = append(txoPlaceholders, "(?, ?, ?, ?, ?)")
+			txoArgs = append(txoArgs, ti.outpoint, idxCtx.Height, idxCtx.Idx, *idxCtx.Txos[len(txoArgs)/5].Satoshis, ti.owners)
+		}
+		query := "INSERT INTO txos(outpoint, height, idx, satoshis, owners) VALUES " +
+			strings.Join(txoPlaceholders, ", ") +
+			" ON CONFLICT (outpoint) DO UPDATE SET height = excluded.height, idx = excluded.idx, satoshis = excluded.satoshis, owners = excluded.owners"
+		if _, err := s.WRITEDB.ExecContext(ctx, query, txoArgs...); err != nil {
+			log.Panicln("insert txos Err:", err)
+			return err
+		}
 	}
 
-	// Publish events after successful commit
-	for vout, txo := range idxCtx.Txos {
-		for _, event := range txo.Events {
+	// Batch insert logs
+	if len(txoInserts) > 0 {
+		var logArgs []interface{}
+		var logPlaceholders []string
+		score := idxCtx.Score
+		for _, ti := range txoInserts {
+			for _, event := range ti.events {
+				logPlaceholders = append(logPlaceholders, "(?, ?, ?)")
+				logArgs = append(logArgs, event, ti.outpoint, score)
+			}
+		}
+		if len(logArgs) > 0 {
+			query := "INSERT INTO logs(search_key, member, score) VALUES " +
+				strings.Join(logPlaceholders, ", ") +
+				" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
+			if _, err := s.WRITEDB.ExecContext(ctx, query, logArgs...); err != nil {
+				log.Panicln("insert logs Err:", err)
+				return err
+			}
+		}
+	}
+
+	// Publish events
+	for vout := range idxCtx.Txos {
+		for _, event := range txoInserts[vout].events {
 			evt.Publish(ctx, event, outpoints[vout])
 		}
 	}
@@ -346,38 +358,11 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 	ctx := idxCtx.Ctx
 	score := idx.HeightScore(idxCtx.Height, idxCtx.Idx)
 
-	tx, err := s.WRITEDB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Panic(err)
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
-
-	spends := make(map[string]string, len(idxCtx.Spends))
 	owners := make(map[string]struct{}, 10)
 	ownerKeys := make([]string, 0, 10)
 
+	// Collect unique owners and prepare spend data
 	for _, spend := range idxCtx.Spends {
-		outpoint := spend.Outpoint.String()
-		spends[outpoint] = idxCtx.TxidHex
-
-		// Update spend in txos table
-		if _, err := tx.ExecContext(ctx, `INSERT INTO txos(outpoint, spend)
-			VALUES (?, ?)
-			ON CONFLICT (outpoint) DO UPDATE SET spend = ?`,
-			outpoint,
-			idxCtx.TxidHex,
-			idxCtx.TxidHex,
-		); err != nil {
-			log.Panic(err)
-			return err
-		}
-
-		// Collect unique owners
 		for _, owner := range spend.Owners {
 			if _, ok := owners[owner]; !ok && owner != "" {
 				owners[owner] = struct{}{}
@@ -387,27 +372,42 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 		}
 	}
 
-	// Insert logs for owner keys
-	for _, ownerKey := range ownerKeys {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO logs(search_key, member, score)
-			VALUES (?, ?, ?)
-			ON CONFLICT (search_key, member) DO UPDATE SET score = ?`,
-			ownerKey,
-			idxCtx.TxidHex,
-			score,
-			score,
-		); err != nil {
+	// Batch update spends in txos table
+	if len(idxCtx.Spends) > 0 {
+		var txoArgs []interface{}
+		var txoPlaceholders []string
+		for _, spend := range idxCtx.Spends {
+			outpoint := spend.Outpoint.String()
+			txoPlaceholders = append(txoPlaceholders, "(?, ?)")
+			txoArgs = append(txoArgs, outpoint, idxCtx.TxidHex)
+		}
+		query := "INSERT INTO txos(outpoint, spend) VALUES " +
+			strings.Join(txoPlaceholders, ", ") +
+			" ON CONFLICT (outpoint) DO UPDATE SET spend = excluded.spend"
+		if _, err := s.WRITEDB.ExecContext(ctx, query, txoArgs...); err != nil {
 			log.Panic(err)
 			return err
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		log.Panic(err)
-		return err
+	// Batch insert logs for owner keys
+	if len(ownerKeys) > 0 {
+		var logArgs []interface{}
+		var logPlaceholders []string
+		for _, ownerKey := range ownerKeys {
+			logPlaceholders = append(logPlaceholders, "(?, ?, ?)")
+			logArgs = append(logArgs, ownerKey, idxCtx.TxidHex, score)
+		}
+		query := "INSERT INTO logs(search_key, member, score) VALUES " +
+			strings.Join(logPlaceholders, ", ") +
+			" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
+		if _, err := s.WRITEDB.ExecContext(ctx, query, logArgs...); err != nil {
+			log.Panic(err)
+			return err
+		}
 	}
 
-	// Publish events after successful commit
+	// Publish events
 	for _, ownerKey := range ownerKeys {
 		evt.Publish(ctx, ownerKey, idxCtx.TxidHex)
 	}
