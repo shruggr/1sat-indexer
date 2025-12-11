@@ -11,6 +11,7 @@ func (s *SQLiteStore) AcctsByOwners(ctx context.Context, owners []string) ([]str
 	if len(owners) == 0 {
 		return nil, nil
 	}
+
 	query := `SELECT account FROM owner_accounts WHERE owner IN (` + placeholders(len(owners)) + `)`
 	rows, err := s.READDB.QueryContext(ctx, query, toInterfaceSlice(owners)...)
 	if err != nil {
@@ -18,6 +19,7 @@ func (s *SQLiteStore) AcctsByOwners(ctx context.Context, owners []string) ([]str
 		return nil, err
 	}
 	defer rows.Close()
+
 	accts := make([]string, 0, 4)
 	for rows.Next() {
 		var acct string
@@ -37,6 +39,7 @@ func (s *SQLiteStore) AcctOwners(ctx context.Context, account string) ([]string,
 		return nil, err
 	}
 	defer rows.Close()
+
 	owners := make([]string, 0, 4)
 	for rows.Next() {
 		var owner string
@@ -50,17 +53,45 @@ func (s *SQLiteStore) AcctOwners(ctx context.Context, account string) ([]string,
 }
 
 func (s *SQLiteStore) UpdateAccount(ctx context.Context, account string, owners []string) error {
+	// Use a transaction to ensure atomicity
+	tx, err := s.WRITEDB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Panic(err)
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
 	for _, owner := range owners {
 		if owner == "" {
 			continue
 		}
-		if _, err := insOwnerAcct.ExecContext(ctx, owner, account, account); err != nil {
-			log.Panic(err)
-			return err
-		} else if _, err := s.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+
+		// Insert or update owner account mapping
+		if _, err := tx.ExecContext(ctx, `INSERT INTO owner_accounts(owner, account)
+			VALUES (?, ?)
+			ON CONFLICT(owner) DO UPDATE SET account = ?`,
+			owner,
+			account,
+			account,
+		); err != nil {
 			log.Panic(err)
 			return err
 		}
+
+		// Log the owner for syncing (insert only once)
+		if _, err := s.LogOnce(ctx, idx.OwnerSyncKey, owner, 0); err != nil {
+			log.Panic(err)
+			return err
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		log.Panic(err)
+		return err
 	}
 	return nil
 }
