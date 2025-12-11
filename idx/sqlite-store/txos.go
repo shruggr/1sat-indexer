@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -31,6 +33,18 @@ var getSpend *sql.Stmt
 var insOwnerAcct *sql.Stmt
 
 func NewSQLiteStore(connString string) (*SQLiteStore, error) {
+	if strings.HasPrefix(connString, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("unable to get home directory: %w", err)
+		}
+		connString = filepath.Join(home, connString[2:])
+	}
+
+	if err := os.MkdirAll(filepath.Dir(connString), 0755); err != nil {
+		return nil, fmt.Errorf("unable to create database directory: %w", err)
+	}
+
 	writeDb, err := sql.Open("sqlite3", connString)
 	if err != nil {
 		log.Panic(err)
@@ -56,7 +70,11 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	if getTxo, err = readDb.Prepare(`SELECT outpoint, height, idx, satoshis, spend
+	if err := initSchema(writeDb); err != nil {
+		return nil, fmt.Errorf("unable to initialize schema: %w", err)
+	}
+
+	if getTxo, err = readDb.Prepare(`SELECT outpoint, height, idx, satoshis, owners, spend
         FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`); err != nil {
 		log.Panic(err)
 		return nil, err
@@ -92,7 +110,8 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 		return nil, err
 	} else if setSpend, err = writeDb.Prepare(`INSERT INTO txos(outpoint, spend)
 		VALUES (?, ?)
-		ON CONFLICT (outpoint) DO UPDATE SET spend = ?`); err != nil {
+		ON CONFLICT (outpoint) DO UPDATE SET spend = ?
+		WHERE txos.spend = ''`); err != nil {
 		log.Panic(err)
 		return nil, err
 	} else if getSpend, err = readDb.Prepare(`SELECT spend FROM txos
@@ -110,14 +129,11 @@ func NewSQLiteStore(connString string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []string, script bool, spend bool) (*idx.Txo, error) {
 	row := getTxo.QueryRowContext(ctx, outpoint)
-	// s.DB.QueryRowContext(ctx, `SELECT outpoint, height, idx, satoshis, spend
-	//     FROM txos WHERE outpoint = ? AND satoshis IS NOT NULL`,
-	// 	outpoint,
-	// )
 	txo := &idx.Txo{}
 	var sats sql.NullInt64
+	var owners string
 	var spendTxid string
-	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &sats, &spendTxid); err == sql.ErrNoRows {
+	if err := row.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &sats, &owners, &spendTxid); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		log.Panic(err)
@@ -129,6 +145,10 @@ func (s *SQLiteStore) LoadTxo(ctx context.Context, outpoint string, tags []strin
 		if sats.Valid {
 			satoshis := uint64(sats.Int64)
 			txo.Satoshis = &satoshis
+		}
+		if err = json.Unmarshal([]byte(owners), &txo.Owners); err != nil {
+			log.Panic(err)
+			return nil, err
 		}
 		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
 		if txo.Data, err = s.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
@@ -208,6 +228,7 @@ func (s *SQLiteStore) LoadTxosByTxid(ctx context.Context, txid string, tags []st
 			log.Panic(err)
 			return nil, err
 		}
+		outpoints = append(outpoints, outpoint)
 	}
 	return s.LoadTxos(ctx, outpoints, tags, script, spend)
 }
@@ -441,9 +462,9 @@ func (s *SQLiteStore) GetSpend(ctx context.Context, outpoint string, refresh boo
 
 func (s *SQLiteStore) GetSpends(ctx context.Context, outpoints []string, refresh bool) ([]string, error) {
 	spends := make([]string, 0, len(outpoints))
-	if rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos 
-        WHERE outpoint IN (?)`,
-		outpoints,
+	if rows, err := s.READDB.QueryContext(ctx, `SELECT outpoint, spend FROM txos
+        WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
+		toInterfaceSlice(outpoints)...,
 	); err != nil {
 		log.Panic(err)
 		return nil, err
@@ -493,10 +514,10 @@ func (s *SQLiteStore) SetNewSpend(ctx context.Context, outpoint, txid string) (b
 }
 
 func (s *SQLiteStore) UnsetSpends(ctx context.Context, outpoints []string) error {
-	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos 
+	if _, err := s.WRITEDB.ExecContext(ctx, `UPDATE txos
         SET spend = ''
-        WHERE outpoint IN (?)`,
-		outpoints,
+        WHERE outpoint IN (`+placeholders(len(outpoints))+`)`,
+		toInterfaceSlice(outpoints)...,
 	); err != nil {
 		log.Panic(err)
 		return err
@@ -561,4 +582,45 @@ func toInterfaceSlice(strs []string) []interface{} {
 		ifaces[i] = s
 	}
 	return ifaces
+}
+
+func initSchema(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS txos (
+		outpoint TEXT PRIMARY KEY,
+		height INTEGER DEFAULT (unixepoch()),
+		idx BIGINT DEFAULT 0,
+		spend TEXT NOT NULL DEFAULT '',
+		satoshis BIGINT,
+		owners TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_txos_height_idx ON txos (height, idx);
+	CREATE INDEX IF NOT EXISTS idx_txos_spend ON txos (spend);
+
+	CREATE TABLE IF NOT EXISTS txo_data (
+		outpoint TEXT,
+		tag TEXT,
+		data TEXT,
+		PRIMARY KEY (outpoint, tag)
+	);
+	CREATE INDEX IF NOT EXISTS idx_txo_data_outpoint_tag ON txo_data (outpoint, tag);
+
+	CREATE TABLE IF NOT EXISTS logs (
+		search_key TEXT,
+		member TEXT,
+		score REAL,
+		PRIMARY KEY (search_key, member)
+	);
+	CREATE INDEX IF NOT EXISTS idx_logs_score ON logs (search_key, score);
+	CREATE INDEX IF NOT EXISTS idx_logs_member ON logs (member, score);
+
+	CREATE TABLE IF NOT EXISTS owner_accounts (
+		owner TEXT PRIMARY KEY,
+		account TEXT,
+		sync_height INT DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_owner_accounts_account ON owner_accounts (account);
+	`
+	_, err := db.Exec(schema)
+	return err
 }

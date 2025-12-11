@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -33,6 +34,10 @@ func init() {
 }
 
 func main() {
+	wd, _ := os.Getwd()
+	log.Println("CWD:", wd)
+	godotenv.Load(".env")
+
 	ctx := context.Background()
 
 	// Setup Redis client for event publishing

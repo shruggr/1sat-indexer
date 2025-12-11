@@ -1,0 +1,2125 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "BSV blockchain indexer API for transaction outputs, blocks, and related data",
+        "title": "1Sat Indexer API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/shruggr/1sat-indexer"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "5.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/v5/acct/{account}": {
+            "get": {
+                "description": "Get transaction activity for an account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination (query param)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction activity",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Register or update an account with associated owner identifiers",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Register account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Array of owner identifiers",
+                        "name": "owners",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Account registered successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/acct/{account}/balance": {
+            "get": {
+                "description": "Get the satoshi balance for an account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh spend data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Balance information",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/acct/{account}/txos": {
+            "get": {
+                "description": "Get transaction outputs for an account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account TXOs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Filter for unspent outputs only",
+                        "name": "unspent",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh spend data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/acct/{account}/utxos": {
+            "get": {
+                "description": "Get transaction outputs for an account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account TXOs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Filter for unspent outputs only",
+                        "name": "unspent",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh spend data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/acct/{account}/{from}": {
+            "get": {
+                "description": "Get transaction activity for an account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account name",
+                        "name": "account",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "path"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination (query param)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction activity",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/blocks/hash/{hash}": {
+            "get": {
+                "description": "Get block header information by block hash",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get block by hash",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Block hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/blk.BlockHeaderResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Block not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/blocks/height/{height}": {
+            "get": {
+                "description": "Get block header information by block height",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get block by height",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Block height",
+                        "name": "height",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/blk.BlockHeaderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid height",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Block not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/blocks/list/{from}": {
+            "get": {
+                "description": "List up to 10,000 block headers starting from a given height",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "List blocks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Starting block height",
+                        "name": "from",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/blk.BlockHeaderResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid height",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/blocks/tip": {
+            "get": {
+                "description": "Get the current blockchain tip (highest block)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get chain tip",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/blk.BlockHeaderResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/evt/{tag}/{id}/{value}": {
+            "get": {
+                "description": "Search for transaction outputs by event tag, id, and value",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get TXOs by event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event tag",
+                        "name": "tag",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event value",
+                        "name": "value",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter for unspent outputs only",
+                        "name": "unspent",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/origins/ancestors": {
+            "post": {
+                "description": "Get ancestors for multiple origins by outpoints",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "origins"
+                ],
+                "summary": "Get ancestors for multiple origins",
+                "parameters": [
+                    {
+                        "description": "Array of origin outpoints",
+                        "name": "outpoints",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/origins/ancestors/{outpoint}": {
+            "get": {
+                "description": "Get ancestors of a specific origin (excluding the origin itself)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "origins"
+                ],
+                "summary": "Get origin ancestors",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Origin outpoint",
+                        "name": "outpoint",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/origins/history": {
+            "post": {
+                "description": "Get the history for multiple origins by outpoints",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "origins"
+                ],
+                "summary": "Get multiple origins history",
+                "parameters": [
+                    {
+                        "description": "Array of origin outpoints",
+                        "name": "outpoints",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/origins/history/{outpoint}": {
+            "get": {
+                "description": "Get the history of a specific origin by outpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "origins"
+                ],
+                "summary": "Get origin history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Origin outpoint",
+                        "name": "outpoint",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/own/{owner}/balance": {
+            "get": {
+                "description": "Get the satoshi balance for a specific owner",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "owners"
+                ],
+                "summary": "Get owner balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner identifier (address, pubkey, or script hash)",
+                        "name": "owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh spend data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Balance information",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/own/{owner}/txos": {
+            "get": {
+                "description": "Get transaction outputs owned by a specific owner (address/pubkey/script hash)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "owners"
+                ],
+                "summary": "Get owner TXOs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner identifier (address, pubkey, or script hash)",
+                        "name": "owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh owner data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Filter for unspent outputs only",
+                        "name": "unspent",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/own/{owner}/utxos": {
+            "get": {
+                "description": "Get transaction outputs owned by a specific owner (address/pubkey/script hash)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "owners"
+                ],
+                "summary": "Get owner TXOs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner identifier (address, pubkey, or script hash)",
+                        "name": "owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Refresh owner data from blockchain",
+                        "name": "refresh",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Filter for unspent outputs only",
+                        "name": "unspent",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/spends": {
+            "post": {
+                "description": "Get spend information for multiple transaction outputs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "spends"
+                ],
+                "summary": "Get multiple spend records",
+                "parameters": [
+                    {
+                        "description": "Array of outpoints",
+                        "name": "outpoints",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Spend information array",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/spends/{outpoint}": {
+            "get": {
+                "description": "Get spend information for a transaction output by outpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "spends"
+                ],
+                "summary": "Get spend information",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction outpoint (txid_vout)",
+                        "name": "outpoint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Spend information",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tag/{tag}": {
+            "get": {
+                "description": "Search for transaction outputs by tag",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tags"
+                ],
+                "summary": "Get TXOs by tag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tag name",
+                        "name": "tag",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include TXO data",
+                        "name": "txo",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx": {
+            "post": {
+                "description": "Broadcast a transaction to the BSV network",
+                "consumes": [
+                    "application/octet-stream",
+                    "text/plain"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Broadcast transaction",
+                "parameters": [
+                    {
+                        "enum": [
+                            "beef"
+                        ],
+                        "type": "string",
+                        "description": "Transaction format: 'beef' or standard",
+                        "name": "fmt",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Transaction bytes (binary or hex)",
+                        "name": "transaction",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Broadcast response",
+                        "schema": {
+                            "$ref": "#/definitions/broadcast.BroadcastResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid transaction",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/callback": {
+            "post": {
+                "description": "Receive ARC broadcast status callbacks",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "ARC transaction callback",
+                "parameters": [
+                    {
+                        "description": "ARC callback response",
+                        "name": "callback",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid callback payload",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/parse": {
+            "post": {
+                "description": "Parse a transaction and return indexed data",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Parse transaction",
+                "parameters": [
+                    {
+                        "description": "Transaction bytes (if using POST)",
+                        "name": "transaction",
+                        "in": "body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/idx.IndexContext"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid transaction",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}": {
+            "get": {
+                "description": "Get a transaction with merkle proof if available",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get transaction with proof",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction with proof",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/beef": {
+            "get": {
+                "description": "Get a transaction with dependencies in BEEF format",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get transaction in BEEF format",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "BEEF formatted transaction",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/ingest": {
+            "post": {
+                "description": "Force ingest a transaction by txid",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Ingest transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/idx.IndexContext"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/parse": {
+            "get": {
+                "description": "Parse a transaction and return indexed data",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Parse transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID (if using GET)",
+                        "name": "txid",
+                        "in": "path"
+                    },
+                    {
+                        "description": "Transaction bytes (if using POST)",
+                        "name": "transaction",
+                        "in": "body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/idx.IndexContext"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid transaction",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/proof": {
+            "get": {
+                "description": "Get merkle proof for a transaction",
+                "produces": [
+                    "application/octet-stream",
+                    "text/plain",
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get merkle proof",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "bin",
+                            "hex",
+                            "json"
+                        ],
+                        "type": "string",
+                        "default": "bin",
+                        "description": "Output format: 'bin', 'hex', or 'json'",
+                        "name": "fmt",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Merkle proof",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Proof not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/raw": {
+            "get": {
+                "description": "Get raw transaction data in binary, hex, or JSON format",
+                "produces": [
+                    "application/octet-stream",
+                    "text/plain",
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get raw transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "bin",
+                            "hex",
+                            "json"
+                        ],
+                        "type": "string",
+                        "default": "bin",
+                        "description": "Output format: 'bin', 'hex', or 'json'",
+                        "name": "fmt",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Raw transaction",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/tx/{txid}/txos": {
+            "get": {
+                "description": "Get all transaction outputs for a specific transaction",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get TXOs by transaction ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/txo": {
+            "post": {
+                "description": "Get multiple transaction outputs by outpoints",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "txos"
+                ],
+                "summary": "Get multiple transaction outputs",
+                "parameters": [
+                    {
+                        "description": "Array of outpoints",
+                        "name": "outpoints",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/idx.Txo"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v5/txo/{outpoint}": {
+            "get": {
+                "description": "Get a transaction output by outpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "txos"
+                ],
+                "summary": "Get transaction output",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction outpoint (txid_vout)",
+                        "name": "outpoint",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of tags to include (use * for all indexed tags)",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include script data",
+                        "name": "script",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include spend information",
+                        "name": "spend",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/idx.Txo"
+                        }
+                    },
+                    "404": {
+                        "description": "TXO not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "blk.BlockHeaderResponse": {
+            "type": "object",
+            "properties": {
+                "bits": {
+                    "type": "integer"
+                },
+                "creationTimestamp": {
+                    "type": "integer"
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "merkleRoot": {
+                    "type": "string"
+                },
+                "nonce": {
+                    "type": "integer"
+                },
+                "prevBlockHash": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "broadcast.BroadcastResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "txid": {
+                    "type": "string"
+                }
+            }
+        },
+        "evt.Event": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "idx.IndexContext": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer"
+                },
+                "idx": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "spends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/idx.Txo"
+                    }
+                },
+                "txid": {
+                    "type": "string"
+                },
+                "txos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/idx.Txo"
+                    }
+                }
+            }
+        },
+        "idx.IndexData": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "deps": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/evt.Event"
+                    }
+                }
+            }
+        },
+        "idx.Txo": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/idx.IndexData"
+                    }
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "idx": {
+                    "type": "integer"
+                },
+                "outpoint": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "owners": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "satoshis": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "script": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "spend": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

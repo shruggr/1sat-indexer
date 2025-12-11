@@ -28,7 +28,7 @@ var db *redis.Client
 func init() {
 	wd, _ := os.Getwd()
 	log.Println("CWD:", wd)
-	godotenv.Load(fmt.Sprintf(`%s/../../.env`, wd))
+	godotenv.Load(".env")
 
 	log.Println("REDISEVT", os.Getenv("REDISEVT"))
 	if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {

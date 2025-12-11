@@ -258,7 +258,7 @@ func (s *SQLiteStore) Balance(ctx context.Context, key string) (balance int64, e
 func (s *SQLiteStore) CountMembers(ctx context.Context, key string) (count uint64, err error) {
 	row := s.READDB.QueryRowContext(ctx, `SELECT COUNT(1)
         FROM logs
-        WHERE key = ?`,
+        WHERE search_key = ?`,
 		key,
 	)
 	if err = row.Scan(&count); err != nil {

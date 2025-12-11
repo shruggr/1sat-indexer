@@ -20,6 +20,17 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	r.Get("/history/:outpoint", OriginsHistory)
 }
 
+// @Summary Get origin history
+// @Description Get the history of a specific origin by outpoint
+// @Tags origins
+// @Produce json
+// @Param outpoint path string true "Origin outpoint"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param txo query bool false "Include TXO data"
+// @Param script query bool false "Include script data"
+// @Success 200 {array} idx.Txo
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/origins/history/{outpoint} [get]
 func OriginHistory(c *fiber.Ctx) error {
 	outpoint := c.Params("outpoint")
 	tags := strings.Split(c.Query("tags", ""), ",")
@@ -43,6 +54,19 @@ func OriginHistory(c *fiber.Ctx) error {
 
 }
 
+// @Summary Get multiple origins history
+// @Description Get the history for multiple origins by outpoints
+// @Tags origins
+// @Accept json
+// @Produce json
+// @Param outpoints body []string true "Array of origin outpoints"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param txo query bool false "Include TXO data"
+// @Param script query bool false "Include script data"
+// @Success 200 {array} idx.Txo
+// @Failure 400 {string} string "Invalid request"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/origins/history [post]
 func OriginsHistory(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {
@@ -75,6 +99,17 @@ func OriginsHistory(c *fiber.Ctx) error {
 	return c.JSON(history)
 }
 
+// @Summary Get origin ancestors
+// @Description Get ancestors of a specific origin (excluding the origin itself)
+// @Tags origins
+// @Produce json
+// @Param outpoint path string true "Origin outpoint"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param txo query bool false "Include TXO data"
+// @Param script query bool false "Include script data"
+// @Success 200 {array} idx.Txo
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/origins/ancestors/{outpoint} [get]
 func OriginAncestors(c *fiber.Ctx) error {
 	outpoint := c.Params("outpoint")
 
@@ -114,6 +149,19 @@ func OriginAncestors(c *fiber.Ctx) error {
 	return c.JSON(ancestors)
 }
 
+// @Summary Get ancestors for multiple origins
+// @Description Get ancestors for multiple origins by outpoints
+// @Tags origins
+// @Accept json
+// @Produce json
+// @Param outpoints body []string true "Array of origin outpoints"
+// @Param tags query string false "Comma-separated list of tags to include (use * for all indexed tags)"
+// @Param txo query bool false "Include TXO data"
+// @Param script query bool false "Include script data"
+// @Success 200 {array} idx.Txo
+// @Failure 400 {string} string "Invalid request"
+// @Failure 500 {string} string "Internal server error"
+// @Router /v5/origins/ancestors [post]
 func OriginsAncestors(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {

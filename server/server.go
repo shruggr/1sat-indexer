@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,22 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tag"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tx"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/txos"
+
+	_ "github.com/shruggr/1sat-indexer/v5/docs"
 )
+
+// @title 1Sat Indexer API
+// @version 5.0
+// @description BSV blockchain indexer API for transaction outputs, blocks, and related data
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url https://github.com/shruggr/1sat-indexer
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @BasePath /
 
 var currentSessions = sse.SessionsLock{
 	Topics: make(map[string][]*sse.Session),
@@ -42,6 +58,11 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	app.Use(compress.New())
 	app.Use(cors.New(cors.Config{AllowOrigins: "*"}))
 
+	// @Summary Health check
+	// @Description Simple health check endpoint
+	// @Tags health
+	// @Success 200 {string} string "yo"
+	// @Router /yo [get]
 	app.Get("/yo", func(c *fiber.Ctx) error {
 		return c.SendString("yo")
 	})
@@ -58,6 +79,63 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
+	// Get current working directory
+	cwd, _ := os.Getwd()
+	log.Printf("Server working directory: %s", cwd)
+
+	// Try to find docs folder in multiple locations
+	possiblePaths := []string{
+		"./docs",
+		"../../docs",
+		filepath.Join(cwd, "docs"),
+	}
+
+	var docsPath string
+	for _, p := range possiblePaths {
+		absPath, _ := filepath.Abs(p)
+		swaggerPath := filepath.Join(absPath, "swagger.json")
+		if _, err := os.Stat(swaggerPath); err == nil {
+			docsPath = absPath
+			log.Printf("✓ Found swagger.json at: %s", swaggerPath)
+			break
+		}
+	}
+
+	if docsPath == "" {
+		log.Printf("✗ swagger.json not found in any of these locations:")
+		for _, p := range possiblePaths {
+			absPath, _ := filepath.Abs(p)
+			log.Printf("  - %s", filepath.Join(absPath, "swagger.json"))
+		}
+		docsPath = "./docs" // fallback
+	}
+
+	app.Static("/api-spec", docsPath)
+
+	app.Get("/docs", func(c *fiber.Ctx) error {
+		html := `<!doctype html>
+<html>
+<head>
+    <title>1Sat Indexer API</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+    <script id="api-reference" data-url="/api-spec/swagger.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+</body>
+</html>`
+		c.Set("Content-Type", "text/html")
+		return c.SendString(html)
+	})
+
+	// @Summary Subscribe to server-sent events
+	// @Description Subscribe to real-time updates via server-sent events. Provide comma-separated topic names.
+	// @Tags sse
+	// @Param topic query string true "Comma-separated list of topics to subscribe to"
+	// @Success 200 {string} string "Event stream"
+	// @Failure 400 {string} string "Bad request"
+	// @Router /v5/sse [get]
 	app.Get("/v5/sse", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/event-stream")
 		c.Set("Cache-Control", "no-cache")

@@ -28,7 +28,7 @@ type AncestorConfig struct {
 
 type IndexContext struct {
 	Tx             *transaction.Transaction `json:"-"`
-	Txid           *chainhash.Hash          `json:"txid"`
+	Txid           *chainhash.Hash          `json:"txid" swaggertype:"string"`
 	TxidHex        string                   `json:"-"`
 	Height         uint32                   `json:"height"`
 	Idx            uint64                   `json:"idx"`

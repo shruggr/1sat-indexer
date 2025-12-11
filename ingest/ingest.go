@@ -11,14 +11,12 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/v5/blk"
+	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/evt"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/jb"
 )
 
-var ctx = context.Background()
-var headers = &blk.HeadersClient{Ctx: ctx}
 var ingest *idx.IngestCtx
 var immutableScore float64
 var arc *broadcaster.Arc
@@ -29,7 +27,6 @@ const OldMempoolTimeout = 3 * time.Hour
 func Start(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc, redisClient *redis.Client, rollback bool) {
 	ingest = ingestCtx
 	arc = bcast
-	blk.StartChaintipSub(ctx)
 
 	// Start queue processor
 	go processQueue(ctx, ingestCtx)
@@ -37,7 +34,9 @@ func Start(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc
 	// Start Arc callback listener
 	go startArcCallbackListener(ctx, redisClient)
 
-	for chaintip := range blk.C {
+	// Subscribe to chain tip updates from chaintracks
+	tipChan := config.Chaintracks.SubscribeTip(ctx)
+	for chaintip := range tipChan {
 		log.Println("Chaintip", chaintip.Height, chaintip.Hash)
 		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
 		AuditTransactions(ctx, rollback)
@@ -120,7 +119,7 @@ func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transac
 	if root, err := tx.MerklePath.ComputeRoot(txid); err != nil {
 		log.Println("ComputeRoot error", txid, err)
 		return err
-	} else if valid, err := headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight); err != nil {
+	} else if valid, err := config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight); err != nil {
 		log.Println("IsValidRootForHeight error", txid, err)
 		return err
 	} else if !valid {
@@ -324,7 +323,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 					log.Printf("ComputeRoot error for %s: %v", txid, err)
 					return
 				}
-				valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+				valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 				if err != nil {
 					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
 					return
@@ -349,7 +348,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
 						return
 					}
-					valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+					valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 					if err != nil {
 						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
 						return
@@ -481,7 +480,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 					log.Printf("ComputeRoot error for %s: %v", txid, err)
 					return
 				}
-				valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+				valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 				if err != nil {
 					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
 					return
@@ -506,7 +505,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
 						return
 					}
-					valid, err = headers.IsValidRootForHeight(root, tx.MerklePath.BlockHeight)
+					valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 					if err != nil {
 						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
 						return
