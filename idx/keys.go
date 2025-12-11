@@ -6,7 +6,7 @@ func OwnerKey(owner string) string {
 
 // OwnerSpentKey returns the key for spent events for an owner address
 func OwnerSpentKey(owner string) string {
-	return "osp:" + owner
+	return "own:" + owner + ":spnd"
 }
 
 func BalanceKey(key string) string {
