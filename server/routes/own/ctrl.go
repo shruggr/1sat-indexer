@@ -150,28 +150,27 @@ func OwnerBalance(c *fiber.Ctx) error {
 	return c.JSON(map[string]uint64{"balance": balance})
 }
 
-// SyncResponse contains paginated unspent and spent outpoints for wallet sync
+// SyncResponse contains paginated outputs for wallet sync
 type SyncResponse struct {
-	Unspent   []SyncOutpoint `json:"unspent"`
-	Spent     []SyncOutpoint `json:"spent"`
-	NextScore float64        `json:"nextScore"`
-	Done      bool           `json:"done"`
+	Outputs   []SyncOutput `json:"outputs"`
+	NextScore float64      `json:"nextScore"`
+	Done      bool         `json:"done"`
 }
 
-// SyncOutpoint represents an outpoint with its score for sync pagination
-type SyncOutpoint struct {
-	Outpoint string  `json:"outpoint"`
-	Score    float64 `json:"score"`
+// SyncOutput represents an outpoint with its score and optional spend txid
+type SyncOutput struct {
+	Outpoint  string  `json:"outpoint"`
+	Score     float64 `json:"score"`
+	SpendTxid string  `json:"spendTxid,omitempty"`
 }
 
 // @Summary Sync owner outpoints
-// @Description Get paginated unspent and spent outpoints for wallet synchronization
+// @Description Get paginated outputs for wallet synchronization. Returns a merged stream of outputs and spends ordered by score. Each outpoint may appear twice - once when created and once when spent. SpendTxid is populated for all outputs that have been spent.
 // @Tags owners
 // @Produce json
 // @Param owner path string true "Owner identifier (address, pubkey, or script hash)"
 // @Param from query number false "Starting score for pagination"
-// @Param limit query int false "Maximum number of results per list" default(100)
-// @Param spent query bool false "Include already-spent outpoints in unspent list" default(false)
+// @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {object} SyncResponse
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/own/{owner}/sync [get]
@@ -179,25 +178,13 @@ func OwnerSync(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	from := c.QueryFloat("from", 0)
 	limit := uint32(c.QueryInt("limit", 100))
-	includeSpent := c.QueryBool("spent", false)
 
 	// Query limit+1 to detect if there are more results
 	queryLimit := limit + 1
 
-	// Query unspent outpoints (own: with FilterSpent unless spent=true)
-	unspentLogs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:        []string{idx.OwnerKey(owner)},
-		From:        &from,
-		Limit:       queryLimit,
-		FilterSpent: !includeSpent,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Query spent outpoints (osp:)
-	spentLogs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:  []string{idx.OwnerSpentKey(owner)},
+	// Query both outputs and spends, merged by score
+	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
+		Keys:  []string{idx.OwnerKey(owner), idx.OwnerSpentKey(owner)},
 		From:  &from,
 		Limit: queryLimit,
 	})
@@ -205,59 +192,38 @@ func OwnerSync(c *fiber.Ctx) error {
 		return err
 	}
 
-	// Determine if either list hit the limit
-	unspentFull := len(unspentLogs) > int(limit)
-	spentFull := len(spentLogs) > int(limit)
-
-	// Find the cutoff score - max score from the list that hit limit
-	var cutoffScore float64
-	if unspentFull && spentFull {
-		// Both full - use the lower max score
-		unspentMax := unspentLogs[limit].Score
-		spentMax := spentLogs[limit].Score
-		if unspentMax < spentMax {
-			cutoffScore = unspentMax
-		} else {
-			cutoffScore = spentMax
-		}
-	} else if unspentFull {
-		cutoffScore = unspentLogs[limit].Score
-	} else if spentFull {
-		cutoffScore = spentLogs[limit].Score
+	done := len(logs) <= int(limit)
+	if !done {
+		logs = logs[:limit]
 	}
 
-	// Trim lists to cutoff score and convert to response format
-	unspent := make([]SyncOutpoint, 0, len(unspentLogs))
-	for _, log := range unspentLogs {
-		if cutoffScore > 0 && log.Score > cutoffScore {
-			break
-		}
-		unspent = append(unspent, SyncOutpoint{Outpoint: log.Member, Score: log.Score})
+	// Collect unique outpoints for spend lookup
+	outpoints := make([]string, len(logs))
+	for i, log := range logs {
+		outpoints[i] = log.Member
 	}
 
-	spent := make([]SyncOutpoint, 0, len(spentLogs))
-	for _, log := range spentLogs {
-		if cutoffScore > 0 && log.Score > cutoffScore {
-			break
-		}
-		spent = append(spent, SyncOutpoint{Outpoint: log.Member, Score: log.Score})
+	spendTxids, err := ingest.Store.GetSpends(c.Context(), outpoints)
+	if err != nil {
+		return err
 	}
 
-	// Calculate nextScore from the highest score in the trimmed results
+	outputs := make([]SyncOutput, len(logs))
+	for i, log := range logs {
+		outputs[i] = SyncOutput{
+			Outpoint:  log.Member,
+			Score:     log.Score,
+			SpendTxid: spendTxids[i],
+		}
+	}
+
 	var nextScore float64
-	if len(unspent) > 0 && unspent[len(unspent)-1].Score > nextScore {
-		nextScore = unspent[len(unspent)-1].Score
+	if len(outputs) > 0 {
+		nextScore = outputs[len(outputs)-1].Score
 	}
-	if len(spent) > 0 && spent[len(spent)-1].Score > nextScore {
-		nextScore = spent[len(spent)-1].Score
-	}
-
-	// Done if neither list was full
-	done := !unspentFull && !spentFull
 
 	return c.JSON(SyncResponse{
-		Unspent:   unspent,
-		Spent:     spent,
+		Outputs:   outputs,
 		NextScore: nextScore,
 		Done:      done,
 	})

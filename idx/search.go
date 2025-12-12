@@ -58,7 +58,7 @@ func (s *QueueStore) Search(ctx context.Context, cfg *SearchCfg) (records []queu
 		}
 	}
 
-	seen := make(map[string]struct{})
+	seen := make(map[string]float64)
 	records = make([]queue.ScoredMember, 0, limit)
 	results := make([]queue.ScoredMember, 0, pageSize)
 
@@ -73,7 +73,7 @@ func (s *QueueStore) Search(ctx context.Context, cfg *SearchCfg) (records []queu
 			if !ok {
 				break
 			}
-			seen[member] = struct{}{}
+			seen[member] = score
 			results = append(results, queue.ScoredMember{Member: member, Score: score})
 		}
 
@@ -98,7 +98,7 @@ func (s *QueueStore) Search(ctx context.Context, cfg *SearchCfg) (records []queu
 	return records, nil
 }
 
-func (s *QueueStore) nextResult(ctx context.Context, cursors []*cursor, cfg *SearchCfg, seen map[string]struct{}) (string, float64, bool, error) {
+func (s *QueueStore) nextResult(ctx context.Context, cursors []*cursor, cfg *SearchCfg, seen map[string]float64) (string, float64, bool, error) {
 	for {
 		var best *cursor
 		var bestScore float64
@@ -146,7 +146,8 @@ func (s *QueueStore) nextResult(ctx context.Context, cursors []*cursor, cfg *Sea
 			best.pos++
 		}
 
-		if _, ok := seen[bestMember]; !ok {
+		lastScore, ok := seen[bestMember]
+		if !ok || lastScore != bestScore {
 			return bestMember, bestScore, true, nil
 		}
 	}
