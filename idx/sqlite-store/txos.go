@@ -285,7 +285,7 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 		})
 	}
 
-	// Batch insert txo_data
+	// Batch insert txo_data with chunking to avoid SQLite variable limit
 	if len(txoInserts) > 0 {
 		var dataArgs []interface{}
 		var dataPlaceholders []string
@@ -296,34 +296,60 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 			}
 		}
 		if len(dataArgs) > 0 {
-			query := "INSERT INTO txo_data(outpoint, tag, data) VALUES " +
-				strings.Join(dataPlaceholders, ", ") +
-				" ON CONFLICT (outpoint, tag) DO UPDATE SET data = excluded.data"
-			if _, err := s.WRITEDB.ExecContext(ctx, query, dataArgs...); err != nil {
-				log.Panicln("insert txo_data Err:", err)
+			// SQLite has a limit of ~32766 variables per query
+			// Each row has 3 variables, so max ~10000 rows per batch
+			// Use 5000 as a safe limit to account for overhead
+			const maxRowsPerBatch = 5000
+			const varsPerRow = 3
+
+			for i := 0; i < len(dataPlaceholders); i += maxRowsPerBatch {
+				end := min(i+maxRowsPerBatch, len(dataPlaceholders))
+
+				batchPlaceholders := dataPlaceholders[i:end]
+				batchArgs := dataArgs[i*varsPerRow : end*varsPerRow]
+
+				query := "INSERT INTO txo_data(outpoint, tag, data) VALUES " +
+					strings.Join(batchPlaceholders, ", ") +
+					" ON CONFLICT (outpoint, tag) DO UPDATE SET data = excluded.data"
+				if _, err := s.WRITEDB.ExecContext(ctx, query, batchArgs...); err != nil {
+					log.Panicln("insert txo_data Err:", err)
+					return err
+				}
+			}
+		}
+	}
+
+	// Batch insert txos with chunking to avoid SQLite variable limit
+	if len(txoInserts) > 0 {
+		var txoArgs []interface{}
+		var txoPlaceholders []string
+		for i, ti := range txoInserts {
+			txoPlaceholders = append(txoPlaceholders, "(?, ?, ?, ?, ?)")
+			txoArgs = append(txoArgs, ti.outpoint, idxCtx.Height, idxCtx.Idx, *idxCtx.Txos[i].Satoshis, ti.owners)
+		}
+
+		// SQLite has a limit of ~32766 variables per query
+		// Each row has 5 variables, so use 5000 rows as a safe batch limit
+		const maxRowsPerBatch = 5000
+		const varsPerRow = 5
+
+		for i := 0; i < len(txoPlaceholders); i += maxRowsPerBatch {
+			end := min(i+maxRowsPerBatch, len(txoPlaceholders))
+
+			batchPlaceholders := txoPlaceholders[i:end]
+			batchArgs := txoArgs[i*varsPerRow : end*varsPerRow]
+
+			query := "INSERT INTO txos(outpoint, height, idx, satoshis, owners) VALUES " +
+				strings.Join(batchPlaceholders, ", ") +
+				" ON CONFLICT (outpoint) DO UPDATE SET height = excluded.height, idx = excluded.idx, satoshis = excluded.satoshis, owners = excluded.owners"
+			if _, err := s.WRITEDB.ExecContext(ctx, query, batchArgs...); err != nil {
+				log.Panicln("insert txos Err:", err)
 				return err
 			}
 		}
 	}
 
-	// Batch insert txos
-	if len(txoInserts) > 0 {
-		var txoArgs []interface{}
-		var txoPlaceholders []string
-		for _, ti := range txoInserts {
-			txoPlaceholders = append(txoPlaceholders, "(?, ?, ?, ?, ?)")
-			txoArgs = append(txoArgs, ti.outpoint, idxCtx.Height, idxCtx.Idx, *idxCtx.Txos[len(txoArgs)/5].Satoshis, ti.owners)
-		}
-		query := "INSERT INTO txos(outpoint, height, idx, satoshis, owners) VALUES " +
-			strings.Join(txoPlaceholders, ", ") +
-			" ON CONFLICT (outpoint) DO UPDATE SET height = excluded.height, idx = excluded.idx, satoshis = excluded.satoshis, owners = excluded.owners"
-		if _, err := s.WRITEDB.ExecContext(ctx, query, txoArgs...); err != nil {
-			log.Panicln("insert txos Err:", err)
-			return err
-		}
-	}
-
-	// Batch insert logs
+	// Batch insert logs with chunking to avoid SQLite variable limit
 	if len(txoInserts) > 0 {
 		var logArgs []interface{}
 		var logPlaceholders []string
@@ -335,12 +361,24 @@ func (s *SQLiteStore) SaveTxos(idxCtx *idx.IndexContext) (err error) {
 			}
 		}
 		if len(logArgs) > 0 {
-			query := "INSERT INTO logs(search_key, member, score) VALUES " +
-				strings.Join(logPlaceholders, ", ") +
-				" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
-			if _, err := s.WRITEDB.ExecContext(ctx, query, logArgs...); err != nil {
-				log.Panicln("insert logs Err:", err)
-				return err
+			// SQLite has a limit of ~32766 variables per query
+			// Each row has 3 variables, so use 5000 rows as a safe batch limit
+			const maxRowsPerBatch = 5000
+			const varsPerRow = 3
+
+			for i := 0; i < len(logPlaceholders); i += maxRowsPerBatch {
+				end := min(i+maxRowsPerBatch, len(logPlaceholders))
+
+				batchPlaceholders := logPlaceholders[i:end]
+				batchArgs := logArgs[i*varsPerRow : end*varsPerRow]
+
+				query := "INSERT INTO logs(search_key, member, score) VALUES " +
+					strings.Join(batchPlaceholders, ", ") +
+					" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
+				if _, err := s.WRITEDB.ExecContext(ctx, query, batchArgs...); err != nil {
+					log.Panicln("insert logs Err:", err)
+					return err
+				}
 			}
 		}
 	}
@@ -372,7 +410,7 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 		}
 	}
 
-	// Batch update spends in txos table
+	// Batch update spends in txos table with chunking to avoid SQLite variable limit
 	if len(idxCtx.Spends) > 0 {
 		var txoArgs []interface{}
 		var txoPlaceholders []string
@@ -381,16 +419,27 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 			txoPlaceholders = append(txoPlaceholders, "(?, ?)")
 			txoArgs = append(txoArgs, outpoint, idxCtx.TxidHex)
 		}
-		query := "INSERT INTO txos(outpoint, spend) VALUES " +
-			strings.Join(txoPlaceholders, ", ") +
-			" ON CONFLICT (outpoint) DO UPDATE SET spend = excluded.spend"
-		if _, err := s.WRITEDB.ExecContext(ctx, query, txoArgs...); err != nil {
-			log.Panic(err)
-			return err
+
+		const maxRowsPerBatch = 5000
+		const varsPerRow = 2
+
+		for i := 0; i < len(txoPlaceholders); i += maxRowsPerBatch {
+			end := min(i+maxRowsPerBatch, len(txoPlaceholders))
+
+			batchPlaceholders := txoPlaceholders[i:end]
+			batchArgs := txoArgs[i*varsPerRow : end*varsPerRow]
+
+			query := "INSERT INTO txos(outpoint, spend) VALUES " +
+				strings.Join(batchPlaceholders, ", ") +
+				" ON CONFLICT (outpoint) DO UPDATE SET spend = excluded.spend"
+			if _, err := s.WRITEDB.ExecContext(ctx, query, batchArgs...); err != nil {
+				log.Panic(err)
+				return err
+			}
 		}
 	}
 
-	// Batch insert logs for owner keys
+	// Batch insert logs for owner keys with chunking to avoid SQLite variable limit
 	if len(ownerKeys) > 0 {
 		var logArgs []interface{}
 		var logPlaceholders []string
@@ -398,12 +447,23 @@ func (s *SQLiteStore) SaveSpends(idxCtx *idx.IndexContext) error {
 			logPlaceholders = append(logPlaceholders, "(?, ?, ?)")
 			logArgs = append(logArgs, ownerKey, idxCtx.TxidHex, score)
 		}
-		query := "INSERT INTO logs(search_key, member, score) VALUES " +
-			strings.Join(logPlaceholders, ", ") +
-			" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
-		if _, err := s.WRITEDB.ExecContext(ctx, query, logArgs...); err != nil {
-			log.Panic(err)
-			return err
+
+		const maxRowsPerBatch = 5000
+		const varsPerRow = 3
+
+		for i := 0; i < len(logPlaceholders); i += maxRowsPerBatch {
+			end := min(i+maxRowsPerBatch, len(logPlaceholders))
+
+			batchPlaceholders := logPlaceholders[i:end]
+			batchArgs := logArgs[i*varsPerRow : end*varsPerRow]
+
+			query := "INSERT INTO logs(search_key, member, score) VALUES " +
+				strings.Join(batchPlaceholders, ", ") +
+				" ON CONFLICT (search_key, member) DO UPDATE SET score = excluded.score"
+			if _, err := s.WRITEDB.ExecContext(ctx, query, batchArgs...); err != nil {
+				log.Panic(err)
+				return err
+			}
 		}
 	}
 
