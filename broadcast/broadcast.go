@@ -6,12 +6,13 @@ import (
 	"log"
 	"time"
 
+	"github.com/b-open-io/go-junglebus"
+	"github.com/b-open-io/overlay/beef"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/script/interpreter"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
@@ -25,7 +26,15 @@ type BroadcastResponse struct {
 	Error   string `json:"error"`
 }
 
-func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Transaction, arcBroadcaster *broadcaster.Arc) (response *BroadcastResponse) {
+// BroadcastDeps holds dependencies for the Broadcast function
+type BroadcastDeps struct {
+	Store       *idx.QueueStore
+	JungleBus   *junglebus.Client
+	BeefStorage *beef.Storage
+	Arc         *broadcaster.Arc
+}
+
+func Broadcast(ctx context.Context, deps *BroadcastDeps, tx *transaction.Transaction) (response *BroadcastResponse) {
 	start := time.Now()
 	txid := tx.TxID()
 	response = &BroadcastResponse{
@@ -41,7 +50,7 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 		spendOutpoints = append(spendOutpoints, spendOutpoint.String())
 
 		// Check if already spent in JungleBus
-		if spendBytes, err := config.JungleBus.GetSpend(ctx, spendOutpoint.TxidHex(), spendOutpoint.Vout()); err != nil {
+		if spendBytes, err := deps.JungleBus.GetSpend(ctx, spendOutpoint.TxidHex(), spendOutpoint.Vout()); err != nil {
 			// 404 means JungleBus doesn't know about this outpoint
 			response.Status = 404
 			response.Error = fmt.Sprintf("unknown-input: %s:%d - %s", response.Txid, vin, err.Error())
@@ -55,7 +64,7 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 
 		if input.SourceTransaction == nil {
 			sourceTxid, _ := chainhash.NewHashFromHex(spendOutpoint.TxidHex())
-			if sourceTx, err := config.BeefStorage.LoadTx(ctx, sourceTxid); err != nil {
+			if sourceTx, err := deps.BeefStorage.LoadTx(ctx, sourceTxid); err != nil {
 				response.Status = 404
 				response.Error = fmt.Sprintf("input %d has no source transaction: %s - %s", vin, spendOutpoint.TxidHex(), err.Error())
 				log.Print("Broadcast error:", response.Error)
@@ -108,10 +117,10 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 	if beefBytes, err := tx.AtomicBEEF(false); err != nil {
 		response.Error = fmt.Sprintf("failed to create BEEF: %s", err.Error())
 		return
-	} else if err := config.BeefStorage.SaveBeef(ctx, txid, beefBytes); err != nil {
+	} else if err := deps.BeefStorage.SaveBeef(ctx, txid, beefBytes); err != nil {
 		response.Error = fmt.Sprintf("failed to save BEEF: %s", err.Error())
 		return
-	} else if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
+	} else if err = deps.Store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
 	}
@@ -119,17 +128,17 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 	// Check and Mark Spends
 	for vin, spendOutpoint := range spendOutpoints {
 		// spendOutpoint := spend.Outpoint.String()
-		if added, err := store.SetNewSpend(ctx, spendOutpoint, response.Txid); err != nil {
-			rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
+		if added, err := deps.Store.SetNewSpend(ctx, spendOutpoint, response.Txid); err != nil {
+			rollbackSpends(ctx, deps.Store, spendOutpoints[:vin], response.Txid)
 			response.Error = err.Error()
 			return
 		} else if !added {
-			if spend, err := store.GetSpend(ctx, spendOutpoint); err != nil {
-				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
+			if spend, err := deps.Store.GetSpend(ctx, spendOutpoint); err != nil {
+				rollbackSpends(ctx, deps.Store, spendOutpoints[:vin], response.Txid)
 				response.Error = err.Error()
 				return
 			} else if spend != response.Txid {
-				rollbackSpends(ctx, store, spendOutpoints[:vin], response.Txid)
+				rollbackSpends(ctx, deps.Store, spendOutpoints[:vin], response.Txid)
 				response.Status = 409
 				response.Error = fmt.Sprintf("double-spend: %s:%d - %s spent in %s", response.Txid, vin, spendOutpoint, spend)
 				return
@@ -138,16 +147,16 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 	}
 
 	// Broadcast directly and handle immediate response
-	arcResp, err := arcBroadcaster.ArcBroadcast(ctx, tx)
+	arcResp, err := deps.Arc.ArcBroadcast(ctx, tx)
 	if err != nil {
-		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+		rollbackSpends(ctx, deps.Store, spendOutpoints, response.Txid)
 		response.Error = err.Error()
 		return
 	}
 
 	// Handle Arc HTTP error response
 	if arcResp.Status != 0 && arcResp.Status != 200 {
-		rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+		rollbackSpends(ctx, deps.Store, spendOutpoints, response.Txid)
 		response.Status = uint32(arcResp.Status)
 		response.Error = arcResp.ExtraInfo
 		return
@@ -243,7 +252,7 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 	// Handle final response
 	if arcResp != nil && arcResp.TxStatus != nil {
 		if IsErrorStatus(*arcResp.TxStatus) {
-			rollbackSpends(ctx, store, spendOutpoints, response.Txid)
+			rollbackSpends(ctx, deps.Store, spendOutpoints, response.Txid)
 			response.Status = 400
 			response.Error = fmt.Sprintf("Transaction rejected: %s", *arcResp.TxStatus)
 			if arcResp.ExtraInfo != "" {
@@ -254,7 +263,7 @@ func Broadcast(ctx context.Context, store *idx.QueueStore, tx *transaction.Trans
 	}
 
 	// Success
-	store.Log(ctx, idx.PendingTxLog, response.Txid, score)
+	deps.Store.Log(ctx, idx.PendingTxLog, response.Txid, score)
 	if arcResp != nil && arcResp.TxStatus != nil {
 		log.Printf("[ARC] %s Broadcasted with status: %s (%.2fms)", txid, *arcResp.TxStatus, time.Since(start).Seconds()*1000)
 	} else {

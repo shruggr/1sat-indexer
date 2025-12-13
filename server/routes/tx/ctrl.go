@@ -8,33 +8,60 @@ import (
 	"log"
 	"strings"
 
+	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/overlay/beef"
+	"github.com/b-open-io/overlay/pubsub"
+	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/bsv-blockchain/go-sdk/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
-var ingest *idx.IngestCtx
-var b *broadcaster.Arc
+// TxController handles transaction-related routes
+type TxController struct {
+	IngestCtx   *idx.IngestCtx
+	Arc         *broadcaster.Arc
+	BeefStorage *beef.Storage
+	Chaintracks chaintracks.Chaintracks
+	PubSub      pubsub.PubSub
+	JungleBus   *junglebus.Client
+}
 
-func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) {
-	ingest = ingestCtx
-	b = arcBroadcaster
-	r.Post("/", BroadcastTx)
-	r.Get("/:txid", GetTxWithProof)
-	r.Get("/:txid/raw", GetRawTx)
-	r.Get("/:txid/proof", GetProof)
-	r.Get("/:txid/txos", TxosByTxid)
-	r.Get("/:txid/beef", GetTxBEEF)
-	r.Post("/callback", TxCallback)
-	r.Get("/:txid/parse", ParseTx)
-	r.Post("/parse", ParseTx)
-	r.Post("/:txid/ingest", IngestTx)
+// NewTxController creates a new TxController with the given dependencies
+func NewTxController(
+	ingestCtx *idx.IngestCtx,
+	arc *broadcaster.Arc,
+	beefStorage *beef.Storage,
+	ct chaintracks.Chaintracks,
+	ps pubsub.PubSub,
+	jb *junglebus.Client,
+) *TxController {
+	return &TxController{
+		IngestCtx:   ingestCtx,
+		Arc:         arc,
+		BeefStorage: beefStorage,
+		Chaintracks: ct,
+		PubSub:      ps,
+		JungleBus:   jb,
+	}
+}
+
+// RegisterRoutes registers all transaction routes
+func (ctrl *TxController) RegisterRoutes(r fiber.Router) {
+	r.Post("/", ctrl.BroadcastTx)
+	r.Get("/:txid", ctrl.GetTxWithProof)
+	r.Get("/:txid/raw", ctrl.GetRawTx)
+	r.Get("/:txid/proof", ctrl.GetProof)
+	r.Get("/:txid/txos", ctrl.TxosByTxid)
+	r.Get("/:txid/beef", ctrl.GetTxBEEF)
+	r.Post("/callback", ctrl.TxCallback)
+	r.Get("/:txid/parse", ctrl.ParseTx)
+	r.Post("/parse", ctrl.ParseTx)
+	r.Post("/:txid/ingest", ctrl.IngestTx)
 }
 
 // @Summary Broadcast transaction
@@ -48,7 +75,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, arcBroadcaster *br
 // @Failure 400 {string} string "Invalid transaction"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx [post]
-func BroadcastTx(c *fiber.Ctx) (err error) {
+func (ctrl *TxController) BroadcastTx(c *fiber.Ctx) (err error) {
 	var tx *transaction.Transaction
 	mime := c.Get("Content-Type")
 	switch mime {
@@ -76,12 +103,18 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 		return c.SendStatus(400)
 	}
 
-	response := broadcast.Broadcast(c.Context(), ingest.Store, tx, b)
+	deps := &broadcast.BroadcastDeps{
+		Store:       ctrl.IngestCtx.Store,
+		JungleBus:   ctrl.JungleBus,
+		BeefStorage: ctrl.BeefStorage,
+		Arc:         ctrl.Arc,
+	}
+	response := broadcast.Broadcast(c.Context(), deps, tx)
 	if response.Success {
-		if _, err := ingest.IngestTx(c.Context(), tx); err != nil {
+		if _, err := ctrl.IngestCtx.IngestTx(c.Context(), tx); err != nil {
 			log.Println("Ingest Error", tx.TxID().String(), err)
 		}
-		config.PubSub.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
+		ctrl.PubSub.Publish(c.Context(), "broadcast", base64.StdEncoding.EncodeToString(tx.Bytes()))
 	} else {
 		log.Println("Broadcast Error", tx.TxID().String(), response.Error)
 	}
@@ -99,12 +132,12 @@ func BroadcastTx(c *fiber.Ctx) (err error) {
 // @Failure 404 {string} string "Transaction not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/beef [get]
-func GetTxBEEF(c *fiber.Ctx) error {
+func (ctrl *TxController) GetTxBEEF(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	beefBytes, err := config.BeefStorage.LoadBeef(c.Context(), hash)
+	tx, err := ctrl.BeefStorage.BuildBeefTx(c.Context(), hash)
 	if err != nil {
 		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
@@ -112,6 +145,10 @@ func GetTxBEEF(c *fiber.Ctx) error {
 		return err
 	}
 	c.Set("Content-Type", "application/octet-stream")
+	beefBytes, err := tx.AtomicBEEF(false)
+	if err != nil {
+		return err
+	}
 	return c.Send(beefBytes)
 }
 
@@ -124,12 +161,12 @@ func GetTxBEEF(c *fiber.Ctx) error {
 // @Failure 404 {string} string "Transaction not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid} [get]
-func GetTxWithProof(c *fiber.Ctx) error {
+func (ctrl *TxController) GetTxWithProof(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	rawtx, err := config.BeefStorage.LoadRawTx(c.Context(), hash)
+	rawtx, err := ctrl.BeefStorage.LoadRawTx(c.Context(), hash)
 	if err != nil {
 		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
@@ -145,7 +182,7 @@ func GetTxWithProof(c *fiber.Ctx) error {
 	buf.Write(util.VarInt(uint64(len(rawtx))).Bytes())
 	buf.Write(rawtx)
 
-	proofBytes, err := config.BeefStorage.LoadProof(c.Context(), hash)
+	proofBytes, err := ctrl.BeefStorage.LoadProof(c.Context(), hash)
 	if err != nil && err != beef.ErrNotFound {
 		return err
 	}
@@ -157,7 +194,7 @@ func GetTxWithProof(c *fiber.Ctx) error {
 		if err != nil {
 			return err
 		}
-		if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
+		if proof.BlockHeight+5 < ctrl.Chaintracks.GetHeight(c.Context()) {
 			c.Set("Cache-Control", "public,max-age=31536000,immutable")
 		} else {
 			c.Set("Cache-Control", "public,max-age=60")
@@ -178,12 +215,12 @@ func GetTxWithProof(c *fiber.Ctx) error {
 // @Failure 404 {string} string "Transaction not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/raw [get]
-func GetRawTx(c *fiber.Ctx) error {
+func (ctrl *TxController) GetRawTx(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	rawtx, err := config.BeefStorage.LoadRawTx(c.Context(), hash)
+	rawtx, err := ctrl.BeefStorage.LoadRawTx(c.Context(), hash)
 	if err != nil {
 		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
@@ -221,12 +258,12 @@ func GetRawTx(c *fiber.Ctx) error {
 // @Failure 404 {string} string "Proof not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/proof [get]
-func GetProof(c *fiber.Ctx) error {
+func (ctrl *TxController) GetProof(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	proofBytes, err := config.BeefStorage.LoadProof(c.Context(), hash)
+	proofBytes, err := ctrl.BeefStorage.LoadProof(c.Context(), hash)
 	if err != nil {
 		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
@@ -242,7 +279,7 @@ func GetProof(c *fiber.Ctx) error {
 		return err
 	}
 
-	if proof.BlockHeight+5 < config.Chaintracks.GetHeight(c.Context()) {
+	if proof.BlockHeight+5 < ctrl.Chaintracks.GetHeight(c.Context()) {
 		c.Set("Cache-Control", "public,max-age=31536000,immutable")
 	} else {
 		c.Set("Cache-Control", "public,max-age=60")
@@ -267,7 +304,7 @@ func GetProof(c *fiber.Ctx) error {
 // @Success 200 {string} string "OK"
 // @Failure 400 {string} string "Invalid callback payload"
 // @Router /v5/tx/callback [post]
-func TxCallback(c *fiber.Ctx) error {
+func (ctrl *TxController) TxCallback(c *fiber.Ctx) error {
 	// Parse the ARC callback response
 	var arcResp broadcaster.ArcResponse
 	if err := c.BodyParser(&arcResp); err != nil {
@@ -286,7 +323,7 @@ func TxCallback(c *fiber.Ctx) error {
 	// Publish the status update for the broadcast listener
 	if jsonData, err := json.Marshal(arcResp); err != nil {
 		log.Printf("[ARC] %s Error marshaling ARC response: %v", arcResp.Txid, err)
-	} else if err := config.PubSub.Publish(c.Context(), "arc", string(jsonData)); err != nil {
+	} else if err := ctrl.PubSub.Publish(c.Context(), "arc", string(jsonData)); err != nil {
 		log.Printf("[ARC] %s Error publishing to arc channel: %v", arcResp.Txid, err)
 	}
 
@@ -306,7 +343,7 @@ func TxCallback(c *fiber.Ctx) error {
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/parse [get]
 // @Router /v5/tx/parse [post]
-func ParseTx(c *fiber.Ctx) (err error) {
+func (ctrl *TxController) ParseTx(c *fiber.Ctx) (err error) {
 	txidStr := c.Params("txid")
 	var tx *transaction.Transaction
 	var rawtx []byte
@@ -315,7 +352,7 @@ func ParseTx(c *fiber.Ctx) (err error) {
 		if err != nil {
 			return c.SendStatus(400)
 		}
-		if tx, err = config.BeefStorage.LoadTx(c.Context(), hash); err != nil {
+		if tx, err = ctrl.BeefStorage.LoadTx(c.Context(), hash); err != nil {
 			if err == beef.ErrNotFound {
 				return c.SendStatus(404)
 			}
@@ -331,7 +368,7 @@ func ParseTx(c *fiber.Ctx) (err error) {
 	} else if tx, err = transaction.NewTransactionFromBytes(rawtx); err != nil {
 		return
 	}
-	if idxCtx, err := ingest.ParseTx(c.Context(), tx); err != nil {
+	if idxCtx, err := ctrl.IngestCtx.ParseTx(c.Context(), tx); err != nil {
 		return err
 	} else {
 		return c.JSON(idxCtx)
@@ -347,12 +384,12 @@ func ParseTx(c *fiber.Ctx) (err error) {
 // @Failure 404 {string} string "Transaction not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/ingest [post]
-func IngestTx(c *fiber.Ctx) error {
+func (ctrl *TxController) IngestTx(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("txid"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	tx, err := config.BeefStorage.LoadTx(c.Context(), hash)
+	tx, err := ctrl.BeefStorage.LoadTx(c.Context(), hash)
 	if err != nil {
 		if err == beef.ErrNotFound {
 			return c.SendStatus(404)
@@ -362,7 +399,7 @@ func IngestTx(c *fiber.Ctx) error {
 	if tx == nil {
 		return c.SendStatus(404)
 	}
-	if idxCtx, err := ingest.IngestTx(c.Context(), tx); err != nil {
+	if idxCtx, err := ctrl.IngestCtx.IngestTx(c.Context(), tx); err != nil {
 		return err
 	} else {
 		return c.JSON(idxCtx)
@@ -380,14 +417,14 @@ func IngestTx(c *fiber.Ctx) error {
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/tx/{txid}/txos [get]
-func TxosByTxid(c *fiber.Ctx) error {
+func (ctrl *TxController) TxosByTxid(c *fiber.Ctx) error {
 	txid := c.Params("txid")
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
-		tags = ingest.IndexedTags()
+		tags = ctrl.IngestCtx.IndexedTags()
 	}
-	if txos, err := ingest.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("spend", false)); err != nil {
+	if txos, err := ctrl.IngestCtx.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
 		return c.JSON(txos)

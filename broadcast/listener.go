@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/b-open-io/overlay/pubsub"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
-	"github.com/redis/go-redis/v9"
 )
 
 type registration struct {
@@ -15,13 +15,12 @@ type registration struct {
 	channel chan *broadcaster.ArcResponse
 }
 
-// StatusListener manages a shared Redis subscription for broadcast status updates
+// StatusListener manages a shared subscription for broadcast status updates
 type StatusListener struct {
 	waiters      map[string]chan *broadcaster.ArcResponse
 	addWaiter    chan registration
 	removeWaiter chan string
-	pubsub       *redis.PubSub
-	redisClient  *redis.Client
+	ps           pubsub.PubSub
 }
 
 const arcChannel = "arc"
@@ -30,20 +29,23 @@ const arcChannel = "arc"
 var Listener *StatusListener
 
 // InitListener creates and starts the global status listener
-func InitListener(redisClient *redis.Client) *StatusListener {
+func InitListener(ps pubsub.PubSub) *StatusListener {
 	Listener = &StatusListener{
 		waiters:      make(map[string]chan *broadcaster.ArcResponse),
 		addWaiter:    make(chan registration),
 		removeWaiter: make(chan string),
-		redisClient:  redisClient,
+		ps:           ps,
 	}
 	return Listener
 }
 
-// Start begins listening for status updates on Redis
+// Start begins listening for status updates
 func (sl *StatusListener) Start(ctx context.Context) {
-	sl.pubsub = sl.redisClient.Subscribe(ctx, arcChannel)
-	ch := sl.pubsub.Channel()
+	eventChan, err := sl.ps.Subscribe(ctx, []string{arcChannel})
+	if err != nil {
+		log.Printf("[ARC] Error subscribing to arc topic: %v", err)
+		return
+	}
 
 	go func() {
 		log.Println("[ARC] Broadcast status listener started")
@@ -58,15 +60,15 @@ func (sl *StatusListener) Start(ctx context.Context) {
 					delete(sl.waiters, txid)
 				}
 
-			case msg := <-ch:
-				if msg == nil {
-					log.Println("[ARC] Redis channel closed, exiting status listener")
+			case event, ok := <-eventChan:
+				if !ok {
+					log.Println("[ARC] Event channel closed, exiting status listener")
 					return
 				}
 
 				// Parse the message
 				var arcResp broadcaster.ArcResponse
-				if err := json.Unmarshal([]byte(msg.Payload), &arcResp); err != nil {
+				if err := json.Unmarshal([]byte(event.Member), &arcResp); err != nil {
 					log.Printf("[ARC] Error parsing ARC status update: %v", err)
 					continue
 				}
@@ -89,7 +91,6 @@ func (sl *StatusListener) Start(ctx context.Context) {
 
 			case <-ctx.Done():
 				log.Println("[ARC] Context cancelled, shutting down status listener")
-				sl.pubsub.Close()
 				return
 			}
 		}

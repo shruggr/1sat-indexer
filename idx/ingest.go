@@ -53,6 +53,16 @@ func (cfg *IngestCtx) ParseTxid(ctx context.Context, txid string) (*IndexContext
 }
 
 func (cfg *IngestCtx) ParseTx(ctx context.Context, tx *transaction.Transaction) (idxCtx *IndexContext, err error) {
+	for _, input := range tx.Inputs {
+		if input.SourceTransaction == nil {
+			sourceTx, err := cfg.BeefStorage.LoadTx(ctx, input.SourceTXID)
+			if err != nil {
+				log.Println("LoadTx error", input.SourceTXID.String(), err)
+				return nil, err
+			}
+			input.SourceTransaction = sourceTx
+		}
+	}
 	idxCtx = NewIndexContext(ctx, cfg.Store, tx, cfg.Indexers, cfg.Network)
 	err = idxCtx.ParseTxn()
 	return

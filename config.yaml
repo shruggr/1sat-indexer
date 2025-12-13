@@ -1,0 +1,57 @@
+# 1sat-indexer configuration
+# Most settings use sensible SQLite-based defaults
+
+# Network settings
+network:
+  type: main
+  junglebus: https://junglebus.gorillapool.io
+
+# TXO storage - SQLite (default)
+store:
+  type: sqlite
+  sqlite: ~/.1sat/indexer.db
+
+# PubSub for events - in-memory channels (no Redis needed)
+pubsub:
+  url: channels://
+
+# BEEF storage chain: LRU cache -> local file -> JungleBus fallback
+beef:
+  url: lru://?size=100mb,~/.1sat/beef,junglebus://
+
+# Server settings
+server:
+  port: 8080
+
+# Indexers to enable
+indexers:
+  - p2pkh
+  - lock
+  - inscription
+  - ordlock
+
+# P2P client configuration
+p2p:
+  # network is inherited from network.type above
+  storage_path: ~/.1sat
+
+# Chaintracks configuration (separate service, shares P2P client)
+chaintracks:
+  mode: embedded
+  storage_path: ~/.1sat/chaintracks
+  bootstrap_url: https://mainnet.gorillanode.io/api/v1  # Optional: faster initial sync
+
+# Arcade configuration (receives shared Chaintracks instance)
+arcade:
+  network: main
+  storage_path: ~/.1sat/arcade
+
+  # Arcade database - SQLite
+  database:
+    type: sqlite
+    sqlite_path: ~/.1sat/arcade/arcade.db
+
+  # Events - in-memory (no Redis)
+  events:
+    type: memory
+    buffer_size: 1000

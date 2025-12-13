@@ -11,7 +11,6 @@ import (
 	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/go-junglebus/models"
 	"github.com/b-open-io/overlay/queue"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -26,6 +25,10 @@ type Sub struct {
 	FromBlock    uint
 	Verbose      bool
 	ReorgRewind  bool
+
+	// Dependencies (injected)
+	Store     *idx.QueueStore
+	JungleBus *junglebus.Client
 }
 
 func (cfg *Sub) Exec(ctx context.Context) (err error) {
@@ -55,19 +58,19 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			switch status.StatusCode {
 			case 199:
 				if len(logs) > 0 {
-					if err := config.Store.LogMany(ctx, queueKey, logs); err != nil {
+					if err := cfg.Store.LogMany(ctx, queueKey, logs); err != nil {
 						errors <- err
 					}
 					logs = make([]queue.ScoredMember, 0, 100000)
 				}
 			case 200:
 				if len(logs) > 0 {
-					if err := config.Store.LogMany(ctx, queueKey, logs); err != nil {
+					if err := cfg.Store.LogMany(ctx, queueKey, logs); err != nil {
 						errors <- err
 					}
 					logs = make([]queue.ScoredMember, 0, 100000)
 				}
-				if err := config.Store.Log(ctx, ProgressKey, cfg.Tag, float64(status.Block)); err != nil {
+				if err := cfg.Store.Log(ctx, ProgressKey, cfg.Tag, float64(status.Block)); err != nil {
 					errors <- err
 				}
 				txcount = 0
@@ -104,13 +107,13 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 			if cfg.Verbose {
 				log.Printf("[MEMPOOL]: %d %s\n", len(txn.Transaction), txn.Id)
 			}
-			if err := config.Store.Log(ctx, queueKey, txn.Id, idx.HeightScore(0, 0)); err != nil {
+			if err := cfg.Store.Log(ctx, queueKey, txn.Id, idx.HeightScore(0, 0)); err != nil {
 				errors <- err
 			}
 		}
 	}
 
-	if progress, err := config.Store.LogScore(ctx, ProgressKey, cfg.Tag); err != nil {
+	if progress, err := cfg.Store.LogScore(ctx, ProgressKey, cfg.Tag); err != nil {
 		log.Panic(err)
 	} else if progress > 6 {
 		if cfg.ReorgRewind {
@@ -120,7 +123,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 		}
 	}
 	log.Println("Subscribing to Junglebus from block", cfg.FromBlock)
-	if sub, err = config.JungleBus.SubscribeWithQueue(ctx,
+	if sub, err = cfg.JungleBus.SubscribeWithQueue(ctx,
 		cfg.Topic,
 		uint64(cfg.FromBlock),
 		0,

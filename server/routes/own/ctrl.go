@@ -1,16 +1,20 @@
 package own
 
 import (
+	"log"
 	"strings"
 
+	"github.com/b-open-io/go-junglebus"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 var ingest *idx.IngestCtx
+var jb *junglebus.Client
 
-func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
+func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, jungleBus *junglebus.Client) {
 	ingest = ingestCtx
+	jb = jungleBus
 	r.Get("/:owner/txos", OwnerTxos)
 	r.Get("/:owner/utxos", OwnerUtxos)
 	r.Get("/:owner/balance", OwnerBalance)
@@ -31,6 +35,12 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Router /v5/own/{owner}/txos [get]
 func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
+
+	if c.QueryBool("refresh", false) {
+		if err := idx.SyncOwner(c.Context(), idx.IngestTag, owner, ingest, jb); err != nil {
+			return err
+		}
+	}
 
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
@@ -178,6 +188,7 @@ func OwnerSync(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	from := c.QueryFloat("from", 0)
 	limit := uint32(c.QueryInt("limit", 100))
+	log.Printf("[OwnerSync] owner=%s from=%.0f limit=%d", owner, from, limit)
 
 	// Query limit+1 to detect if there are more results
 	queryLimit := limit + 1

@@ -15,25 +15,44 @@ import (
 )
 
 var hexId = "8395796c2d9216cd2bdf4527bbc091e50b7967cc02cbf34e1d588d5fd8da9d4d"
-var ctx = context.Background()
-var ingest = &idx.IngestCtx{
-	Indexers:    config.Indexers,
-	Concurrency: 1,
-	Verbose:     true,
-	Store:       config.Store,
+var testCtx = context.Background()
+
+// services holds the test services
+var services *config.Services
+
+// ingestCtx is created during test setup
+var ingestCtx *idx.IngestCtx
+
+func init() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	services, err = cfg.Initialize(testCtx, nil)
+	if err != nil {
+		log.Fatalf("Failed to initialize services: %v", err)
+	}
+
+	ingestCtx = &idx.IngestCtx{
+		Indexers:    services.Indexers,
+		Concurrency: 1,
+		Verbose:     true,
+		Store:       services.Store,
+	}
 }
 
 func TestIngest(t *testing.T) {
-	idxCtx, err := ingest.IngestTxid(ctx, hexId)
+	idxResult, err := ingestCtx.IngestTxid(testCtx, hexId)
 	assert.NoError(t, err)
 
-	out, err := json.MarshalIndent(idxCtx, "", "  ")
+	out, err := json.MarshalIndent(idxResult, "", "  ")
 	assert.NoError(t, err)
 	log.Println(string(out))
 }
 
 func TestArcStatus(t *testing.T) {
-	status, err := config.Broadcaster.Status(hexId)
+	status, err := services.Broadcaster.Status(hexId)
 	assert.NoError(t, err)
 
 	out, err := json.MarshalIndent(status, "", "  ")
@@ -43,6 +62,12 @@ func TestArcStatus(t *testing.T) {
 
 func TestNoFeeTx(t *testing.T) {
 	tx := transaction.NewTransaction()
-	resp := broadcast.Broadcast(context.Background(), config.Store, tx, config.Broadcaster)
+	deps := &broadcast.BroadcastDeps{
+		Store:       services.Store,
+		JungleBus:   services.JungleBus,
+		BeefStorage: services.BeefStorage,
+		Arc:         services.Broadcaster,
+	}
+	resp := broadcast.Broadcast(testCtx, deps, tx)
 	assert.Equal(t, int(resp.Status), fiber.StatusPaymentRequired)
 }

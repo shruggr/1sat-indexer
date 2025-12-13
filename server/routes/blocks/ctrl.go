@@ -3,17 +3,30 @@ package blocks
 import (
 	"strconv"
 
+	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/blk"
-	"github.com/shruggr/1sat-indexer/v5/config"
 )
 
-func RegisterRoutes(r fiber.Router) {
-	r.Get("/tip", GetChaintip)
-	r.Get("/height/:height", GetBlockByHeight)
-	r.Get("/hash/:hash", GetBlockByHash)
-	r.Get("/list/:from", ListBlocks)
+// BlocksController handles block-related routes
+type BlocksController struct {
+	Chaintracks chaintracks.Chaintracks
+}
+
+// NewBlocksController creates a new BlocksController with the given dependencies
+func NewBlocksController(ct chaintracks.Chaintracks) *BlocksController {
+	return &BlocksController{
+		Chaintracks: ct,
+	}
+}
+
+// RegisterRoutes registers all block routes
+func (ctrl *BlocksController) RegisterRoutes(r fiber.Router) {
+	r.Get("/tip", ctrl.GetChaintip)
+	r.Get("/height/:height", ctrl.GetBlockByHeight)
+	r.Get("/hash/:hash", ctrl.GetBlockByHash)
+	r.Get("/list/:from", ctrl.ListBlocks)
 }
 
 // @Summary Get chain tip
@@ -23,8 +36,8 @@ func RegisterRoutes(r fiber.Router) {
 // @Success 200 {object} blk.BlockHeaderResponse
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/blocks/tip [get]
-func GetChaintip(c *fiber.Ctx) error {
-	tip := config.Chaintracks.GetTip(c.Context())
+func (ctrl *BlocksController) GetChaintip(c *fiber.Ctx) error {
+	tip := ctrl.Chaintracks.GetTip(c.Context())
 	if tip == nil {
 		return c.SendStatus(500)
 	}
@@ -41,19 +54,19 @@ func GetChaintip(c *fiber.Ctx) error {
 // @Failure 404 {string} string "Block not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/blocks/height/{height} [get]
-func GetBlockByHeight(c *fiber.Ctx) error {
+func (ctrl *BlocksController) GetBlockByHeight(c *fiber.Ctx) error {
 	height, err := strconv.ParseUint(c.Params("height"), 10, 32)
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	block, err := config.Chaintracks.GetHeaderByHeight(c.Context(), uint32(height))
+	block, err := ctrl.Chaintracks.GetHeaderByHeight(c.Context(), uint32(height))
 	if err != nil {
 		return err
 	}
 	if block == nil {
 		return c.SendStatus(404)
 	}
-	if block.Height+5 < config.Chaintracks.GetHeight(c.Context()) {
+	if block.Height+5 < ctrl.Chaintracks.GetHeight(c.Context()) {
 		c.Set("Cache-Control", "public,max-age=31536000,immutable")
 	} else {
 		c.Set("Cache-Control", "public,max-age=60")
@@ -70,12 +83,12 @@ func GetBlockByHeight(c *fiber.Ctx) error {
 // @Failure 404 {string} string "Block not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/blocks/hash/{hash} [get]
-func GetBlockByHash(c *fiber.Ctx) error {
+func (ctrl *BlocksController) GetBlockByHash(c *fiber.Ctx) error {
 	hash, err := chainhash.NewHashFromHex(c.Params("hash"))
 	if err != nil {
 		return c.SendStatus(400)
 	}
-	block, err := config.Chaintracks.GetHeaderByHash(c.Context(), hash)
+	block, err := ctrl.Chaintracks.GetHeaderByHash(c.Context(), hash)
 	if err != nil {
 		return err
 	}
@@ -95,13 +108,13 @@ func GetBlockByHash(c *fiber.Ctx) error {
 // @Failure 400 {string} string "Invalid height"
 // @Failure 500 {string} string "Internal server error"
 // @Router /v5/blocks/list/{from} [get]
-func ListBlocks(c *fiber.Ctx) error {
+func (ctrl *BlocksController) ListBlocks(c *fiber.Ctx) error {
 	fromHeight, err := strconv.ParseUint(c.Params("from"), 10, 32)
 	if err != nil {
 		return c.SendStatus(400)
 	}
 
-	tipHeight := config.Chaintracks.GetHeight(c.Context())
+	tipHeight := ctrl.Chaintracks.GetHeight(c.Context())
 	maxCount := uint32(10000)
 	if uint32(fromHeight)+maxCount > tipHeight {
 		maxCount = tipHeight - uint32(fromHeight) + 1
@@ -109,7 +122,7 @@ func ListBlocks(c *fiber.Ctx) error {
 
 	responses := make([]*blk.BlockHeaderResponse, 0, maxCount)
 	for i := uint32(0); i < maxCount; i++ {
-		header, err := config.Chaintracks.GetHeaderByHeight(c.Context(), uint32(fromHeight)+i)
+		header, err := ctrl.Chaintracks.GetHeaderByHeight(c.Context(), uint32(fromHeight)+i)
 		if err != nil {
 			break
 		}

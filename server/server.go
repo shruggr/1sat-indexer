@@ -8,12 +8,12 @@ import (
 
 	"github.com/b-open-io/overlay/queue"
 	"github.com/b-open-io/overlay/routes"
-	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
+	arcaderoutes "github.com/bsv-blockchain/arcade/routes/fiber"
+	ctroutes "github.com/bsv-blockchain/go-chaintracks/routes/fiber"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/broadcast"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -42,7 +42,7 @@ import (
 
 // @BasePath /
 
-func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fiber.App {
+func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App {
 	app := fiber.New(fiber.Config{
 		BodyLimit: 100 * 1024 * 1024, // 100MB
 	})
@@ -62,23 +62,58 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 
 	v5 := app.Group("/v5")
 
-	blocks.RegisterRoutes(v5.Group("/blocks"))
+	// Create and register controllers
+	blocksCtrl := blocks.NewBlocksController(services.Chaintracks)
+	blocksCtrl.RegisterRoutes(v5.Group("/blocks"))
+
 	evt.RegisterRoutes(v5.Group("/evt"), ingestCtx)
 	origins.RegisterRoutes(v5.Group("/origins"), ingestCtx)
-	own.RegisterRoutes(v5.Group("/own"), ingestCtx)
+	own.RegisterRoutes(v5.Group("/own"), ingestCtx, services.JungleBus)
 	tag.RegisterRoutes(v5.Group("/tag"), ingestCtx)
-	tx.RegisterRoutes(v5.Group("/tx"), ingestCtx, arcBroadcaster)
+
+	txCtrl := tx.NewTxController(
+		ingestCtx,
+		services.Broadcaster,
+		services.BeefStorage,
+		services.Chaintracks,
+		services.PubSub,
+		services.JungleBus,
+	)
+	txCtrl.RegisterRoutes(v5.Group("/tx"))
+
 	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
 	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
 
 	// Register SSE routes using overlay's implementation
 	routes.RegisterSSERoutes(v5, &routes.SSERoutesConfig{
-		SSEManager: config.SSEManager,
+		SSEManager: services.SSEManager,
 		Catchup: func(ctx context.Context, keys []string, fromScore float64) ([]queue.ScoredMember, error) {
 			return ingestCtx.Store.Search(ctx, &idx.SearchCfg{Keys: keys, From: &fromScore})
 		},
-		Context: config.Ctx,
+		Context: context.Background(),
 	})
+
+	// Register chaintracks routes under /chaintracks/
+	if services != nil && services.Chaintracks != nil {
+		ctRoutes := ctroutes.NewRoutes(services.Chaintracks)
+		ctRoutes.Register(app.Group("/chaintracks"))
+		log.Println("Registered /chaintracks/ routes")
+	}
+
+	// Register arcade routes under /arcade/
+	if services != nil && services.ArcadeServices != nil {
+		arcadeRoutes := arcaderoutes.NewRoutes(arcaderoutes.Config{
+			StatusStore:     services.ArcadeServices.StatusStore,
+			SubmissionStore: services.ArcadeServices.SubmissionStore,
+			TxTracker:       services.ArcadeServices.TxTracker,
+			EventPublisher:  services.ArcadeServices.EventPublisher,
+			TeranodeClient:  services.ArcadeServices.TeranodeClient,
+			TxValidator:     services.ArcadeServices.Validator,
+			Logger:          services.Logger,
+		})
+		arcadeRoutes.Register(app.Group("/arcade"))
+		log.Println("Registered /arcade/ routes")
+	}
 
 	// Get current working directory
 	cwd, _ := os.Getwd()
@@ -132,15 +167,9 @@ func Initialize(ingestCtx *idx.IngestCtx, arcBroadcaster *broadcaster.Arc) *fibe
 
 	// Broadcast status listener for ARC callbacks
 	go func() {
-		if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
-			log.Printf("Error parsing REDISEVT URL for broadcast listener: %v", err)
-			return
-		} else {
-			statusRedis := redis.NewClient(opts)
-			listener := broadcast.InitListener(statusRedis)
-			ctx := context.Background()
-			listener.Start(ctx)
-		}
+		listener := broadcast.InitListener(services.PubSub)
+		ctx := context.Background()
+		listener.Start(ctx)
 	}()
 
 	return app

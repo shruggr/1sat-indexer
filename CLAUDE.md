@@ -70,10 +70,7 @@ JungleBus → Subscribe → Redis Queue → Ingest → Storage (PostgreSQL/SQLit
 - Broadcast attempts (unconfirmed): Negative `UnixNano` timestamp
 - Immutable threshold: Transactions >10 blocks deep
 
-**Storage Abstraction**: `TxoStore` interface supports multiple backends:
-- PostgreSQL (`idx/pg-store/`)
-- SQLite (`idx/sqlite-store/`)
-- Redis (`idx/redis-store/`)
+**Storage Abstraction**: `QueueStore` wraps `queue.QueueStorage` from the overlay package, supporting SQLite, Redis, and PostgreSQL backends.
 
 ### Ingestion Pipeline
 
@@ -115,20 +112,21 @@ The ingest service manages three main responsibilities:
 - `-c` - Concurrency level (default: 1)
 - `-v` - Verbose logging level
 
-## Environment Variables
+## Configuration
 
-Required environment variables (typically in `.env`):
-- `POSTGRES_FULL` - PostgreSQL connection string
-- `JUNGLEBUS` - JungleBus endpoint (e.g., https://junglebus.gorillapool.io)
-- `ARC` - Arc broadcaster endpoint (e.g., https://arc.gorillapool.io)
-- `REDIS` - Redis host:port
-- `REDISEVT` - Redis URL for event publishing
-- `TAAL_TOKEN` - TAAL API token (if using TAAL for Arc)
+Configuration is loaded from YAML files in order of precedence:
+1. `./config.yaml`
+2. `~/.1sat/config.yaml`
+3. `/etc/1sat/config.yaml`
+
+Environment variables with prefix `INDEXER_` override config file values (e.g., `INDEXER_STORE_TYPE=redis`).
+
+See `config.yaml` for the full configuration schema.
 
 ## Protocol Modules
 
 Protocol parsers are located in `mod/`:
-- `bitcom/` - Bitcoin computer protocols (B, MAP, SIGMA)
+- `bitcom/` - Bitcom protocols (B, MAP, SIGMA)
 - `cosign/` - Co-signing protocol
 - `lock/` - Locking scripts
 - `onesat/` - 1Sat Ordinals (origins, inscriptions, BSV20, BSV21, ordlock)
@@ -143,15 +141,13 @@ Each protocol module can register itself with the global `config.Indexers` slice
 - `blk/` - Block header management and chain tip tracking
 - `broadcast/` - Transaction broadcasting and Arc status monitoring
 - `cmd/` - Executable entry points
-- `config/` - Global configuration and indexer registration
-- `evt/` - Event publishing to Redis
-- `idx/` - Core indexing logic, storage interfaces, and TXO management
+- `config/` - Configuration loading and service initialization
+- `idx/` - Core indexing logic, QueueStore, and TXO management
 - `ingest/` - Transaction ingestion pipeline with queue processing and auditing
-- `jb/` - JungleBus client for loading transactions and subscriptions
 - `lib/` - Utility types (Outpoint, PKHash, Network, etc.)
-- `migration/` - Database migrations
 - `mod/` - Protocol-specific indexers
 - `server/` - HTTP API server with REST and SSE endpoints
+- `sigil/` - Sigil protocol support
 - `sub/` - JungleBus subscription management
 
 ## API Routes (v5)

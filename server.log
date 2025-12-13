@@ -1,0 +1,176 @@
+2025/12/13 02:55:25 WARN: No config file 'settings.conf'
+2025/12/13 02:55:25 WARN: No local config file 'settings_local.conf'
+2025/12/13 02:55:25 CWD: /home/shruggr/Code/1sat-indexer
+2025/12/13 02:55:25 INFO Initialized pubsub url=channels://
+2025/12/13 02:55:25 INFO Initialized SSE manager
+2025/12/13 02:55:25 INFO Initialized queue storage type=sqlite
+2025/12/13 02:55:25 INFO Initialized JungleBus url=https://junglebus.gorillapool.io
+2025/12/13 02:55:25 INFO Initializing P2P client
+2025/12/13 02:55:25 INFO Configured TCP-only transport (WebRTC disabled to prevent mDNS)
+2025/12/13 02:55:25 INFO Connection manager configured: min=25, max=35, grace=20s
+2025/12/13 02:55:25 INFO Private IP connection gater enabled (blocking RFC1918 and local addresses)
+2025/12/13 02:55:25 INFO Using 2 custom bootstrap peer(s)
+2025/12/13 02:55:25 INFO Using bootstrap peers as relay peers
+2025/12/13 02:55:25 INFO UPnP/NAT-PMP disabled (production safe default)
+2025/12/13 02:55:25 INFO P2P Client created. ID: 12D3KooWQXJUnfeUaALEo8yL76v91mJJ7DSq8pQyw4oYLngevPRj
+2025/12/13 02:55:25 INFO Listening on: [/ip4/127.0.0.1/tcp/43261 /ip4/192.168.50.127/tcp/43261 /ip4/192.168.122.1/tcp/43261 /ip6/::1/tcp/38249]
+2025/12/13 02:55:25 INFO DHT mode: server (will advertise and store provider records)
+2025/12/13 02:55:25 INFO Connecting to 2 cached peers...
+2025/12/13 02:55:25 INFO mDNS discovery disabled (production safe default)
+2025/12/13 02:55:25 INFO Peer address request protocol handler installed
+2025/12/13 02:55:25 INFO Initialized P2P client
+2025/12/13 02:55:25 INFO Initializing Chaintracks
+2025/12/13 02:55:25 ChainManager initializing: network=main, path=/home/shruggr/.1sat/chaintracks
+2025/12/13 02:55:25 Loading checkpoint metadata from: /home/shruggr/.1sat/chaintracks/mainNetBlockHeaders.json
+2025/12/13 02:55:25 Found 10 checkpoint files to load
+2025/12/13 02:55:25 INFO Reconnected to cached peer: unknown [12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb]
+2025/12/13 02:55:25 INFO Connected to bootstrap peer: 12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb
+2025/12/13 02:55:25 SetChainTip timing: write=120.988531ms meta=480.85µs
+2025/12/13 02:55:26 INFO Reconnected to cached peer: unknown [12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H]
+2025/12/13 02:55:26 INFO Connected to bootstrap peer: 12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H
+2025/12/13 02:55:27 Bootstrap URL configured: https://mainnet.gorillanode.io/api/v1
+2025/12/13 02:55:28 Bootstrap node tip: 000000000000000002cda2994d4e9daf79eaf69077fc318fa4e05ddc0e832fc1
+2025/12/13 02:55:28 Already have block 000000000000000002cda2994d4e9daf79eaf69077fc318fa4e05ddc0e832fc1
+2025/12/13 02:55:28 Chain tip after bootstrap: 000000000000000002cda2994d4e9daf79eaf69077fc318fa4e05ddc0e832fc1 at height 927233
+2025/12/13 02:55:28 Subscribing to P2P blocks for network: main
+2025/12/13 02:55:28 INFO Initialized Chaintracks
+2025/12/13 02:55:28 INFO Initializing Arcade services
+2025/12/13 02:55:28 INFO Running database migrations path=/home/shruggr/.1sat/arcade/arcade.db
+2025/12/13 02:55:28 INFO Initializing stores
+2025/12/13 02:55:28 INFO Initializing event publisher type=memory
+2025/12/13 02:55:28 INFO Initializing Teranode client
+2025/12/13 02:55:28 INFO Initializing validator
+2025/12/13 02:55:28 INFO Initializing transaction tracker
+2025/12/13 02:55:28 INFO Loaded tracked transactions count=0
+2025/12/13 02:55:28 INFO Using provided Chaintracks instance
+2025/12/13 02:55:28 INFO Initialized BEEF storage url="lru://?size=100mb,/home/shruggr/.1sat/beef,junglebus://"
+2025/12/13 02:55:28 INFO Initialized indexers indexers="[p2pkh lock inscription ordlock]"
+2025/12/13 02:55:28 Registered /chaintracks/ routes
+2025/12/13 02:55:28 Registered /arcade/ routes
+2025/12/13 02:55:28 Server working directory: /home/shruggr/Code/1sat-indexer
+2025/12/13 02:55:28 ✓ Found swagger.json at: /home/shruggr/Code/1sat-indexer/docs/swagger.json
+2025/12/13 02:55:28 Listening on :8080
+2025/12/13 02:55:28 [ARC] Broadcast status listener started
+
+ ┌───────────────────────────────────────────────────┐ 
+ │                  Fiber v2.52.10                   │ 
+ │               http://127.0.0.1:8080               │ 
+ │       (bound on host 0.0.0.0 and port 8080)       │ 
+ │                                                   │ 
+ │ Handlers ............ 82  Processes ........... 1 │ 
+ │ Prefork ....... Disabled  PID ............ 254059 │ 
+ └───────────────────────────────────────────────────┘ 
+
+2025/12/13 02:55:33 [OwnerSync] owner=1DPbfnhdKsZwaYXZ96eARHKtb3ZUjeLdLf from=920555000000294 limit=100
+02:55:33 | 200 |    1.119735ms | 192.168.50.211 | GET | /v5/own/1DPbfnhdKsZwaYXZ96eARHKtb3ZUjeLdLf/sync | -
+02:55:33 | 200 |      294.09µs | 192.168.50.211 | GET | /v5/tx/6ce01020142120502ae280007115f4fab2902893941ee0a73ad0b985d8af6223/beef | -
+02:55:33 | 200 |       293.7µs | 192.168.50.211 | GET | /v5/tx/4a4f74fb0964ebb2234f8e35dcf49e25a714378e3eefac8b7908bfeacd21d7fb/beef | -
+02:55:33 | 200 |      66.143µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:55:33 | 200 |      30.758µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:55:33 | 404 |      14.738µs | 192.168.50.211 | GET | /v2/block/920564 | Cannot GET /v2/block/920564
+2025/12/13 02:56:13 INFO [CONNECTED] Topic peer 12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb [unknown] /ip4/100.25.140.63/tcp/9905
+2025/12/13 02:56:13 INFO [CONNECTED] Topic peer 12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H [unknown] /ip4/52.30.172.139/tcp/9905
+2025/12/13 02:56:32 Received block: height=927234 hash=00000000000000000fa032d83fac78d3553d7c22a2bab8e5723a7a6c47de286f from=12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb datahub=https://teranode-eks-mainnet-us-1.bsvb.tech/api/v1
+2025/12/13 02:56:32 New tip: height=927234 chainwork=437856983810657402824375518
+2025/12/13 02:56:32 Received block: height=927234 hash=00000000000000000fa032d83fac78d3553d7c22a2bab8e5723a7a6c47de286f from=12D3KooWErv2DM84FYdF7Ltmqj1izTg9gbAqbqwm7uad76oE88UT datahub=http://bsva-ovh-teranode-eu-1.bsvb.tech:8000/api/v1
+2025/12/13 02:56:35 Received block: height=927234 hash=00000000000000000fa032d83fac78d3553d7c22a2bab8e5723a7a6c47de286f from=12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H datahub=https://teranode-eks-mainnet-eu-1.bsvb.tech/api/v1
+2025/12/13 02:56:37 Received block: height=927234 hash=00000000000000000fa032d83fac78d3553d7c22a2bab8e5723a7a6c47de286f from=12D3KooWKdnC5LYynDs31ysw1rnMhRM1x1eoW3eVu5YA5oNoFs8P datahub=https://teranode-mainnet.taal.com/api/v1
+2025/12/13 02:56:40 Received block: height=927234 hash=00000000000000000fa032d83fac78d3553d7c22a2bab8e5723a7a6c47de286f from=12D3KooWJYJPzqwRWAynCQG8Gjm53eJMuMg8NitnVvFswA2rsFHR datahub=https://mainnet.gorillanode.io/api/v1
+2025/12/13 02:58:28 [OwnerSync] owner=1DPbfnhdKsZwaYXZ96eARHKtb3ZUjeLdLf from=920555000000294 limit=100
+02:58:28 | 200 |    1.096431ms | 192.168.50.211 | GET | /v5/own/1DPbfnhdKsZwaYXZ96eARHKtb3ZUjeLdLf/sync | -
+02:58:28 | 200 |     198.161µs | 192.168.50.211 | GET | /v5/tx/6ce01020142120502ae280007115f4fab2902893941ee0a73ad0b985d8af6223/beef | -
+02:58:28 | 200 |     140.452µs | 192.168.50.211 | GET | /v5/tx/4a4f74fb0964ebb2234f8e35dcf49e25a714378e3eefac8b7908bfeacd21d7fb/beef | -
+02:58:28 | 200 |      81.272µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |     124.763µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      18.585µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |      208.61µs | 192.168.50.211 | GET | /v5/tx/72bf62291688f5fb74beb58d8af6c36fe2ed890e4a6b6d4a54d9edd4ece38ba3/beef | -
+02:58:28 | 200 |   12.631904ms | 192.168.50.211 | GET | /v5/tx/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59/beef | -
+02:58:28 | 200 |     265.086µs | 192.168.50.211 | GET | /v5/tx/b55701f1ccd28882dd794c43012aed3fc13014132ef90e89f1ec9d8eff8e2b4c/beef | -
+02:58:28 | 404 |      12.683µs | 192.168.50.211 | GET | /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_38 | Cannot GET /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_38
+02:58:28 | 200 |     166.231µs | 192.168.50.211 | GET | /v5/tx/f57f381c64e459a5ad5887bea9f4ff5fe9e6b159acaaf261ce682bb9c4d54a47/beef | -
+02:58:28 | 200 |     145.121µs | 192.168.50.211 | GET | /v5/tx/8a3b5c4284960c78b358c647401df6a9b341b3f205eae9c1474fff4a319d2877/beef | -
+02:58:28 | 200 |      89.678µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      93.084µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      12.063µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     412.883µs | 192.168.50.211 | GET | /v5/tx/08be7220e5829b49d7c6aa8fa06fff0669acec9ff288039338dd3b566ff46e5e/beef | -
+02:58:28 | 200 |   11.306954ms | 192.168.50.211 | GET | /v5/tx/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59/beef | -
+02:58:28 | 200 |      240.47µs | 192.168.50.211 | GET | /v5/tx/503e66ec9da88e7c3ad91730ed7bb637b3e909c76d59c9f3f8ebec058c4f08b8/beef | -
+02:58:28 | 404 |      13.375µs | 192.168.50.211 | GET | /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_30 | Cannot GET /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_30
+02:58:28 | 200 |     242.905µs | 192.168.50.211 | GET | /v5/tx/99619ecf50daae9385297096bb0f78ba5e70332d1fefdc00afd019b2c9a15e91/beef | -
+02:58:28 | 200 |     251.962µs | 192.168.50.211 | GET | /v5/tx/50398f83f0428d91b57014a36a5e5dd65c9b1e062932f7e8028fddc624e7a70d/beef | -
+02:58:28 | 200 |     409.786µs | 192.168.50.211 | GET | /v5/tx/6b852638d66ddd29e2b2a5e48c515fb872b8a1c19e140ad68d5b1f64d6f31da8/beef | -
+02:58:28 | 404 |       6.652µs | 192.168.50.211 | GET | /v2/metadata/50398f83f0428d91b57014a36a5e5dd65c9b1e062932f7e8028fddc624e7a70d_0 | Cannot GET /v2/metadata/50398f83f0428d91b57014a36a5e5dd65c9b1e062932f7e8028fddc624e7a70d_0
+02:58:28 | 200 |      61.485µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      41.157µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      14.868µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |      224.33µs | 192.168.50.211 | GET | /v5/tx/7f648780bd1751c4f14672d91d0ca4030b5a98e53d9db2df72bd574a702b63d7/beef | -
+02:58:28 | 200 |     230.942µs | 192.168.50.211 | GET | /v5/tx/878908038e05f72d2a83c0dc9169585328432d17c29700b02ea927745bb7121f/beef | -
+02:58:28 | 200 |     373.248µs | 192.168.50.211 | GET | /v5/tx/e0e253031865d471ac33a3bb0cad01f0b56c7f078cf6df0c69caa112b9c6e601/beef | -
+02:58:28 | 404 |      20.267µs | 192.168.50.211 | GET | /v2/metadata/878908038e05f72d2a83c0dc9169585328432d17c29700b02ea927745bb7121f_0 | Cannot GET /v2/metadata/878908038e05f72d2a83c0dc9169585328432d17c29700b02ea927745bb7121f_0
+02:58:28 | 200 |      99.296µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      65.362µs | 192.168.50.211 | GET | /chaintracks/header/height/920564 | -
+02:58:28 | 200 |      12.334µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     145.553µs | 192.168.50.211 | GET | /v5/tx/215dbbd063d4909d5cfd0be51ce5e28f3cc9500455e06eb6da6b93eef2b58ee4/beef | -
+02:58:28 | 200 |     240.269µs | 192.168.50.211 | GET | /v5/tx/1b2bbeedf34908d788c795d37d9ab4f34d09eeffed76de28a5dd037c75ea7a87/beef | -
+02:58:28 | 200 |      60.353µs | 192.168.50.211 | GET | /chaintracks/header/height/920585 | -
+02:58:28 | 200 |      62.897µs | 192.168.50.211 | GET | /chaintracks/header/height/920585 | -
+02:58:28 | 200 |      14.217µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     248.645µs | 192.168.50.211 | GET | /v5/tx/3874bcb8759953167f76a2b1bd930f2857ceaef900123b0da3e79ae009089bcc/beef | -
+02:58:28 | 200 |     214.261µs | 192.168.50.211 | GET | /v5/tx/d38821b0c6fabcafe136d82bbab92a39c681dedd4562d4888cdc269789cabecf/beef | -
+02:58:28 | 200 |     189.755µs | 192.168.50.211 | GET | /v5/tx/2bd1ab4dff145ac8840dc26e43721cb62772d490dbf6e50ab8ec9f41ddd33d33/beef | -
+02:58:28 | 404 |       8.846µs | 192.168.50.211 | GET | /v2/metadata/d38821b0c6fabcafe136d82bbab92a39c681dedd4562d4888cdc269789cabecf_0 | Cannot GET /v2/metadata/d38821b0c6fabcafe136d82bbab92a39c681dedd4562d4888cdc269789cabecf_0
+02:58:28 | 200 |      34.455µs | 192.168.50.211 | GET | /chaintracks/header/height/920585 | -
+02:58:28 | 200 |       53.86µs | 192.168.50.211 | GET | /chaintracks/header/height/920585 | -
+02:58:28 | 200 |      18.965µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     210.544µs | 192.168.50.211 | GET | /v5/tx/51e3227a59c9f6a6ec974e6e4134c9882c70f95e4eb060851e5fccebfa85faa7/beef | -
+02:58:28 | 200 |   10.772264ms | 192.168.50.211 | GET | /v5/tx/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59/beef | -
+02:58:28 | 200 |     174.977µs | 192.168.50.211 | GET | /v5/tx/215dbbd063d4909d5cfd0be51ce5e28f3cc9500455e06eb6da6b93eef2b58ee4/beef | -
+02:58:28 | 404 |      13.435µs | 192.168.50.211 | GET | /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_93 | Cannot GET /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_93
+02:58:28 | 200 |     193.422µs | 192.168.50.211 | GET | /v5/tx/a4ee315798c381b4c568c749a38715a0b92fdafa69fc52edb4faa6be775abe35/beef | -
+02:58:28 | 200 |    10.50263ms | 192.168.50.211 | GET | /v5/tx/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59/beef | -
+02:58:28 | 200 |     158.417µs | 192.168.50.211 | GET | /v5/tx/51e3227a59c9f6a6ec974e6e4134c9882c70f95e4eb060851e5fccebfa85faa7/beef | -
+02:58:28 | 404 |      11.973µs | 192.168.50.211 | GET | /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_74 | Cannot GET /v2/metadata/82104e6ee306ceaaa5949b1252a2dbc94aa1d58212c944d7e1392fcc0ed5ac59_74
+02:58:28 | 200 |     180.638µs | 192.168.50.211 | GET | /v5/tx/2189ef61f22f4310dd648a51abeb7fc4af9e552a1687331f0638e595271ac360/beef | -
+02:58:28 | 200 |      160.32µs | 192.168.50.211 | GET | /v5/tx/a4ee315798c381b4c568c749a38715a0b92fdafa69fc52edb4faa6be775abe35/beef | -
+02:58:28 | 200 |      55.854µs | 192.168.50.211 | GET | /chaintracks/header/height/920677 | -
+02:58:28 | 200 |     131.786µs | 192.168.50.211 | GET | /chaintracks/header/height/920677 | -
+02:58:28 | 200 |      13.335µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     273.341µs | 192.168.50.211 | GET | /v5/tx/bf3e931614d9b28ec8a2b8fbab56c9948b67fc1f6b77c5a2149fc36ab3c63acc/beef | -
+02:58:28 | 200 |     236.532µs | 192.168.50.211 | GET | /v5/tx/3874bcb8759953167f76a2b1bd930f2857ceaef900123b0da3e79ae009089bcc/beef | -
+02:58:28 | 200 |     115.726µs | 192.168.50.211 | GET | /v5/tx/2189ef61f22f4310dd648a51abeb7fc4af9e552a1687331f0638e595271ac360/beef | -
+02:58:28 | 404 |      16.982µs | 192.168.50.211 | GET | /v2/metadata/3874bcb8759953167f76a2b1bd930f2857ceaef900123b0da3e79ae009089bcc_0 | Cannot GET /v2/metadata/3874bcb8759953167f76a2b1bd930f2857ceaef900123b0da3e79ae009089bcc_0
+02:58:28 | 200 |     265.687µs | 192.168.50.211 | GET | /v5/tx/60fb8e74cc13cf57d5b796449f064c44316365d27dea3fed55fc8bcdaa909f6d/beef | -
+02:58:28 | 200 |      133.24µs | 192.168.50.211 | GET | /v5/tx/99619ecf50daae9385297096bb0f78ba5e70332d1fefdc00afd019b2c9a15e91/beef | -
+02:58:28 | 200 |     234.568µs | 192.168.50.211 | GET | /v5/tx/dd57fc607472be3dfe1a3346c87dfd918a21435ac8a141f75a0fcd44b0d5d207/beef | -
+02:58:28 | 404 |      10.349µs | 192.168.50.211 | GET | /v2/metadata/99619ecf50daae9385297096bb0f78ba5e70332d1fefdc00afd019b2c9a15e91_0 | Cannot GET /v2/metadata/99619ecf50daae9385297096bb0f78ba5e70332d1fefdc00afd019b2c9a15e91_0
+02:58:28 | 200 |     130.725µs | 192.168.50.211 | GET | /v5/tx/1d10eaaabd791df80227dd0589c1279a63c9c8deefb035bea0b9cb6fd6a18dc2/beef | -
+02:58:28 | 200 |     263.393µs | 192.168.50.211 | GET | /v5/tx/2007b8c97e088b7176b28974b41c2089fcf56e706a57d7843f2bc0531e4caa09/beef | -
+02:58:28 | 200 |      46.246µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:28 | 200 |      88.586µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:28 | 200 |       3.456µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:28 | 200 |     124.162µs | 192.168.50.211 | GET | /v5/tx/9d8c4c8f994f478bb6915d9e39427955cd9943369f732ebcb1c30711ddc95c00/beef | -
+02:58:28 | 200 |     308.337µs | 192.168.50.211 | GET | /v5/tx/bf3e931614d9b28ec8a2b8fbab56c9948b67fc1f6b77c5a2149fc36ab3c63acc/beef | -
+02:58:28 | 200 |      45.094µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:29 | 200 |      31.188µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:29 | 200 |      15.479µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:29 | 200 |      347.61µs | 192.168.50.211 | GET | /v5/tx/59b40cc85c8b188d9b97d73cb7afb31669ca184f101140510824ab54b3a93432/beef | -
+02:58:29 | 200 |     142.317µs | 192.168.50.211 | GET | /v5/tx/9d8c4c8f994f478bb6915d9e39427955cd9943369f732ebcb1c30711ddc95c00/beef | -
+02:58:29 | 200 |      95.669µs | 192.168.50.211 | GET | /v5/tx/1d10eaaabd791df80227dd0589c1279a63c9c8deefb035bea0b9cb6fd6a18dc2/beef | -
+02:58:29 | 200 |      34.925µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:29 | 200 |       26.28µs | 192.168.50.211 | GET | /chaintracks/header/height/921721 | -
+02:58:29 | 200 |       8.677µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:29 | 200 |     132.227µs | 192.168.50.211 | GET | /v5/tx/9ba0f6cb9fe09f1ba4f924163c31d163acfc5951baedc23b77067a3462101ddf/beef | -
+02:58:29 | 200 |     132.388µs | 192.168.50.211 | GET | /v5/tx/f056cfa10d0c41997447a00a14d868190c7e68f23d8bddcfb1b517614da30e2b/beef | -
+02:58:29 | 200 |      72.015µs | 192.168.50.211 | GET | /chaintracks/header/height/921728 | -
+02:58:29 | 200 |      28.173µs | 192.168.50.211 | GET | /chaintracks/header/height/921728 | -
+02:58:29 | 200 |      16.661µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:29 | 200 |     244.257µs | 192.168.50.211 | GET | /v5/tx/e8bbb409674a434721f1a89d3188673c6816a3245a23f724addb01ec74b0bb87/beef | -
+02:58:29 | 200 |     114.644µs | 192.168.50.211 | GET | /v5/tx/59b40cc85c8b188d9b97d73cb7afb31669ca184f101140510824ab54b3a93432/beef | -
+02:58:29 | 200 |     143.678µs | 192.168.50.211 | GET | /chaintracks/header/height/921744 | -
+02:58:29 | 200 |       74.69µs | 192.168.50.211 | GET | /chaintracks/header/height/921744 | -
+02:58:29 | 200 |      19.326µs | 192.168.50.211 | GET | /chaintracks/headers | -
+02:58:29 | 200 |     209.692µs | 192.168.50.211 | GET | /v5/tx/83dfb02f0e328f5058cdc5acdc6507191c968f688a6f42cbda70faafc44ec91a/beef | -
+02:58:29 | 200 |     258.824µs | 192.168.50.211 | GET | /v5/tx/b810d9b1d7504be9fd3071b1cdb07742917cacde0139e70e1a18b6f103d6cf41/beef | -
+02:58:29 | 200 |       64.52µs | 192.168.50.211 | GET | /chaintracks/header/height/921989 | -
+02:58:29 | 200 |      36.989µs | 192.168.50.211 | GET | /chaintracks/header/height/921989 | -
+02:58:29 | 200 |       4.969µs | 192.168.50.211 | GET | /chaintracks/headers | -

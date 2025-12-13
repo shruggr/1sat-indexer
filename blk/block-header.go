@@ -1,7 +1,7 @@
 package blk
 
 import (
-	"github.com/bsv-blockchain/arcade"
+	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 )
 
@@ -16,7 +16,7 @@ type BlockHeaderResponse struct {
 	PreviousBlock chainhash.Hash `json:"prevBlockHash" swaggertype:"string"`
 }
 
-func NewBlockHeaderResponse(header *arcade.BlockHeader) *BlockHeaderResponse {
+func NewBlockHeaderResponse(header *chaintracks.BlockHeader) *BlockHeaderResponse {
 	return &BlockHeaderResponse{
 		Height:        header.Height,
 		Hash:          header.Hash,

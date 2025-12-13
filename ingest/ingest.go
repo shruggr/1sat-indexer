@@ -9,57 +9,79 @@ import (
 	"time"
 
 	"github.com/b-open-io/overlay/beef"
+	"github.com/b-open-io/overlay/pubsub"
+	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
-	"github.com/redis/go-redis/v9"
-	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
-
-var ingest *idx.IngestCtx
-var immutableScore float64
-var arc *broadcaster.Arc
 
 // OldMempoolTimeout is the duration after which mempool transactions without proof should be rolled back
 const OldMempoolTimeout = 3 * time.Hour
 
-func Start(ctx context.Context, ingestCtx *idx.IngestCtx, bcast *broadcaster.Arc, redisClient *redis.Client, rollback bool) {
-	ingest = ingestCtx
-	arc = bcast
+// Ingester handles transaction ingestion, queue processing, and auditing
+type Ingester struct {
+	ingestCtx      *idx.IngestCtx
+	arc            *broadcaster.Arc
+	chaintracks    chaintracks.Chaintracks
+	beefStorage    *beef.Storage
+	pubsub         pubsub.PubSub
+	immutableScore float64
+}
 
-	// Start queue processor
-	go processQueue(ctx, ingestCtx)
-
-	// Start Arc callback listener
-	go startArcCallbackListener(ctx, redisClient)
-
-	// Subscribe to chain tip updates from chaintracks
-	tipChan := config.Chaintracks.SubscribeTip(ctx)
-	for chaintip := range tipChan {
-		log.Println("Chaintip", chaintip.Height, chaintip.Hash)
-		immutableScore = idx.HeightScore(chaintip.Height-10, 0)
-		AuditTransactions(ctx, rollback)
+// NewIngester creates a new Ingester with the given dependencies
+func NewIngester(
+	ingestCtx *idx.IngestCtx,
+	arc *broadcaster.Arc,
+	ct chaintracks.Chaintracks,
+	beefStorage *beef.Storage,
+	ps pubsub.PubSub,
+) *Ingester {
+	return &Ingester{
+		ingestCtx:   ingestCtx,
+		arc:         arc,
+		chaintracks: ct,
+		beefStorage: beefStorage,
+		pubsub:      ps,
 	}
 }
 
-func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
-	pubsub := redisClient.Subscribe(ctx, "arc")
-	defer pubsub.Close()
+// Start begins the ingest service with queue processing, Arc callbacks, and audits
+func (ing *Ingester) Start(ctx context.Context, rollback bool) {
+	// Start queue processor
+	go ing.processQueue(ctx)
 
-	ch := pubsub.Channel()
+	// Start Arc callback listener
+	go ing.startArcCallbackListener(ctx)
+
+	// Subscribe to chain tip updates from chaintracks
+	tipChan := ing.chaintracks.Subscribe(ctx)
+	for chaintip := range tipChan {
+		log.Println("Chaintip", chaintip.Height, chaintip.Hash)
+		ing.immutableScore = idx.HeightScore(chaintip.Height-10, 0)
+		ing.AuditTransactions(ctx, rollback)
+	}
+}
+
+func (ing *Ingester) startArcCallbackListener(ctx context.Context) {
+	eventChan, err := ing.pubsub.Subscribe(ctx, []string{"arc"})
+	if err != nil {
+		log.Printf("Error subscribing to arc topic: %v", err)
+		return
+	}
 	log.Println("Arc callback listener started for ingestion")
 
 	for {
 		select {
-		case msg := <-ch:
-			if msg == nil {
+		case event, ok := <-eventChan:
+			if !ok {
 				log.Println("Arc callback channel closed, exiting ingestion listener")
 				return
 			}
 
 			var arcResp broadcaster.ArcResponse
-			if err := json.Unmarshal([]byte(msg.Payload), &arcResp); err != nil {
+			if err := json.Unmarshal([]byte(event.Member), &arcResp); err != nil {
 				log.Printf("Error parsing Arc callback in ingestion: %v", err)
 				continue
 			}
@@ -74,7 +96,7 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 			if arcResp.MerklePath != "" {
 				go func(txidStr, merklePath string) {
 					txidHash, _ := chainhash.NewHashFromHex(txidStr)
-					tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+					tx, err := ing.beefStorage.LoadTx(ctx, txidHash)
 					if err != nil {
 						log.Printf("Error loading tx %s: %v", txidStr, err)
 						return
@@ -85,7 +107,7 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 						return
 					}
 
-					if err := reprocessTransaction(ctx, tx.TxID(), tx); err != nil {
+					if err := ing.reprocessTransaction(ctx, tx.TxID(), tx); err != nil {
 						log.Printf("Error reprocessing tx %s: %v", txidStr, err)
 					}
 				}(arcResp.Txid, arcResp.MerklePath)
@@ -98,11 +120,11 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 				status == broadcaster.DOUBLE_SPEND_ATTEMPTED ||
 				status == broadcaster.SEEN_IN_ORPHAN_MEMPOOL {
 				go func(txidStr string) {
-					if err := ingest.Store.Rollback(ctx, txidStr); err != nil {
+					if err := ing.ingestCtx.Store.Rollback(ctx, txidStr); err != nil {
 						log.Printf("Error rolling back tx %s: %v", txidStr, err)
 						return
 					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txidStr, 0); err != nil {
+					if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txidStr, 0); err != nil {
 						log.Printf("Error logging rollback for %s: %v", txidStr, err)
 					}
 				}(arcResp.Txid)
@@ -115,12 +137,12 @@ func startArcCallbackListener(ctx context.Context, redisClient *redis.Client) {
 	}
 }
 
-func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transaction.Transaction) error {
+func (ing *Ingester) reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transaction.Transaction) error {
 	var newScore float64
 	if root, err := tx.MerklePath.ComputeRoot(txid); err != nil {
 		log.Println("ComputeRoot error", txid, err)
 		return err
-	} else if valid, err := config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight); err != nil {
+	} else if valid, err := ing.chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight); err != nil {
 		log.Println("IsValidRootForHeight error", txid, err)
 		return err
 	} else if !valid {
@@ -141,17 +163,17 @@ func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transac
 	}
 
 	log.Println("Reingest", txid, newScore)
-	if _, err := ingest.IngestTx(ctx, tx); err != nil {
+	if _, err := ing.ingestCtx.IngestTx(ctx, tx); err != nil {
 		log.Println("IngestTx error", txid, err)
 		return err
 	}
 
-	if newScore < immutableScore {
+	if newScore < ing.immutableScore {
 		log.Println("Archive Immutable", txid, newScore)
-		if err := ingest.Store.Log(ctx, idx.ImmutableTxLog, txid.String(), newScore); err != nil {
+		if err := ing.ingestCtx.Store.Log(ctx, idx.ImmutableTxLog, txid.String(), newScore); err != nil {
 			log.Println("Log error", txid, err)
 			return err
-		} else if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid.String()); err != nil {
+		} else if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid.String()); err != nil {
 			log.Println("Delog error", txid, err)
 			return err
 		}
@@ -159,7 +181,7 @@ func reprocessTransaction(ctx context.Context, txid *chainhash.Hash, tx *transac
 	return nil
 }
 
-func AuditTransactions(ctx context.Context, rollback bool) {
+func (ing *Ingester) AuditTransactions(ctx context.Context, rollback bool) {
 	start := time.Now()
 	log.Println("[AUDIT] Starting transaction audit")
 
@@ -168,19 +190,19 @@ func AuditTransactions(ctx context.Context, rollback bool) {
 
 	// Scenario 1: Negative scores - Broadcast attempts that never got Arc confirmation (older than 2 minutes)
 	// Just check if Arc has it. If not, delete. If yes, it will be picked up by Arc callbacks.
-	auditNegativeScores(ctx, &wg, limiter)
+	ing.auditNegativeScores(ctx, &wg, limiter)
 
 	// Scenario 2: Mined transactions (0 to immutableScore) - Verify MerklePath and check for immutability
-	auditMinedTransactions(ctx, rollback, &wg, limiter)
+	ing.auditMinedTransactions(ctx, rollback, &wg, limiter)
 
 	// Scenario 3: Old mempool transactions (>OldMempoolTimeout) - Check if they got mined
-	auditMempool(ctx, rollback, &wg, limiter)
+	ing.auditMempool(ctx, rollback, &wg, limiter)
 
 	wg.Wait()
 	log.Printf("[AUDIT] Completed transaction audit (%.2fs)", time.Since(start).Seconds())
 }
 
-func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan struct{}) {
+func (ing *Ingester) auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan struct{}) {
 	from := float64(-1 * time.Now().Add(-2*time.Minute).UnixNano())
 	to := 0.0
 	cfg := &idx.SearchCfg{
@@ -190,7 +212,7 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 		Limit: 100000,
 	}
 
-	items, err := ingest.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
 	if err != nil {
 		log.Println("[AUDIT] Search negative scores error:", err)
 		return
@@ -217,10 +239,10 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 
 			// Check if transaction exists in BeefStorage
 			txidHash, _ := chainhash.NewHashFromHex(txid)
-			_, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			_, err := ing.beefStorage.LoadTx(ctx, txidHash)
 			if errors.Is(err, beef.ErrNotFound) {
 				log.Println("Archive Missing", txid)
-				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+				if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Delog error for %s: %v", txid, err)
 				}
 				return
@@ -230,7 +252,7 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 			}
 
 			// Check if Arc has the transaction
-			status, err := arc.Status(txid)
+			status, err := ing.arc.Status(txid)
 			if err != nil {
 				log.Printf("Arc status check error for %s: %v", txid, err)
 				return
@@ -240,14 +262,14 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 				// Arc doesn't have it - remove from PendingTxLog
 				// Could consider rebroadcasting in the future
 				log.Println("Removing unconfirmed tx:", txid)
-				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+				if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Error removing %s from PendingTxLog: %v", txid, err)
 				}
 			} else if status.Status == 200 {
 				// Arc has it - publish to Redis, Arc callback listener will handle ingestion
 				if jsonData, err := json.Marshal(status); err != nil {
 					log.Printf("Error marshaling Arc status for %s: %v", txid, err)
-				} else if err := config.PubSub.Publish(ctx, "arc", string(jsonData)); err != nil {
+				} else if err := ing.pubsub.Publish(ctx, "arc", string(jsonData)); err != nil {
 					log.Printf("Error publishing Arc status for %s: %v", txid, err)
 				}
 			}
@@ -255,16 +277,16 @@ func auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan s
 	}
 }
 
-func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
+func (ing *Ingester) auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
 	from := 0.0
 	cfg := &idx.SearchCfg{
 		Keys:  []string{idx.PendingTxLog},
 		From:  &from,
-		To:    &immutableScore,
+		To:    &ing.immutableScore,
 		Limit: 100000,
 	}
 
-	items, err := ingest.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
 	if err != nil {
 		log.Println("[AUDIT] Search mined txs error:", err)
 		return
@@ -291,17 +313,17 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 
 			// Load transaction with MerklePath
 			txidHash, _ := chainhash.NewHashFromHex(txid)
-			tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			tx, err := ing.beefStorage.LoadTx(ctx, txidHash)
 			if errors.Is(err, beef.ErrNotFound) {
 				// Transaction was supposedly mined >10 blocks ago but doesn't exist
 				// This is a reorg victim - rollback
 				if rollback {
 					log.Printf("Rolling back missing mined tx (>10 blocks): %s", txid)
-					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+					if err := ing.ingestCtx.Store.Rollback(ctx, txid); err != nil {
 						log.Printf("Rollback error for %s: %v", txid, err)
 						return
 					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+					if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
 						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
 					}
 				} else {
@@ -323,7 +345,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 					log.Printf("ComputeRoot error for %s: %v", txid, err)
 					return
 				}
-				valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
+				valid, err = ing.chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 				if err != nil {
 					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
 					return
@@ -332,7 +354,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 
 			// If not present or not valid, try Arc
 			if !valid {
-				status, err := arc.Status(txid)
+				status, err := ing.arc.Status(txid)
 				if err != nil {
 					log.Printf("Arc status error for %s: %v", txid, err)
 					return
@@ -348,7 +370,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
 						return
 					}
-					valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
+					valid, err = ing.chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 					if err != nil {
 						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
 						return
@@ -362,11 +384,11 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 			if !valid {
 				if rollback {
 					log.Printf("Rolling back reorg victim (>10 blocks): %s", txid)
-					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+					if err := ing.ingestCtx.Store.Rollback(ctx, txid); err != nil {
 						log.Printf("Rollback error for %s: %v", txid, err)
 						return
 					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+					if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
 						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
 					}
 				} else {
@@ -377,20 +399,20 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 
 			// Re-ingest to recalculate score from MerklePath
 			log.Printf("Re-ingesting mined tx: %s", txid)
-			if _, err := ingest.IngestTx(ctx, tx); err != nil {
+			if _, err := ing.ingestCtx.IngestTx(ctx, tx); err != nil {
 				log.Printf("IngestTx error for %s: %v", txid, err)
 				return
 			}
 
 			// Check if transaction is now immutable (>10 blocks deep)
 			newScore := idx.HeightScore(tx.MerklePath.BlockHeight, 0)
-			if newScore < immutableScore {
+			if newScore < ing.immutableScore {
 				log.Printf("Archiving immutable tx: %s", txid)
-				if err := ingest.Store.Log(ctx, idx.ImmutableTxLog, txid, newScore); err != nil {
+				if err := ing.ingestCtx.Store.Log(ctx, idx.ImmutableTxLog, txid, newScore); err != nil {
 					log.Printf("Log to ImmutableTxLog error for %s: %v", txid, err)
 					return
 				}
-				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+				if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Delog from PendingTxLog error for %s: %v", txid, err)
 				}
 			}
@@ -398,7 +420,7 @@ func auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGro
 	}
 }
 
-func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
+func (ing *Ingester) auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
 	// Get mempool transactions older than 2 minutes
 	to := float64(time.Now().Add(-2 * time.Minute).UnixNano())
 	cfg := &idx.SearchCfg{
@@ -408,7 +430,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 		Limit: 100000,
 	}
 
-	items, err := ingest.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
 	if err != nil {
 		log.Println("[AUDIT] Search mempool txs error:", err)
 		return
@@ -440,7 +462,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 
 			// Load transaction with proof
 			txidHash, _ := chainhash.NewHashFromHex(txid)
-			tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+			tx, err := ing.beefStorage.LoadTx(ctx, txidHash)
 			if errors.Is(err, beef.ErrNotFound) {
 				// Transaction doesn't exist in BeefStorage
 				// All transactions here are >2min old (filtered by query)
@@ -448,11 +470,11 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 					// >3hr old: Rollback if flag enabled
 					if rollback {
 						log.Printf("Rolling back missing mempool tx (age: %v): %s", age.Round(time.Second), txid)
-						if err := ingest.Store.Rollback(ctx, txid); err != nil {
+						if err := ing.ingestCtx.Store.Rollback(ctx, txid); err != nil {
 							log.Printf("Rollback error for %s: %v", txid, err)
 							return
 						}
-						if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+						if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
 							log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
 						}
 					} else {
@@ -461,7 +483,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 				} else {
 					// 2min-3hr old: Delog from queue (transaction must exist if >2min)
 					log.Printf("Removing missing mempool tx (age: %v) from queue: %s", age.Round(time.Second), txid)
-					if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+					if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 						log.Printf("Delog error for %s: %v", txid, err)
 					}
 				}
@@ -480,7 +502,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 					log.Printf("ComputeRoot error for %s: %v", txid, err)
 					return
 				}
-				valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
+				valid, err = ing.chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 				if err != nil {
 					log.Printf("IsValidRootForHeight error for %s: %v", txid, err)
 					return
@@ -489,7 +511,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 
 			// If not present or not valid, try Arc
 			if !valid {
-				status, err := arc.Status(txid)
+				status, err := ing.arc.Status(txid)
 				if err != nil {
 					log.Printf("Arc status error for %s: %v", txid, err)
 					return
@@ -505,7 +527,7 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 						log.Printf("ComputeRoot error for Arc MerklePath %s: %v", txid, err)
 						return
 					}
-					valid, err = config.Chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
+					valid, err = ing.chaintracks.IsValidRootForHeight(ctx, root, tx.MerklePath.BlockHeight)
 					if err != nil {
 						log.Printf("IsValidRootForHeight error for Arc MerklePath %s: %v", txid, err)
 						return
@@ -519,11 +541,11 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 			if !valid {
 				if rollback {
 					log.Printf("Rolling back old mempool tx (>%v): %s", OldMempoolTimeout, txid)
-					if err := ingest.Store.Rollback(ctx, txid); err != nil {
+					if err := ing.ingestCtx.Store.Rollback(ctx, txid); err != nil {
 						log.Printf("Rollback error for %s: %v", txid, err)
 						return
 					}
-					if err := ingest.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
+					if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txid, score); err != nil {
 						log.Printf("Log to RollbackTxLog error for %s: %v", txid, err)
 					}
 				} else {
@@ -534,20 +556,20 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 
 			// Re-ingest with MerklePath
 			log.Printf("Re-ingesting old mempool tx: %s", txid)
-			if _, err := ingest.IngestTx(ctx, tx); err != nil {
+			if _, err := ing.ingestCtx.IngestTx(ctx, tx); err != nil {
 				log.Printf("IngestTx error for %s: %v", txid, err)
 				return
 			}
 
 			// Check if now immutable
 			newScore := idx.HeightScore(tx.MerklePath.BlockHeight, 0)
-			if newScore < immutableScore {
+			if newScore < ing.immutableScore {
 				log.Printf("Archiving immutable tx: %s", txid)
-				if err := ingest.Store.Log(ctx, idx.ImmutableTxLog, txid, newScore); err != nil {
+				if err := ing.ingestCtx.Store.Log(ctx, idx.ImmutableTxLog, txid, newScore); err != nil {
 					log.Printf("Log to ImmutableTxLog error for %s: %v", txid, err)
 					return
 				}
-				if err := ingest.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
+				if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Delog from PendingTxLog error for %s: %v", txid, err)
 				}
 			}
@@ -555,7 +577,8 @@ func auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limite
 	}
 }
 
-func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
+func (ing *Ingester) processQueue(ctx context.Context) {
+	cfg := ing.ingestCtx
 	limiter := make(chan struct{}, cfg.Concurrency)
 	errChan := make(chan error)
 	done := make(chan string)
@@ -628,7 +651,7 @@ func processQueue(ctx context.Context, cfg *idx.IngestCtx) {
 								done <- txid
 							}()
 							txidHash, _ := chainhash.NewHashFromHex(txid)
-							tx, err := config.BeefStorage.LoadTx(ctx, txidHash)
+							tx, err := ing.beefStorage.LoadTx(ctx, txidHash)
 							if errors.Is(err, beef.ErrNotFound) {
 								// Transaction not found in BeefStorage - remove from queue
 								log.Printf("[QUEUE] Transaction not found, removing from queue: %s", txid)

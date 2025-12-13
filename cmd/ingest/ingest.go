@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/ingest"
@@ -35,25 +34,37 @@ func main() {
 
 	ctx := context.Background()
 
-	// Setup Redis client for event publishing
-	var redisClient *redis.Client
-	if opts, err := redis.ParseURL(os.Getenv("REDISEVT")); err != nil {
-		log.Printf("Error parsing REDISEVT URL: %v", err)
-	} else {
-		redisClient = redis.NewClient(opts)
+	// Load and initialize services
+	cfg, err := config.Load()
+	if err != nil {
+		log.Panic("Failed to load config:", err)
+	}
+
+	services, err := cfg.Initialize(ctx, nil)
+	if err != nil {
+		log.Panic("Failed to initialize services:", err)
 	}
 
 	ingestCtx := &idx.IngestCtx{
 		Tag:         TAG,
 		Key:         idx.QueueKey(QUEUE),
-		Indexers:    config.Indexers,
-		Network:     config.Network,
+		Indexers:    services.Indexers,
+		Network:     services.Network,
 		Concurrency: CONCURRENCY,
-		Store:       config.Store,
+		Store:       services.Store,
 		PageSize:    1000,
 		Verbose:     VERBOSE > 0,
 	}
 
+	// Create the ingester with dependencies
+	ingester := ingest.NewIngester(
+		ingestCtx,
+		services.Broadcaster,
+		services.Chaintracks,
+		services.BeefStorage,
+		services.PubSub,
+	)
+
 	// Start the ingest service with queue processing, Arc callbacks, and audits
-	ingest.Start(ctx, ingestCtx, config.Broadcaster, redisClient, ROLLBACK)
+	ingester.Start(ctx, ROLLBACK)
 }
