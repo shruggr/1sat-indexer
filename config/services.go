@@ -6,14 +6,19 @@ import (
 	"log/slog"
 	"path"
 
+	"github.com/b-open-io/bsv21-overlay/lookups"
 	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/overlay/beef"
+	overlayconfig "github.com/b-open-io/overlay/config"
 	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/queue"
+	"github.com/b-open-io/overlay/storage"
+	"github.com/b-open-io/overlay/topics"
 	arcadeconfig "github.com/bsv-blockchain/arcade/config"
 	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	p2p "github.com/bsv-blockchain/go-teranode-p2p-client"
+	ordfsconfig "github.com/shruggr/go-ordfs-server/config"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
@@ -56,6 +61,14 @@ type Services struct {
 
 	// ArcadeServices holds arcade-related services (when using embedded arcade)
 	ArcadeServices *arcadeconfig.Services
+
+	// ORDFSServices holds ordfs-specific services (loader, cache)
+	ORDFSServices *ordfsconfig.Services
+
+	// BSV21 services
+	BSV21Storage      *storage.EventDataStorage
+	BSV21Lookup       *lookups.Bsv21EventsLookup
+	BSV21ActiveTopics *topics.ActiveTopics
 
 	// Logger for the services
 	Logger *slog.Logger
@@ -148,12 +161,52 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 		return nil, fmt.Errorf("failed to initialize arcade: %w", err)
 	}
 
+	// Initialize ORDFS (shares Chaintracks, Redis from its own config)
+	// Only initialize if Redis URL is configured
+	if c.Ordfs.Redis.URL != "" {
+		logger.Info("Initializing ORDFS services")
+		services.ORDFSServices, err = c.Ordfs.Initialize(ctx, services.Chaintracks, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize ordfs: %w", err)
+		}
+		logger.Info("Initialized ORDFS services")
+	}
+
 	// Initialize BEEF storage
 	services.BeefStorage, err = beef.NewStorage(c.Beef.URL, services.Chaintracks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize beef storage: %w", err)
 	}
 	logger.Info("Initialized BEEF storage", slog.String("url", c.Beef.URL))
+
+	// Initialize BSV21 services if enabled
+	if c.BSV21.Enabled {
+		logger.Info("Initializing BSV21 services")
+
+		// Create BSV21 EventDataStorage - shares QueueStorage and PubSub with main indexer
+		services.BSV21Storage, err = overlayconfig.CreateEventStorage(
+			c.BSV21.EventsURL,
+			services.BeefStorage,
+			c.Store.SQLite, // Reuse same queue storage URL
+			c.PubSub.URL,
+			services.Chaintracks,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize BSV21 storage: %w", err)
+		}
+		logger.Info("Initialized BSV21 event storage", slog.String("url", c.BSV21.EventsURL))
+
+		// Create BSV21 lookup service
+		services.BSV21Lookup, err = lookups.NewBsv21EventsLookup(services.BSV21Storage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize BSV21 lookup: %w", err)
+		}
+		logger.Info("Initialized BSV21 lookup service")
+
+		// Create ActiveTopics cache (refresh starts when routes are registered)
+		services.BSV21ActiveTopics = topics.NewActiveTopics()
+		logger.Info("Initialized BSV21 ActiveTopics cache")
+	}
 
 	// Initialize ARC broadcaster
 	if c.Arc.URL != "" {
@@ -195,6 +248,20 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 
 // Close gracefully shuts down all services.
 func (s *Services) Close() error {
+	// Close ORDFS services if we created them
+	if s.ORDFSServices != nil {
+		if err := s.ORDFSServices.Close(); err != nil {
+			return err
+		}
+	}
+
+	// Close BSV21 storage if we created it
+	if s.BSV21Storage != nil {
+		if err := s.BSV21Storage.Close(); err != nil {
+			return err
+		}
+	}
+
 	// Close arcade services if we created them
 	// Note: arcade Services doesn't have a Close method yet, but we should add cleanup here
 	return nil

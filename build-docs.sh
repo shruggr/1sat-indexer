@@ -10,7 +10,7 @@ if [ ! -f "$SWAG" ]; then
 fi
 
 echo "Generating Swagger documentation..."
-$SWAG init -g server/server.go -o docs
+$SWAG init -g server/server.go -o docs --parseDependencyLevel 3 --parseGoList
 
 echo "✓ Swagger documentation generated successfully"
 echo "  - docs/swagger.json"

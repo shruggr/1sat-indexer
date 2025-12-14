@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	bsv21routes "github.com/b-open-io/bsv21-overlay/routes"
 	"github.com/b-open-io/overlay/queue"
 	"github.com/b-open-io/overlay/routes"
 	arcaderoutes "github.com/bsv-blockchain/arcade/routes/fiber"
@@ -14,17 +15,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/shruggr/1sat-indexer/v5/broadcast"
 	"github.com/shruggr/1sat-indexer/v5/config"
 	"github.com/shruggr/1sat-indexer/v5/idx"
-	"github.com/shruggr/1sat-indexer/v5/server/routes/blocks"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/evt"
-	"github.com/shruggr/1sat-indexer/v5/server/routes/origins"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/own"
-	"github.com/shruggr/1sat-indexer/v5/server/routes/spend"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tag"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/tx"
 	"github.com/shruggr/1sat-indexer/v5/server/routes/txos"
+	ordfsapi "github.com/shruggr/go-ordfs-server/api"
 
 	_ "github.com/shruggr/1sat-indexer/v5/docs"
 )
@@ -60,47 +58,22 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 		return c.SendString("yo")
 	})
 
-	v5 := app.Group("/v5")
-
-	// Create and register controllers
-	blocksCtrl := blocks.NewBlocksController(services.Chaintracks)
-	blocksCtrl.RegisterRoutes(v5.Group("/blocks"))
-
-	evt.RegisterRoutes(v5.Group("/evt"), ingestCtx)
-	origins.RegisterRoutes(v5.Group("/origins"), ingestCtx)
-	own.RegisterRoutes(v5.Group("/own"), ingestCtx, services.JungleBus)
-	tag.RegisterRoutes(v5.Group("/tag"), ingestCtx)
-
-	txCtrl := tx.NewTxController(
-		ingestCtx,
-		services.Broadcaster,
-		services.BeefStorage,
-		services.Chaintracks,
-		services.PubSub,
-		services.JungleBus,
-	)
-	txCtrl.RegisterRoutes(v5.Group("/tx"))
-
-	txos.RegisterRoutes(v5.Group("/txo"), ingestCtx)
-	spend.RegisterRoutes(v5.Group("/spends"), ingestCtx)
-
-	// Register SSE routes using overlay's implementation
-	routes.RegisterSSERoutes(v5, &routes.SSERoutesConfig{
-		SSEManager: services.SSEManager,
-		Catchup: func(ctx context.Context, keys []string, fromScore float64) ([]queue.ScoredMember, error) {
-			return ingestCtx.Store.Search(ctx, &idx.SearchCfg{Keys: keys, From: &fromScore})
-		},
-		Context: context.Background(),
-	})
-
-	// Register chaintracks routes under /chaintracks/
+	// Register chaintracks routes under /block/
 	if services != nil && services.Chaintracks != nil {
 		ctRoutes := ctroutes.NewRoutes(services.Chaintracks)
-		ctRoutes.Register(app.Group("/chaintracks"))
-		log.Println("Registered /chaintracks/ routes")
+		ctRoutes.Register(app.Group("/block"))
+		log.Println("Registered /block/* routes")
 	}
 
-	// Register arcade routes under /arcade/
+	// Register overlay tx routes under /tx/
+	if services != nil && services.BeefStorage != nil {
+		routes.RegisterTxRoutes(app.Group("/tx"), &routes.TxRoutesConfig{
+			BeefStorage: services.BeefStorage,
+		})
+		log.Println("Registered /tx/* routes")
+	}
+
+	// Register arcade routes under /arc/
 	if services != nil && services.ArcadeServices != nil {
 		arcadeRoutes := arcaderoutes.NewRoutes(arcaderoutes.Config{
 			StatusStore:     services.ArcadeServices.StatusStore,
@@ -111,8 +84,65 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 			TxValidator:     services.ArcadeServices.Validator,
 			Logger:          services.Logger,
 		})
-		arcadeRoutes.Register(app.Group("/arcade"))
-		log.Println("Registered /arcade/ routes")
+		arcadeRoutes.Register(app.Group("/arc"))
+		log.Println("Registered /arc/* routes")
+	}
+
+	// Register 1sat indexer routes (no version prefix)
+	evt.RegisterRoutes(app.Group("/evt"), ingestCtx)
+	own.RegisterRoutes(app.Group("/owner"), ingestCtx, services.JungleBus)
+	tag.RegisterRoutes(app.Group("/tag"), ingestCtx)
+	txos.RegisterRoutes(app.Group("/txo"), ingestCtx)
+
+	// Register tx controller routes for indexer-specific tx operations
+	txCtrl := tx.NewTxController(
+		ingestCtx,
+		services.Broadcaster,
+		services.BeefStorage,
+		services.Chaintracks,
+		services.PubSub,
+		services.JungleBus,
+	)
+	txCtrl.RegisterRoutes(app.Group("/idx"))
+
+	// Standalone callback route for ARC webhooks
+	app.Post("/callback", txCtrl.TxCallback)
+
+	// Register SSE routes
+	routes.RegisterSSERoutes(app.Group("/sse"), &routes.SSERoutesConfig{
+		SSEManager: services.SSEManager,
+		Catchup: func(ctx context.Context, keys []string, fromScore float64) ([]queue.ScoredMember, error) {
+			return ingestCtx.Store.Search(ctx, &idx.SearchCfg{Keys: keys, From: &fromScore})
+		},
+		Context: context.Background(),
+	})
+
+	// Register ORDFS routes
+	if services != nil && services.ORDFSServices != nil {
+		// Content routes at root for proper content serving
+		if err := ordfsapi.RegisterContentRoutes(app, services.ORDFSServices); err != nil {
+			log.Printf("Failed to register ORDFS content routes: %v", err)
+		} else {
+			log.Println("Registered /content/* routes at root")
+		}
+
+		// API routes under /ordfs/
+		if err := ordfsapi.RegisterAPIRoutes(app.Group("/ordfs"), services.ORDFSServices); err != nil {
+			log.Printf("Failed to register ORDFS API routes: %v", err)
+		} else {
+			log.Println("Registered /ordfs/* API routes")
+		}
+	}
+
+	// Register BSV21 routes
+	if services != nil && services.BSV21Storage != nil {
+		bsv21routes.RegisterBSV21Routes(app.Group("/bsv21"), &bsv21routes.BSV21RoutesConfig{
+			Storage:      services.BSV21Storage,
+			ChainTracker: services.Chaintracks,
+			ActiveTopics: services.BSV21ActiveTopics,
+			BSV21Lookup:  services.BSV21Lookup,
+		})
+		log.Println("Registered /bsv21/* routes")
 	}
 
 	// Get current working directory
@@ -164,13 +194,6 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
 	})
-
-	// Broadcast status listener for ARC callbacks
-	go func() {
-		listener := broadcast.InitListener(services.PubSub)
-		ctx := context.Background()
-		listener.Start(ctx)
-	}()
 
 	return app
 }

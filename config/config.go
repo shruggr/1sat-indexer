@@ -9,6 +9,7 @@ import (
 	arcadeconfig "github.com/bsv-blockchain/arcade/config"
 	chaintracksconfig "github.com/bsv-blockchain/go-chaintracks/config"
 	p2p "github.com/bsv-blockchain/go-teranode-p2p-client"
+	ordfsconfig "github.com/shruggr/go-ordfs-server/config"
 	"github.com/spf13/viper"
 )
 
@@ -62,6 +63,15 @@ type Config struct {
 
 	// Arcade configuration (receives Chaintracks instance)
 	Arcade arcadeconfig.Config `mapstructure:"arcade"`
+
+	// ORDFS configuration (optional - enables content serving)
+	Ordfs ordfsconfig.Config `mapstructure:"ordfs"`
+
+	// BSV21 configuration (optional - enables BSV21 token routes)
+	BSV21 struct {
+		Enabled   bool   `mapstructure:"enabled"`
+		EventsURL string `mapstructure:"events_url"` // SQLite/PostgreSQL/MongoDB URL for BSV21 events
+	} `mapstructure:"bsv21"`
 }
 
 // SetDefaults sets viper defaults for indexer configuration.
@@ -100,6 +110,13 @@ func (c *Config) SetDefaults(v *viper.Viper, prefix string) {
 
 	// Cascade to arcade defaults
 	c.Arcade.SetDefaults(v, p+"arcade")
+
+	// Cascade to ORDFS defaults
+	c.Ordfs.SetDefaults(v, p+"ordfs")
+
+	// BSV21 defaults (disabled by default)
+	v.SetDefault(p+"bsv21.enabled", false)
+	v.SetDefault(p+"bsv21.events_url", "~/.1sat/bsv21.db")
 }
 
 // Load reads configuration from file and environment variables.
@@ -145,6 +162,7 @@ func Load() (*Config, error) {
 	// Expand ~ in paths
 	cfg.Store.SQLite = expandPath(cfg.Store.SQLite)
 	cfg.Beef.URL = expandBeefPath(cfg.Beef.URL)
+	cfg.BSV21.EventsURL = expandPath(cfg.BSV21.EventsURL)
 
 	return cfg, nil
 }

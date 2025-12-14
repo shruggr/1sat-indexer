@@ -3,21 +3,22 @@ module github.com/shruggr/1sat-indexer/v5
 go 1.25.4
 
 require (
+	github.com/b-open-io/bsv21-overlay v0.0.0-00010101000000-000000000000
 	github.com/b-open-io/go-junglebus v0.3.4
-	github.com/b-open-io/overlay v0.0.0-00010101000000-000000000000
+	github.com/b-open-io/overlay v0.3.1-0.20251205200121-14fac8e4c21c
 	github.com/bsv-blockchain/arcade v0.0.0-00010101000000-000000000000
-	github.com/bsv-blockchain/go-chaintracks v0.0.0
+	github.com/bsv-blockchain/go-chaintracks v1.0.2
 	github.com/bsv-blockchain/go-sdk v1.2.13
 	github.com/bsv-blockchain/go-teranode-p2p-client v0.0.0
 	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/joho/godotenv v1.6.0-pre.2
+	github.com/shruggr/go-ordfs-server v0.0.0-20251113073713-22448b1e7f5d
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
 )
 
 require (
-	github.com/GorillaPool/go-junglebus v0.2.14 // indirect
 	github.com/IBM/sarama v1.45.1 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/aerospike/aerospike-client-go/v8 v8.4.2 // indirect
@@ -44,6 +45,7 @@ require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitcoin-sv/go-sdk v1.1.21 // indirect
+	github.com/bitcoin-sv/go-templates v0.0.0-00010101000000-000000000000 // indirect
 	github.com/bsv-blockchain/go-batcher v1.2.5 // indirect
 	github.com/bsv-blockchain/go-bt/v2 v2.5.1 // indirect
 	github.com/bsv-blockchain/go-chaincfg v1.4.0 // indirect
@@ -66,6 +68,8 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/dgraph-io/badger/v4 v4.8.0 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/dolthub/swiss v0.2.1 // indirect
@@ -93,9 +97,11 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/gofiber/swagger v1.1.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
@@ -221,7 +227,7 @@ require (
 	github.com/quic-go/quic-go v0.55.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
-	github.com/redis/go-redis/v9 v9.12.1 // indirect
+	github.com/redis/go-redis/v9 v9.16.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -236,6 +242,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/urfave/cli/v2 v2.27.7 // indirect
@@ -322,3 +329,9 @@ replace github.com/bsv-blockchain/go-overlay-services => github.com/bsv-blockcha
 replace github.com/b-open-io/overlay => ../overlay
 
 replace github.com/b-open-io/go-junglebus => ../go-junglebus
+
+replace github.com/shruggr/go-ordfs-server => ../go-ordfs-server
+
+replace github.com/bitcoin-sv/go-templates => github.com/b-open-io/go-templates v0.0.0-20251105170419-229170a11f26
+
+replace github.com/b-open-io/bsv21-overlay => ../bsv21-overlay

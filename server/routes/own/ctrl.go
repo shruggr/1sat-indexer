@@ -32,7 +32,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, jungleBus *jungleb
 // @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/own/{owner}/txos [get]
+// @Router /owner/{owner}/txos [get]
 func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
@@ -80,7 +80,7 @@ func OwnerTxos(c *fiber.Ctx) error {
 // @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/own/{owner}/utxos [get]
+// @Router /owner/{owner}/utxos [get]
 func OwnerUtxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
@@ -129,7 +129,7 @@ func OwnerUtxos(c *fiber.Ctx) error {
 // @Param owner path string true "Owner identifier (address, pubkey, or script hash)"
 // @Success 200 {object} object "Balance information"
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/own/{owner}/balance [get]
+// @Router /owner/{owner}/balance [get]
 func OwnerBalance(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	// TODO: Phase 3.6 - Use EventDataStorage with JoinTypeDifference (own - osp)
@@ -183,7 +183,7 @@ type SyncOutput struct {
 // @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {object} SyncResponse
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/own/{owner}/sync [get]
+// @Router /owner/{owner}/sync [get]
 func OwnerSync(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 	from := c.QueryFloat("from", 0)

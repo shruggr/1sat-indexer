@@ -1,36 +1,109 @@
 basePath: /
 definitions:
-  blk.BlockHeaderResponse:
+  chaintracks.BlockHeader:
     properties:
       bits:
-        type: integer
-      creationTimestamp:
+        description: 4 bytes - Difficulty target
         type: integer
       hash:
-        type: string
+        items:
+          type: integer
+        type: array
       height:
+        description: Block height in the chain
         type: integer
       merkleRoot:
-        type: string
+        description: 32 bytes - Merkle root hash
+        items:
+          type: integer
+        type: array
       nonce:
+        description: 4 bytes - Nonce
         type: integer
-      prevBlockHash:
-        type: string
+      previousHash:
+        description: 32 bytes - Previous block hash
+        items:
+          type: integer
+        type: array
+      time:
+        description: 4 bytes - Block timestamp (Unix time)
+        type: integer
       version:
+        description: 4 bytes - Block version
         type: integer
     type: object
-  broadcast.BroadcastResponse:
+  fiber.ErrorResponse:
     properties:
       error:
-        type: string
-      status:
-        type: integer
-      success:
-        type: boolean
-      txid:
+        example: Header not found
         type: string
     type: object
-  evt.Event:
+  fiber.FeeAmount:
+    properties:
+      bytes:
+        type: integer
+      satoshis:
+        type: integer
+    type: object
+  fiber.HealthResponse:
+    properties:
+      healthy:
+        type: boolean
+      reason:
+        type: string
+      version:
+        type: string
+    type: object
+  fiber.HeightResponse:
+    properties:
+      height:
+        example: 874123
+        type: integer
+    type: object
+  fiber.NetworkResponse:
+    properties:
+      network:
+        example: mainnet
+        type: string
+    type: object
+  fiber.PolicyResponse:
+    properties:
+      maxscriptsizepolicy:
+        type: integer
+      maxtxsigopscountspolicy:
+        type: integer
+      maxtxsizepolicy:
+        type: integer
+      miningFee:
+        $ref: '#/definitions/fiber.FeeAmount'
+    type: object
+  fiber.TransactionRequest:
+    properties:
+      rawTx:
+        example: 0100000001...
+        type: string
+    type: object
+  github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncOutput:
+    properties:
+      outpoint:
+        type: string
+      score:
+        type: number
+      spendTxid:
+        type: string
+    type: object
+  github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncResponse:
+    properties:
+      done:
+        type: boolean
+      nextScore:
+        type: number
+      outputs:
+        items:
+          $ref: '#/definitions/github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncOutput'
+        type: array
+    type: object
+  idx.Event:
     properties:
       id:
         type: string
@@ -67,7 +140,7 @@ definitions:
         type: array
       events:
         items:
-          $ref: '#/definitions/evt.Event'
+          $ref: '#/definitions/idx.Event'
         type: array
     type: object
   idx.Txo:
@@ -103,6 +176,77 @@ definitions:
       spend:
         type: string
     type: object
+  models.Status:
+    enum:
+    - UNKNOWN
+    - RECEIVED
+    - SENT_TO_NETWORK
+    - ACCEPTED_BY_NETWORK
+    - SEEN_ON_NETWORK
+    - DOUBLE_SPEND_ATTEMPTED
+    - REJECTED
+    - MINED
+    - IMMUTABLE
+    type: string
+    x-enum-varnames:
+    - StatusUnknown
+    - StatusReceived
+    - StatusSentToNetwork
+    - StatusAcceptedByNetwork
+    - StatusSeenOnNetwork
+    - StatusDoubleSpendAttempted
+    - StatusRejected
+    - StatusMined
+    - StatusImmutable
+  models.TransactionStatus:
+    properties:
+      blockHash:
+        type: string
+      blockHeight:
+        type: integer
+      competingTxs:
+        items:
+          type: string
+        type: array
+      extraInfo:
+        type: string
+      merklePath:
+        items:
+          type: integer
+        type: array
+      timestamp:
+        type: string
+      txStatus:
+        $ref: '#/definitions/models.Status'
+      txid:
+        type: string
+    type: object
+  routes.ErrorResponse:
+    properties:
+      message:
+        example: An error occurred
+        type: string
+    type: object
+  server_routes_own.SyncOutput:
+    properties:
+      outpoint:
+        type: string
+      score:
+        type: number
+      spendTxid:
+        type: string
+    type: object
+  server_routes_own.SyncResponse:
+    properties:
+      done:
+        type: boolean
+      nextScore:
+        type: number
+      outputs:
+        items:
+          $ref: '#/definitions/server_routes_own.SyncOutput'
+        type: array
+    type: object
 info:
   contact:
     name: API Support
@@ -116,296 +260,186 @@ info:
   title: 1Sat Indexer API
   version: "5.0"
 paths:
-  /v5/acct/{account}:
+  /arc/events/{callbackToken}:
     get:
-      description: Get transaction activity for an account
+      description: Server-Sent Events stream of transaction status updates for transactions
+        associated with the callback token
       parameters:
-      - description: Account name
+      - description: Callback token from transaction submission
         in: path
-        name: account
+        name: callbackToken
         required: true
         type: string
-      - description: Starting score for pagination (query param)
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of transaction status updates
+          schema:
+            type: string
+      summary: Stream transaction events
+      tags:
+      - transactions
+  /arc/health:
+    get:
+      description: Returns the health status of the service
       produces:
       - application/json
       responses:
         "200":
-          description: Transaction activity
+          description: OK
           schema:
-            items:
-              type: object
-            type: array
-        "404":
-          description: Account not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get account activity
+            $ref: '#/definitions/fiber.HealthResponse'
+      summary: Health check
       tags:
-      - accounts
-    put:
+      - info
+  /arc/policy:
+    get:
+      description: Returns the transaction policy configuration including fee rates
+        and limits
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fiber.PolicyResponse'
+      summary: Get policy
+      tags:
+      - info
+  /arc/tx:
+    post:
       consumes:
       - application/json
-      description: Register or update an account with associated owner identifiers
+      - application/octet-stream
+      - text/plain
+      description: Submit a single transaction for broadcast. Accepts raw transaction
+        bytes, hex string, or JSON with rawTx field.
       parameters:
-      - description: Account name
+      - description: Transaction data
+        in: body
+        name: transaction
+        required: true
+        schema:
+          $ref: '#/definitions/fiber.TransactionRequest'
+      - description: URL for status callbacks
+        in: header
+        name: X-CallbackUrl
+        type: string
+      - description: Token for SSE event filtering
+        in: header
+        name: X-CallbackToken
+        type: string
+      - description: Send all status updates (true/false)
+        in: header
+        name: X-FullStatusUpdates
+        type: string
+      - description: Skip fee validation (true/false)
+        in: header
+        name: X-SkipFeeValidation
+        type: string
+      - description: Skip script validation (true/false)
+        in: header
+        name: X-SkipScriptValidation
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.TransactionStatus'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Submit transaction
+      tags:
+      - transactions
+  /arc/tx/{txid}:
+    get:
+      description: Get the current status of a submitted transaction
+      parameters:
+      - description: Transaction ID
         in: path
-        name: account
+        name: txid
         required: true
         type: string
-      - description: Array of owner identifiers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.TransactionStatus'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get transaction status
+      tags:
+      - transactions
+  /arc/txs:
+    post:
+      consumes:
+      - application/json
+      description: Submit multiple transactions for broadcast
+      parameters:
+      - description: Array of transactions
         in: body
-        name: owners
+        name: transactions
         required: true
         schema:
           items:
-            type: string
+            $ref: '#/definitions/fiber.TransactionRequest'
           type: array
+      - description: Skip fee validation (true/false)
+        in: header
+        name: X-SkipFeeValidation
+        type: string
+      - description: Skip script validation (true/false)
+        in: header
+        name: X-SkipScriptValidation
+        type: string
+      produces:
+      - application/json
       responses:
-        "204":
-          description: Account registered successfully
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.TransactionStatus'
+            type: array
         "400":
-          description: Invalid request
+          description: Bad Request
           schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Register account
-      tags:
-      - accounts
-  /v5/acct/{account}/{from}:
-    get:
-      description: Get transaction activity for an account
-      parameters:
-      - description: Account name
-        in: path
-        name: account
-        required: true
-        type: string
-      - description: Starting score for pagination
-        in: path
-        name: from
-        type: number
-      - description: Starting score for pagination (query param)
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Transaction activity
-          schema:
-            items:
-              type: object
-            type: array
-        "404":
-          description: Account not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get account activity
-      tags:
-      - accounts
-  /v5/acct/{account}/balance:
-    get:
-      description: Get the satoshi balance for an account
-      parameters:
-      - description: Account name
-        in: path
-        name: account
-        required: true
-        type: string
-      - description: Refresh spend data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Balance information
-          schema:
+            additionalProperties:
+              type: string
             type: object
-        "404":
-          description: Account not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get account balance
+      summary: Submit multiple transactions
       tags:
-      - accounts
-  /v5/acct/{account}/txos:
+      - transactions
+  /block/header/hash/{hash}:
     get:
-      description: Get transaction outputs for an account
+      description: Returns a block header with the specified hash
       parameters:
-      - description: Account name
-        in: path
-        name: account
-        required: true
-        type: string
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Starting score for pagination
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - default: 100
-        description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      - description: Include spend information
-        in: query
-        name: spend
-        type: boolean
-      - default: true
-        description: Filter for unspent outputs only
-        in: query
-        name: unspent
-        type: boolean
-      - description: Refresh spend data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "404":
-          description: Account not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get account TXOs
-      tags:
-      - accounts
-  /v5/acct/{account}/utxos:
-    get:
-      description: Get transaction outputs for an account
-      parameters:
-      - description: Account name
-        in: path
-        name: account
-        required: true
-        type: string
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Starting score for pagination
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - default: 100
-        description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      - description: Include spend information
-        in: query
-        name: spend
-        type: boolean
-      - default: true
-        description: Filter for unspent outputs only
-        in: query
-        name: unspent
-        type: boolean
-      - description: Refresh spend data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "404":
-          description: Account not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get account TXOs
-      tags:
-      - accounts
-  /v5/blocks/hash/{hash}:
-    get:
-      description: Get block header information by block hash
-      parameters:
-      - description: Block hash
+      - description: Block hash (hex)
         in: path
         name: hash
         required: true
@@ -416,21 +450,21 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/blk.BlockHeaderResponse'
+            $ref: '#/definitions/chaintracks.BlockHeader'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/fiber.ErrorResponse'
         "404":
-          description: Block not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get block by hash
+            $ref: '#/definitions/fiber.ErrorResponse'
+      summary: Get header by hash
       tags:
-      - blocks
-  /v5/blocks/height/{height}:
+      - chaintracks
+  /block/header/height/{height}:
     get:
-      description: Get block header information by block height
+      description: Returns a block header at the specified height
       parameters:
       - description: Block height
         in: path
@@ -443,69 +477,133 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/blk.BlockHeaderResponse'
+            $ref: '#/definitions/chaintracks.BlockHeader'
         "400":
-          description: Invalid height
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/fiber.ErrorResponse'
         "404":
-          description: Block not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get block by height
+            $ref: '#/definitions/fiber.ErrorResponse'
+      summary: Get header by height
       tags:
-      - blocks
-  /v5/blocks/list/{from}:
+      - chaintracks
+  /block/headers:
     get:
-      description: List up to 10,000 block headers starting from a given height
+      description: Returns block headers starting from height as binary data (80 bytes
+        per header)
       parameters:
       - description: Starting block height
-        in: path
-        name: from
+        in: query
+        name: height
+        required: true
+        type: integer
+      - description: Number of headers to return
+        in: query
+        name: count
         required: true
         type: integer
       produces:
-      - application/json
+      - application/octet-stream
       responses:
         "200":
-          description: OK
+          description: Concatenated 80-byte headers
           schema:
-            items:
-              $ref: '#/definitions/blk.BlockHeaderResponse'
-            type: array
+            type: string
         "400":
-          description: Invalid height
+          description: Bad Request
           schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: List blocks
+            $ref: '#/definitions/fiber.ErrorResponse'
+      summary: Get multiple headers
       tags:
-      - blocks
-  /v5/blocks/tip:
+      - chaintracks
+  /block/height:
     get:
-      description: Get the current blockchain tip (highest block)
+      description: Returns the current blockchain height
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/blk.BlockHeaderResponse'
-        "500":
-          description: Internal server error
+            $ref: '#/definitions/fiber.HeightResponse'
+      summary: Get chain height
+      tags:
+      - chaintracks
+  /block/network:
+    get:
+      description: Returns the Bitcoin network this service is connected to
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
-            type: string
+            $ref: '#/definitions/fiber.NetworkResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/fiber.ErrorResponse'
+      summary: Get network name
+      tags:
+      - chaintracks
+  /block/tip:
+    get:
+      description: Returns the current chain tip block header
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chaintracks.BlockHeader'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/fiber.ErrorResponse'
       summary: Get chain tip
       tags:
-      - blocks
-  /v5/evt/{tag}/{id}/{value}:
+      - chaintracks
+  /block/tip/stream:
+    get:
+      description: Server-Sent Events stream of chain tip updates. Sends the current
+        tip immediately, then broadcasts new tips as they arrive.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of BlockHeader JSON objects
+          schema:
+            type: string
+      summary: Stream chain tip updates
+      tags:
+      - chaintracks
+  /callback:
+    post:
+      consumes:
+      - application/json
+      description: Receive ARC broadcast status callbacks
+      parameters:
+      - description: ARC callback response
+        in: body
+        name: callback
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Invalid callback payload
+          schema:
+            type: string
+      summary: ARC transaction callback
+      tags:
+      - transactions
+  /evt/{tag}/{id}/{value}:
     get:
       description: Search for transaction outputs by event tag, id, and value
       parameters:
@@ -542,22 +640,6 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      - description: Include spend information
-        in: query
-        name: spend
-        type: boolean
-      - description: Filter for unspent outputs only
-        in: query
-        name: unspent
-        type: boolean
       produces:
       - application/json
       responses:
@@ -574,533 +656,7 @@ paths:
       summary: Get TXOs by event
       tags:
       - events
-  /v5/origins/ancestors:
-    post:
-      consumes:
-      - application/json
-      description: Get ancestors for multiple origins by outpoints
-      parameters:
-      - description: Array of origin outpoints
-        in: body
-        name: outpoints
-        required: true
-        schema:
-          items:
-            type: string
-          type: array
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "400":
-          description: Invalid request
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get ancestors for multiple origins
-      tags:
-      - origins
-  /v5/origins/ancestors/{outpoint}:
-    get:
-      description: Get ancestors of a specific origin (excluding the origin itself)
-      parameters:
-      - description: Origin outpoint
-        in: path
-        name: outpoint
-        required: true
-        type: string
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get origin ancestors
-      tags:
-      - origins
-  /v5/origins/history:
-    post:
-      consumes:
-      - application/json
-      description: Get the history for multiple origins by outpoints
-      parameters:
-      - description: Array of origin outpoints
-        in: body
-        name: outpoints
-        required: true
-        schema:
-          items:
-            type: string
-          type: array
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "400":
-          description: Invalid request
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get multiple origins history
-      tags:
-      - origins
-  /v5/origins/history/{outpoint}:
-    get:
-      description: Get the history of a specific origin by outpoint
-      parameters:
-      - description: Origin outpoint
-        in: path
-        name: outpoint
-        required: true
-        type: string
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get origin history
-      tags:
-      - origins
-  /v5/own/{owner}/balance:
-    get:
-      description: Get the satoshi balance for a specific owner
-      parameters:
-      - description: Owner identifier (address, pubkey, or script hash)
-        in: path
-        name: owner
-        required: true
-        type: string
-      - description: Refresh spend data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Balance information
-          schema:
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get owner balance
-      tags:
-      - owners
-  /v5/own/{owner}/txos:
-    get:
-      description: Get transaction outputs owned by a specific owner (address/pubkey/script
-        hash)
-      parameters:
-      - description: Owner identifier (address, pubkey, or script hash)
-        in: path
-        name: owner
-        required: true
-        type: string
-      - description: Refresh owner data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Starting score for pagination
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - default: 100
-        description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      - description: Include spend information
-        in: query
-        name: spend
-        type: boolean
-      - default: true
-        description: Filter for unspent outputs only
-        in: query
-        name: unspent
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get owner TXOs
-      tags:
-      - owners
-  /v5/own/{owner}/utxos:
-    get:
-      description: Get transaction outputs owned by a specific owner (address/pubkey/script
-        hash)
-      parameters:
-      - description: Owner identifier (address, pubkey, or script hash)
-        in: path
-        name: owner
-        required: true
-        type: string
-      - description: Refresh owner data from blockchain
-        in: query
-        name: refresh
-        type: boolean
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Starting score for pagination
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - default: 100
-        description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      - description: Include spend information
-        in: query
-        name: spend
-        type: boolean
-      - default: true
-        description: Filter for unspent outputs only
-        in: query
-        name: unspent
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get owner TXOs
-      tags:
-      - owners
-  /v5/spends:
-    post:
-      consumes:
-      - application/json
-      description: Get spend information for multiple transaction outputs
-      parameters:
-      - description: Array of outpoints
-        in: body
-        name: outpoints
-        required: true
-        schema:
-          items:
-            type: string
-          type: array
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Spend information array
-          schema:
-            items:
-              type: object
-            type: array
-        "400":
-          description: Invalid request body
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get multiple spend records
-      tags:
-      - spends
-  /v5/spends/{outpoint}:
-    get:
-      description: Get spend information for a transaction output by outpoint
-      parameters:
-      - description: Transaction outpoint (txid_vout)
-        in: path
-        name: outpoint
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Spend information
-          schema:
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get spend information
-      tags:
-      - spends
-  /v5/tag/{tag}:
-    get:
-      description: Search for transaction outputs by tag
-      parameters:
-      - description: Tag name
-        in: path
-        name: tag
-        required: true
-        type: string
-      - description: Comma-separated list of tags to include (use * for all indexed
-          tags)
-        in: query
-        name: tags
-        type: string
-      - description: Starting score for pagination
-        in: query
-        name: from
-        type: number
-      - description: Reverse order
-        in: query
-        name: rev
-        type: boolean
-      - default: 100
-        description: Maximum number of results
-        in: query
-        name: limit
-        type: integer
-      - description: Include TXO data
-        in: query
-        name: txo
-        type: boolean
-      - description: Include script data
-        in: query
-        name: script
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/idx.Txo'
-            type: array
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get TXOs by tag
-      tags:
-      - tags
-  /v5/tx:
-    post:
-      consumes:
-      - application/octet-stream
-      - text/plain
-      description: Broadcast a transaction to the BSV network
-      parameters:
-      - description: 'Transaction format: ''beef'' or standard'
-        enum:
-        - beef
-        in: query
-        name: fmt
-        type: string
-      - description: Transaction bytes (binary or hex)
-        in: body
-        name: transaction
-        required: true
-        schema:
-          type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Broadcast response
-          schema:
-            $ref: '#/definitions/broadcast.BroadcastResponse'
-        "400":
-          description: Invalid transaction
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Broadcast transaction
-      tags:
-      - transactions
-  /v5/tx/{txid}:
-    get:
-      description: Get a transaction with merkle proof if available
-      parameters:
-      - description: Transaction ID
-        in: path
-        name: txid
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: Transaction with proof
-          schema:
-            type: string
-        "404":
-          description: Transaction not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get transaction with proof
-      tags:
-      - transactions
-  /v5/tx/{txid}/beef:
-    get:
-      description: Get a transaction with dependencies in BEEF format
-      parameters:
-      - description: Transaction ID
-        in: path
-        name: txid
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: BEEF formatted transaction
-          schema:
-            type: string
-        "404":
-          description: Transaction not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get transaction in BEEF format
-      tags:
-      - transactions
-  /v5/tx/{txid}/ingest:
+  /idx/{txid}/ingest:
     post:
       description: Force ingest a transaction by txid
       parameters:
@@ -1127,7 +683,7 @@ paths:
       summary: Ingest transaction
       tags:
       - transactions
-  /v5/tx/{txid}/parse:
+  /idx/{txid}/parse:
     get:
       consumes:
       - application/octet-stream
@@ -1164,83 +720,7 @@ paths:
       summary: Parse transaction
       tags:
       - transactions
-  /v5/tx/{txid}/proof:
-    get:
-      description: Get merkle proof for a transaction
-      parameters:
-      - description: Transaction ID
-        in: path
-        name: txid
-        required: true
-        type: string
-      - default: bin
-        description: 'Output format: ''bin'', ''hex'', or ''json'''
-        enum:
-        - bin
-        - hex
-        - json
-        in: query
-        name: fmt
-        type: string
-      produces:
-      - application/octet-stream
-      - text/plain
-      - application/json
-      responses:
-        "200":
-          description: Merkle proof
-          schema:
-            type: object
-        "404":
-          description: Proof not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get merkle proof
-      tags:
-      - transactions
-  /v5/tx/{txid}/raw:
-    get:
-      description: Get raw transaction data in binary, hex, or JSON format
-      parameters:
-      - description: Transaction ID
-        in: path
-        name: txid
-        required: true
-        type: string
-      - default: bin
-        description: 'Output format: ''bin'', ''hex'', or ''json'''
-        enum:
-        - bin
-        - hex
-        - json
-        in: query
-        name: fmt
-        type: string
-      produces:
-      - application/octet-stream
-      - text/plain
-      - application/json
-      responses:
-        "200":
-          description: Raw transaction
-          schema:
-            type: string
-        "404":
-          description: Transaction not found
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      summary: Get raw transaction
-      tags:
-      - transactions
-  /v5/tx/{txid}/txos:
+  /idx/{txid}/txos:
     get:
       description: Get all transaction outputs for a specific transaction
       parameters:
@@ -1278,31 +758,7 @@ paths:
       summary: Get TXOs by transaction ID
       tags:
       - transactions
-  /v5/tx/callback:
-    post:
-      consumes:
-      - application/json
-      description: Receive ARC broadcast status callbacks
-      parameters:
-      - description: ARC callback response
-        in: body
-        name: callback
-        required: true
-        schema:
-          type: object
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Invalid callback payload
-          schema:
-            type: string
-      summary: ARC transaction callback
-      tags:
-      - transactions
-  /v5/tx/parse:
+  /idx/parse:
     post:
       consumes:
       - application/octet-stream
@@ -1335,7 +791,345 @@ paths:
       summary: Parse transaction
       tags:
       - transactions
-  /v5/txo:
+  /owner/{owner}/balance:
+    get:
+      description: Get the satoshi balance for a specific owner
+      parameters:
+      - description: Owner identifier (address, pubkey, or script hash)
+        in: path
+        name: owner
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Balance information
+          schema:
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get owner balance
+      tags:
+      - owners
+  /owner/{owner}/sync:
+    get:
+      description: Get paginated outputs for wallet synchronization. Returns a merged
+        stream of outputs and spends ordered by score. Each outpoint may appear twice
+        - once when created and once when spent. SpendTxid is populated for all outputs
+        that have been spent.
+      parameters:
+      - description: Owner identifier (address, pubkey, or script hash)
+        in: path
+        name: owner
+        required: true
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncResponse'
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Sync owner outpoints
+      tags:
+      - owners
+  /owner/{owner}/txos:
+    get:
+      description: Get transaction outputs owned by a specific owner (address/pubkey/script
+        hash)
+      parameters:
+      - description: Owner identifier (address, pubkey, or script hash)
+        in: path
+        name: owner
+        required: true
+        type: string
+      - description: Comma-separated list of tags to include (use * for all indexed
+          tags)
+        in: query
+        name: tags
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - description: Reverse order
+        in: query
+        name: rev
+        type: boolean
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/idx.Txo'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get owner TXOs
+      tags:
+      - owners
+  /owner/{owner}/utxos:
+    get:
+      description: Get unspent transaction outputs owned by a specific owner
+      parameters:
+      - description: Owner identifier (address, pubkey, or script hash)
+        in: path
+        name: owner
+        required: true
+        type: string
+      - description: Comma-separated list of tags to include (use * for all indexed
+          tags)
+        in: query
+        name: tags
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - description: Reverse order
+        in: query
+        name: rev
+        type: boolean
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/idx.Txo'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get owner UTXOs
+      tags:
+      - owners
+  /sse/subscribe/{events}:
+    get:
+      description: Server-Sent Events stream for real-time event notifications. Supports
+        resumption via Last-Event-ID header.
+      parameters:
+      - description: Comma-separated list of event topics to subscribe to
+        in: path
+        name: events
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of events
+          schema:
+            type: string
+      summary: Subscribe to events via SSE
+      tags:
+      - events
+  /tag/{tag}:
+    get:
+      description: Search for transaction outputs by tag
+      parameters:
+      - description: Tag name
+        in: path
+        name: tag
+        required: true
+        type: string
+      - description: Comma-separated list of tags to include (use * for all indexed
+          tags)
+        in: query
+        name: tags
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - description: Reverse order
+        in: query
+        name: rev
+        type: boolean
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/idx.Txo'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get TXOs by tag
+      tags:
+      - tags
+  /tx/{txid}:
+    get:
+      description: Returns the raw transaction bytes for a given transaction ID
+      parameters:
+      - description: Transaction ID (64 hex characters)
+        in: path
+        name: txid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Raw transaction bytes
+          schema:
+            type: string
+        "400":
+          description: Invalid txid format
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+      summary: Get raw transaction
+      tags:
+      - transactions
+  /tx/{txid}/{outputIndex}:
+    get:
+      description: Returns the bytes of a specific transaction output
+      parameters:
+      - description: Transaction ID (64 hex characters)
+        in: path
+        name: txid
+        required: true
+        type: string
+      - description: Output index (0-based)
+        in: path
+        name: outputIndex
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Transaction output bytes
+          schema:
+            type: string
+        "400":
+          description: Invalid txid format or output index
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "404":
+          description: Transaction or output not found
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+      summary: Get transaction output
+      tags:
+      - transactions
+  /tx/{txid}/beef:
+    get:
+      description: Returns the transaction in BEEF (Background Evaluation Extended
+        Format) format
+      parameters:
+      - description: Transaction ID (64 hex characters)
+        in: path
+        name: txid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: BEEF transaction bytes
+          schema:
+            type: string
+        "400":
+          description: Invalid txid format
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+      summary: Get BEEF transaction
+      tags:
+      - transactions
+  /tx/{txid}/proof:
+    get:
+      description: Returns the merkle proof bytes for a given transaction ID
+      parameters:
+      - description: Transaction ID (64 hex characters)
+        in: path
+        name: txid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Merkle proof bytes
+          schema:
+            type: string
+        "400":
+          description: Invalid txid format
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "404":
+          description: Proof not found
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/routes.ErrorResponse'
+      summary: Get merkle proof
+      tags:
+      - transactions
+  /txo:
     post:
       consumes:
       - application/json
@@ -1382,7 +1176,7 @@ paths:
       summary: Get multiple transaction outputs
       tags:
       - txos
-  /v5/txo/{outpoint}:
+  /txo/{outpoint}:
     get:
       description: Get a transaction output by outpoint
       parameters:
@@ -1420,6 +1214,63 @@ paths:
           schema:
             type: string
       summary: Get transaction output
+      tags:
+      - txos
+  /txo/{outpoint}/spend:
+    get:
+      description: Get spend information for a transaction output by outpoint
+      parameters:
+      - description: Transaction outpoint (txid_vout)
+        in: path
+        name: outpoint
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Spend information
+          schema:
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get spend information
+      tags:
+      - txos
+  /txo/spends:
+    post:
+      consumes:
+      - application/json
+      description: Get spend information for multiple transaction outputs
+      parameters:
+      - description: Array of outpoints
+        in: body
+        name: outpoints
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Spend information array
+          schema:
+            items:
+              type: object
+            type: array
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get multiple spend records
       tags:
       - txos
 swagger: "2.0"

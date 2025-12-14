@@ -12,7 +12,9 @@ var ingest *idx.IngestCtx
 func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 	ingest = ingestCtx
 	r.Get("/:outpoint", GetTxo)
+	r.Get("/:outpoint/spend", GetSpend)
 	r.Post("/", GetTxos)
+	r.Post("/spends", GetSpends)
 }
 
 // @Summary Get transaction output
@@ -26,7 +28,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Success 200 {object} idx.Txo
 // @Failure 404 {string} string "TXO not found"
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/txo/{outpoint} [get]
+// @Router /txo/{outpoint} [get]
 func GetTxo(c *fiber.Ctx) error {
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
@@ -54,7 +56,7 @@ func GetTxo(c *fiber.Ctx) error {
 // @Success 200 {array} idx.Txo
 // @Failure 400 {string} string "Invalid request body"
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/txo [post]
+// @Router /txo [post]
 func GetTxos(c *fiber.Ctx) error {
 	var outpoints []string
 	if err := c.BodyParser(&outpoints); err != nil {
@@ -69,5 +71,44 @@ func GetTxos(c *fiber.Ctx) error {
 	} else {
 		c.Set("Cache-Control", "public,max-age=60")
 		return c.JSON(txos)
+	}
+}
+
+// @Summary Get spend information
+// @Description Get spend information for a transaction output by outpoint
+// @Tags txos
+// @Produce json
+// @Param outpoint path string true "Transaction outpoint (txid_vout)"
+// @Success 200 {object} object "Spend information"
+// @Failure 500 {string} string "Internal server error"
+// @Router /txo/{outpoint}/spend [get]
+func GetSpend(c *fiber.Ctx) error {
+	outpoint := c.Params("outpoint")
+	if spend, err := ingest.Store.GetSpend(c.Context(), outpoint); err != nil {
+		return err
+	} else {
+		return c.JSON(spend)
+	}
+}
+
+// @Summary Get multiple spend records
+// @Description Get spend information for multiple transaction outputs
+// @Tags txos
+// @Accept json
+// @Produce json
+// @Param outpoints body []string true "Array of outpoints"
+// @Success 200 {array} object "Spend information array"
+// @Failure 400 {string} string "Invalid request body"
+// @Failure 500 {string} string "Internal server error"
+// @Router /txo/spends [post]
+func GetSpends(c *fiber.Ctx) error {
+	outpoints := []string{}
+	if err := c.BodyParser(&outpoints); err != nil {
+		return err
+	}
+	if spends, err := ingest.Store.GetSpends(c.Context(), outpoints); err != nil {
+		return err
+	} else {
+		return c.JSON(spends)
 	}
 }

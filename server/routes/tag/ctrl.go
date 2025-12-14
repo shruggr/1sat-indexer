@@ -25,7 +25,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx) {
 // @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {array} idx.Txo
 // @Failure 500 {string} string "Internal server error"
-// @Router /v5/tag/{tag} [get]
+// @Router /tag/{tag} [get]
 func TxosByTag(c *fiber.Ctx) error {
 	tags := strings.Split(c.Query("tags", ""), ",")
 	if len(tags) > 0 && tags[0] == "*" {
