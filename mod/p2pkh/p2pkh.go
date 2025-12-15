@@ -1,8 +1,6 @@
 package p2pkh
 
 import (
-	"encoding/json"
-
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -21,23 +19,11 @@ func (i *P2PKHIndexer) Tag() string {
 	return P2PKH_TAG
 }
 
-func (i *P2PKHIndexer) FromBytes(data []byte) (any, error) {
-	return P2PKHFromBytes(data)
-}
+func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	txOutput := idxCtx.Tx.Outputs[vout]
+	output := idxCtx.Outputs[vout]
 
-func P2PKHFromBytes(data []byte) (*P2PKH, error) {
-	obj := &P2PKH{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	output := idxCtx.Tx.Outputs[vout]
-	txo := idxCtx.Txos[vout]
-
-	b := []byte(*output.LockingScript)
+	b := []byte(*txOutput.LockingScript)
 	if len(b) >= 25 &&
 		b[0] == script.OpDUP &&
 		b[1] == script.OpHASH160 &&
@@ -46,17 +32,10 @@ func (i *P2PKHIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDa
 		b[24] == script.OpCHECKSIG {
 
 		if add, err := script.NewAddressFromPublicKeyHash(b[3:23], true); err == nil {
-			txo.AddOwner(add.AddressString)
-			return &idx.IndexData{
-				Data: &P2PKH{
-					Address: add.AddressString,
-				},
-				Events: []*idx.Event{
-					{
-						Id:    "own",
-						Value: add.AddressString,
-					},
-				},
+			output.AddOwnerFromAddress(add.AddressString)
+			output.AddEvent(P2PKH_TAG + ":own:" + add.AddressString)
+			return &P2PKH{
+				Address: add.AddressString,
 			}
 		}
 	}

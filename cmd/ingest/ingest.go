@@ -12,6 +12,8 @@ import (
 	"github.com/shruggr/1sat-indexer/v5/ingest"
 )
 
+const DefaultPageSize = 1000
+
 var CONCURRENCY uint
 var VERBOSE int
 var QUEUE string
@@ -52,14 +54,14 @@ func main() {
 		Network:     services.Network,
 		Concurrency: CONCURRENCY,
 		Store:       services.Store,
-		PageSize:    1000,
+		PageSize:    DefaultPageSize,
 		Verbose:     VERBOSE > 0,
 	}
 
 	// Create the ingester with dependencies
 	ingester := ingest.NewIngester(
 		ingestCtx,
-		services.Broadcaster,
+		services.ArcadeServices.ArcadeService,
 		services.Chaintracks,
 		services.BeefStorage,
 		services.PubSub,

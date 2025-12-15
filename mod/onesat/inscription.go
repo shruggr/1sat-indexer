@@ -35,17 +35,9 @@ func (i *InscriptionIndexer) Tag() string {
 	return INSC_TAG
 }
 
-func (i *InscriptionIndexer) FromBytes(data []byte) (any, error) {
-	obj := &Inscription{}
-	if err := json.Unmarshal(data, obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
-	if (idxCtx.Height > 0 && idxCtx.Height < TRIGGER) || txo.Satoshis == nil || *txo.Satoshis != 1 {
+func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	if (idxCtx.Height > 0 && idxCtx.Height < TRIGGER) || output.Satoshis != 1 {
 		return nil
 	}
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
@@ -55,22 +47,15 @@ func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.I
 		if op, err := scr.ReadOp(&i); err != nil {
 			break
 		} else if i > 2 && op.Op == script.OpDATA3 && bytes.Equal(op.Data, []byte("ord")) && (*scr)[startI-2] == 0 && (*scr)[startI-1] == script.OpIF {
-			insc := ParseInscription(txo, scr, &i, txo.Data[bitcom.BITCOM_TAG])
+			insc := ParseInscription(output, scr, &i, output.Data[bitcom.BITCOM_TAG])
 			if insc != nil {
-
-				idxCtx := &idx.IndexData{
-					Data: insc,
-				}
 				if insc.File != nil {
 					parts := strings.Split(insc.File.Type, ";")
 					if len(parts) > 0 {
-						idxCtx.Events = append(idxCtx.Events, &idx.Event{
-							Id:    "type",
-							Value: parts[0],
-						})
+						output.AddEvent(INSC_TAG + ":type:" + parts[0])
 					}
 				}
-				return idxCtx
+				return insc
 			}
 			break
 		}
@@ -79,16 +64,16 @@ func (i *InscriptionIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.I
 }
 
 func (i *InscriptionIndexer) PreSave(idxCtx *idx.IndexContext) {
-	for _, txo := range idxCtx.Txos {
-		if inscData, ok := txo.Data[INSC_TAG]; ok {
-			if insc, ok := inscData.Data.(*Inscription); ok {
+	for _, output := range idxCtx.Outputs {
+		if inscData, ok := output.Data[INSC_TAG]; ok {
+			if insc, ok := inscData.(*Inscription); ok && insc.File != nil {
 				insc.File.Content = nil
 			}
 		}
 	}
 }
 
-func ParseInscription(txo *idx.Txo, scr *script.Script, fromPos *int, bitcomData *idx.IndexData) *Inscription {
+func ParseInscription(output *idx.IndexedOutput, scr *script.Script, fromPos *int, bitcomData any) *Inscription {
 	insc := &Inscription{
 		File: &lib.File{},
 	}
@@ -109,12 +94,14 @@ ordLoop:
 			field = int(op.Data[0])
 		} else if len(op.Data) > 1 {
 			if bitcomData != nil {
-				b := append(bitcomData.Data.([]*bitcom.Bitcom), &bitcom.Bitcom{
-					Protocol: string(op.Data),
-					Script:   op2.Data,
-					Pos:      pos,
-				})
-				bitcomData.Data = b
+				if bitcoms, ok := bitcomData.([]*bitcom.Bitcom); ok {
+					b := append(bitcoms, &bitcom.Bitcom{
+						Protocol: string(op.Data),
+						Script:   op2.Data,
+						Pos:      pos,
+					})
+					output.Data[bitcom.BITCOM_TAG] = b
+				}
 			}
 
 			continue
@@ -149,16 +136,12 @@ ordLoop:
 	insc.File.Size = uint32(len(insc.File.Content))
 	hash := sha256.Sum256(insc.File.Content)
 	insc.File.Hash = hash[:]
-	insType := "file"
 	if insc.File.Size <= 1024 && utf8.Valid(insc.File.Content) && !bytes.Contains(insc.File.Content, []byte{0}) && !bytes.Contains(insc.File.Content, []byte("\\u0000")) {
 		mime := strings.ToLower(insc.File.Type)
 		if strings.HasPrefix(mime, "application/json") || strings.HasPrefix(mime, "text") {
 			if err := json.Unmarshal(insc.File.Content, &insc.Json); err == nil {
-				insType = "json"
+				// insType = "json"
 			} else if AsciiRegexp.Match(insc.File.Content) {
-				if insType == "file" {
-					insType = "text"
-				}
 				insc.Text = string(insc.File.Content)
 			}
 		}
@@ -170,12 +153,12 @@ ordLoop:
 
 	if len(*scr) >= pos+25 && script.NewFromBytes((*scr)[pos:pos+25]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+3 : pos+23])
-		txo.AddOwner(pkhash.Address())
+		output.AddOwnerFromAddress(pkhash.Address())
 	} else if len(*scr) >= pos+26 &&
 		(*scr)[pos] == script.OpCODESEPARATOR &&
 		script.NewFromBytes((*scr)[pos+1:pos+26]).IsP2PKH() {
 		pkhash := lib.PKHash((*scr)[pos+4 : pos+24])
-		txo.AddOwner(pkhash.Address())
+		output.AddOwnerFromAddress(pkhash.Address())
 	}
 
 	return insc

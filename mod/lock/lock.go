@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"log"
 
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -26,17 +25,9 @@ func (i *LockIndexer) Tag() string {
 	return LOCK_TAG
 }
 
-func (i *LockIndexer) FromBytes(data []byte) (any, error) {
-	obj := Lock{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
-	scr := idxCtx.Tx.Outputs[txo.Outpoint.Vout()].LockingScript
+func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	scr := idxCtx.Tx.Outputs[vout].LockingScript
 	lockPrefixIndex := bytes.Index(*scr, LockPrefix)
 	if lockPrefixIndex > -1 && bytes.Contains((*scr)[lockPrefixIndex:], LockSuffix) {
 		lock := &Lock{}
@@ -48,7 +39,7 @@ func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDat
 		} else {
 			pkhash := lib.PKHash(op.Data)
 			lock.Address = pkhash.Address(idxCtx.Network)
-			txo.AddOwner(lock.Address)
+			output.AddOwnerFromAddress(lock.Address)
 		}
 		if op, err := scr.ReadOp(&pos); err != nil {
 			log.Println(err)
@@ -56,12 +47,8 @@ func (i *LockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexDat
 			until := make([]byte, 4)
 			copy(until, op.Data)
 			lock.Until = binary.LittleEndian.Uint32(until)
-			return &idx.IndexData{
-				Data: lock,
-				Events: []*idx.Event{
-					{Id: "owner", Value: lock.Address},
-				},
-			}
+			output.AddEvent(LOCK_TAG + ":owner:" + lock.Address)
+			return lock
 		}
 	}
 	return nil

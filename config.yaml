@@ -1,19 +1,18 @@
 # 1sat-indexer configuration
-# Most settings use sensible SQLite-based defaults
 
 # Network settings
 network:
   type: main
   junglebus: https://junglebus.gorillapool.io
 
-# TXO storage - SQLite (default)
+# TXO storage - BadgerDB (default)
 store:
-  type: sqlite
-  sqlite: ~/.1sat/indexer.db
+  type: badger
+  path: ~/.1sat/indexer
 
-# PubSub for events - in-memory channels (no Redis needed)
+# PubSub for events
 pubsub:
-  url: channels://
+  url: channels://  # in-memory, or redis://localhost:6379 for distributed
 
 # BEEF storage chain: LRU cache -> local file -> JungleBus fallback
 beef:
@@ -32,26 +31,33 @@ indexers:
 
 # P2P client configuration
 p2p:
-  # network is inherited from network.type above
   storage_path: ~/.1sat
 
-# Chaintracks configuration (separate service, shares P2P client)
+# Chaintracks configuration
 chaintracks:
   mode: embedded
   storage_path: ~/.1sat/chaintracks
-  bootstrap_url: https://mainnet.gorillanode.io/api/v1  # Optional: faster initial sync
+  bootstrap_url: https://mainnet.gorillanode.io/api/v1
 
-# Arcade configuration (receives shared Chaintracks instance)
+# Arcade configuration
 arcade:
   network: main
   storage_path: ~/.1sat/arcade
-
-  # Arcade database - SQLite
   database:
     type: sqlite
     sqlite_path: ~/.1sat/arcade/arcade.db
-
-  # Events - in-memory (no Redis)
   events:
     type: memory
     buffer_size: 1000
+
+# ORDFS configuration (optional - enables content serving)
+# ordfs:
+#   redis:
+#     url: redis://localhost:6379/0
+#   junglebus:
+#     url: https://junglebus.gorillapool.io
+
+# BSV21 configuration (optional - enables BSV21 token routes)
+bsv21:
+  enabled: false
+  events_url: ~/.1sat/bsv21.db

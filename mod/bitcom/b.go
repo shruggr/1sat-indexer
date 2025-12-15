@@ -18,22 +18,19 @@ func (i *BIndexer) Tag() string {
 	return "b"
 }
 
-func (i *BIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
-	txo := idxCtx.Txos[vout]
-	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
-		for _, b := range bitcomData.Data.([]*Bitcom) {
+func (i *BIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	if bitcomData, ok := output.Data[BITCOM_TAG]; ok {
+		for _, b := range bitcomData.([]*Bitcom) {
 			if b.Protocol == B_PROTO {
 				b := ParseB(script.NewFromBytes(b.Script), 0)
 				if b != nil {
-					idxData = &idx.IndexData{
-						Data: b,
-					}
-					break
+					return b
 				}
 			}
 		}
 	}
-	return
+	return nil
 }
 
 func ParseB(scr *script.Script, idx int) (b *lib.File) {

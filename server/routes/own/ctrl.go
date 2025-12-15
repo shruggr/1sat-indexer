@@ -1,10 +1,16 @@
 package own
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/b-open-io/go-junglebus"
+	"github.com/b-open-io/overlay/queue"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -19,6 +25,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, jungleBus *jungleb
 	r.Get("/:owner/utxos", OwnerUtxos)
 	r.Get("/:owner/balance", OwnerBalance)
 	r.Get("/:owner/sync", OwnerSync)
+	r.Get("/:owner/sync/stream", OwnerSyncStream)
 }
 
 // @Summary Get owner TXOs
@@ -36,7 +43,7 @@ func RegisterRoutes(r fiber.Router, ingestCtx *idx.IngestCtx, jungleBus *jungleb
 func OwnerTxos(c *fiber.Ctx) error {
 	owner := c.Params("owner")
 
-	if c.QueryBool("refresh", false) {
+	if c.QueryBool("refresh", true) {
 		if err := idx.SyncOwner(c.Context(), idx.IngestTag, owner, ingest, jb); err != nil {
 			return err
 		}
@@ -47,25 +54,26 @@ func OwnerTxos(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 	from := c.QueryFloat("from", 0)
-	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:    []string{idx.OwnerKey(owner)},
+	ownerKey := "own:" + owner
+	logs, err := ingest.Store.Search(c.Context(), &queue.SearchCfg{
+		Keys:    [][]byte{[]byte(ownerKey)},
 		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 100)),
-	})
+	}, true)
 	if err != nil {
 		return err
 	}
 
 	outpoints := make([]string, 0, len(logs))
 	for _, log := range logs {
-		outpoints = append(outpoints, log.Member)
+		outpoints = append(outpoints, string(log.Member))
 	}
 
-	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true); err != nil {
+	if outputs, err := ingest.Store.LoadOutputs(c.Context(), outpoints, tags, true); err != nil {
 		return err
 	} else {
-		return c.JSON(txos)
+		return c.JSON(idx.TxosFromIndexedOutputs(outputs))
 	}
 }
 
@@ -89,37 +97,39 @@ func OwnerUtxos(c *fiber.Ctx) error {
 		tags = ingest.IndexedTags()
 	}
 	from := c.QueryFloat("from", 0)
+	ownerKey := "own:" + owner
 	// TODO: Phase 3.6 - Use EventDataStorage with JoinTypeDifference (own - osp)
-	// For now, query own: key and filter by spend status via LoadTxos
-	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:    []string{idx.OwnerKey(owner)},
+	// For now, query own: key and filter by spend status via LoadOutputs
+	logs, err := ingest.Store.Search(c.Context(), &queue.SearchCfg{
+		Keys:    [][]byte{[]byte(ownerKey)},
 		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 100)),
-	})
+	}, false) // includeSpent=false filters out spent outputs
 	if err != nil {
 		return err
 	}
 
 	outpoints := make([]string, 0, len(logs))
 	for _, log := range logs {
-		outpoints = append(outpoints, log.Member)
+		outpoints = append(outpoints, string(log.Member))
 	}
 
-	// Load txos with spend info, then filter unspent
-	txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true)
+	// Load outputs
+	outputs, err := ingest.Store.LoadOutputs(c.Context(), outpoints, tags, false)
 	if err != nil {
 		return err
 	}
 
-	utxos := make([]*idx.Txo, 0, len(txos))
-	for _, txo := range txos {
-		if txo != nil && txo.Spend == "" {
-			utxos = append(utxos, txo)
+	// Filter nil entries and convert to Txo
+	txos := make([]*idx.Txo, 0, len(outputs))
+	for _, output := range outputs {
+		if output != nil {
+			txos = append(txos, idx.TxoFromIndexedOutput(output))
 		}
 	}
 
-	return c.JSON(utxos)
+	return c.JSON(txos)
 }
 
 // @Summary Get owner balance
@@ -132,29 +142,13 @@ func OwnerUtxos(c *fiber.Ctx) error {
 // @Router /owner/{owner}/balance [get]
 func OwnerBalance(c *fiber.Ctx) error {
 	owner := c.Params("owner")
-	// TODO: Phase 3.6 - Use EventDataStorage with JoinTypeDifference (own - osp)
-	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys: []string{idx.OwnerKey(owner)},
+	ownerKey := "own:" + owner
+	// Use SearchBalance which already filters spent outputs
+	balance, err := ingest.Store.SearchBalance(c.Context(), &queue.SearchCfg{
+		Keys: [][]byte{[]byte(ownerKey)},
 	})
 	if err != nil {
 		return err
-	}
-
-	outpoints := make([]string, 0, len(logs))
-	for _, log := range logs {
-		outpoints = append(outpoints, log.Member)
-	}
-
-	txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, nil, true)
-	if err != nil {
-		return err
-	}
-
-	var balance uint64
-	for _, txo := range txos {
-		if txo != nil && txo.Spend == "" {
-			balance += *txo.Satoshis
-		}
 	}
 
 	return c.JSON(map[string]uint64{"balance": balance})
@@ -193,12 +187,14 @@ func OwnerSync(c *fiber.Ctx) error {
 	// Query limit+1 to detect if there are more results
 	queryLimit := limit + 1
 
+	ownerKey := "own:" + owner
+	ownerSpentKey := ownerKey + ":spnd"
 	// Query both outputs and spends, merged by score
-	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:  []string{idx.OwnerKey(owner), idx.OwnerSpentKey(owner)},
+	logs, err := ingest.Store.Search(c.Context(), &queue.SearchCfg{
+		Keys:  [][]byte{[]byte(ownerKey), []byte(ownerSpentKey)},
 		From:  &from,
 		Limit: queryLimit,
-	})
+	}, true)
 	if err != nil {
 		return err
 	}
@@ -211,7 +207,7 @@ func OwnerSync(c *fiber.Ctx) error {
 	// Collect unique outpoints for spend lookup
 	outpoints := make([]string, len(logs))
 	for i, log := range logs {
-		outpoints[i] = log.Member
+		outpoints[i] = string(log.Member)
 	}
 
 	spendTxids, err := ingest.Store.GetSpends(c.Context(), outpoints)
@@ -222,7 +218,7 @@ func OwnerSync(c *fiber.Ctx) error {
 	outputs := make([]SyncOutput, len(logs))
 	for i, log := range logs {
 		outputs[i] = SyncOutput{
-			Outpoint:  log.Member,
+			Outpoint:  string(log.Member),
 			Score:     log.Score,
 			SpendTxid: spendTxids[i],
 		}
@@ -238,4 +234,124 @@ func OwnerSync(c *fiber.Ctx) error {
 		NextScore: nextScore,
 		Done:      done,
 	})
+}
+
+// @Summary Stream owner sync via SSE
+// @Description Stream paginated outputs for wallet synchronization via Server-Sent Events. Streams all outputs until exhausted, then sends a retry directive.
+// @Tags owners
+// @Produce text/event-stream
+// @Param owner path string true "Owner identifier (address, pubkey, or script hash)"
+// @Param from query number false "Starting score for pagination"
+// @Success 200 {string} string "SSE stream of SyncOutput events"
+// @Router /owner/{owner}/sync/stream [get]
+func OwnerSyncStream(c *fiber.Ctx) error {
+	owner := c.Params("owner")
+	// Check for Last-Event-ID header first (sent by browser on reconnect)
+	var from float64
+	if lastEventID := c.Get("Last-Event-ID"); lastEventID != "" {
+		if parsed, err := strconv.ParseFloat(lastEventID, 64); err == nil {
+			from = parsed
+		}
+	} else {
+		from = c.QueryFloat("from", 0)
+	}
+	const batchSize uint32 = 100
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("Transfer-Encoding", "chunked")
+	c.Set("X-Accel-Buffering", "no")
+	c.Set("Access-Control-Allow-Origin", "*")
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		ownerKey := "own:" + owner
+		ownerSpentKey := ownerKey + ":spnd"
+		currentFrom := from
+
+		for {
+			// Query batchSize+1 to detect if there are more results
+			queryLimit := batchSize + 1
+			logs, err := ingest.Store.Search(c.Context(), &queue.SearchCfg{
+				Keys:  [][]byte{[]byte(ownerKey), []byte(ownerSpentKey)},
+				From:  &currentFrom,
+				Limit: queryLimit,
+			}, true)
+			if err != nil {
+				log.Printf("[OwnerSyncStream] Search error: %v", err)
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				w.Flush()
+				return
+			}
+
+			hasMore := len(logs) > int(batchSize)
+			if hasMore {
+				logs = logs[:batchSize]
+			}
+
+			if len(logs) == 0 {
+				// Trigger sync in background so new items are ready when client returns
+				go func() {
+					if err := idx.SyncOwner(context.Background(), idx.IngestTag, owner, ingest, jb); err != nil {
+						log.Printf("[OwnerSyncStream] SyncOwner error: %v", err)
+					}
+				}()
+				// No more results - tell client to retry in 60 seconds
+				fmt.Fprintf(w, "event: done\ndata: {}\nretry: 60000\n\n")
+				w.Flush()
+				return
+			}
+
+			// Collect outpoints for spend lookup
+			outpoints := make([]string, len(logs))
+			for i, log := range logs {
+				outpoints[i] = string(log.Member)
+			}
+
+			spendTxids, err := ingest.Store.GetSpends(c.Context(), outpoints)
+			if err != nil {
+				log.Printf("[OwnerSyncStream] GetSpends error: %v", err)
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				w.Flush()
+				return
+			}
+
+			// Stream each output as an SSE event
+			for i, log := range logs {
+				output := SyncOutput{
+					Outpoint:  string(log.Member),
+					Score:     log.Score,
+					SpendTxid: spendTxids[i],
+				}
+
+				data, err := json.Marshal(output)
+				if err != nil {
+					continue
+				}
+
+				fmt.Fprintf(w, "data: %s\nid: %.0f\n\n", data, log.Score)
+				if err := w.Flush(); err != nil {
+					// Client disconnected
+					return
+				}
+
+				currentFrom = log.Score
+			}
+
+			if !hasMore {
+				// Trigger sync in background so new items are ready when client returns
+				go func() {
+					if err := idx.SyncOwner(context.Background(), idx.IngestTag, owner, ingest, jb); err != nil {
+						log.Printf("[OwnerSyncStream] SyncOwner error: %v", err)
+					}
+				}()
+				// No more results - tell client to retry in 60 seconds
+				fmt.Fprintf(w, "event: done\ndata: {}\nretry: 60000\n\n")
+				w.Flush()
+				return
+			}
+		}
+	})
+
+	return nil
 }

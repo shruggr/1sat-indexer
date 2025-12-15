@@ -8,9 +8,9 @@ import (
 	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/overlay/beef"
 	"github.com/b-open-io/overlay/pubsub"
+	"github.com/bsv-blockchain/arcade/models"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -26,9 +26,7 @@ type TxController struct {
 // NewTxController creates a new TxController with the given dependencies
 func NewTxController(
 	ingestCtx *idx.IngestCtx,
-	_ *broadcaster.Arc, // kept for compatibility, not used
 	beefStorage *beef.Storage,
-	_ interface{}, // chaintracks - kept for compatibility, not used
 	ps pubsub.PubSub,
 	jb *junglebus.Client,
 ) *TxController {
@@ -58,25 +56,25 @@ func (ctrl *TxController) RegisterRoutes(r fiber.Router) {
 // @Router /callback [post]
 func (ctrl *TxController) TxCallback(c *fiber.Ctx) error {
 	// Parse the ARC callback response
-	var arcResp broadcaster.ArcResponse
+	var arcResp models.TransactionStatus
 	if err := c.BodyParser(&arcResp); err != nil {
 		log.Printf("[ARC] Error parsing ARC callback: %v", err)
 		return c.Status(400).SendString("Invalid callback payload")
 	}
 
 	// Validate required fields
-	if arcResp.Txid == "" || arcResp.TxStatus == nil {
-		log.Printf("[ARC] Missing required fields in callback: txid=%s, status=%v", arcResp.Txid, arcResp.TxStatus)
+	if arcResp.TxID == "" || arcResp.Status == "" {
+		log.Printf("[ARC] Missing required fields in callback: txid=%s, status=%v", arcResp.TxID, arcResp.Status)
 		return c.Status(400).SendString("Missing txid or txStatus")
 	}
 
-	log.Printf("[ARC] %s Callback received: status=%s", arcResp.Txid, *arcResp.TxStatus)
+	log.Printf("[ARC] %s Callback received: status=%s", arcResp.TxID, arcResp.Status)
 
 	// Publish the status update for the broadcast listener
 	if jsonData, err := json.Marshal(arcResp); err != nil {
-		log.Printf("[ARC] %s Error marshaling ARC response: %v", arcResp.Txid, err)
+		log.Printf("[ARC] %s Error marshaling ARC response: %v", arcResp.TxID, err)
 	} else if err := ctrl.PubSub.Publish(c.Context(), "arc", string(jsonData)); err != nil {
-		log.Printf("[ARC] %s Error publishing to arc channel: %v", arcResp.Txid, err)
+		log.Printf("[ARC] %s Error publishing to arc channel: %v", arcResp.TxID, err)
 	}
 
 	return c.SendStatus(200)
@@ -176,9 +174,9 @@ func (ctrl *TxController) TxosByTxid(c *fiber.Ctx) error {
 	if len(tags) > 0 && tags[0] == "*" {
 		tags = ctrl.IngestCtx.IndexedTags()
 	}
-	if txos, err := ctrl.IngestCtx.Store.LoadTxosByTxid(c.Context(), txid, tags, c.QueryBool("spend", false)); err != nil {
+	if outputs, err := ctrl.IngestCtx.Store.LoadOutputsByTxid(c.Context(), txid, tags, c.QueryBool("spend", false)); err != nil {
 		return err
 	} else {
-		return c.JSON(txos)
+		return c.JSON(idx.TxosFromIndexedOutputs(outputs))
 	}
 }

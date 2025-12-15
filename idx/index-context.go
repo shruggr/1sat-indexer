@@ -6,17 +6,25 @@ import (
 	"log"
 	"time"
 
+	"github.com/b-open-io/overlay/storage"
+	"github.com/bsv-blockchain/go-overlay-services/pkg/core/engine"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 )
 
+// HeightScore calculates the score for a block height and index
 func HeightScore(height uint32, idx uint64) float64 {
 	if height == 0 {
 		return float64(time.Now().UnixNano())
 	}
 	return float64(uint64(height)*1000000000 + idx)
+}
+
+// OutputContext holds additional context for an output during indexing
+type OutputContext struct {
+	OutAcc uint64 // Accumulated satoshis before this output
 }
 
 type IndexContext struct {
@@ -26,16 +34,20 @@ type IndexContext struct {
 	Height   uint32                   `json:"height"`
 	Idx      uint64                   `json:"idx"`
 	Score    float64                  `json:"score"`
-	Txos     []*Txo                   `json:"txos"`
-	Spends   []*Txo                   `json:"spends"`
+	Outputs  []*IndexedOutput         `json:"outputs"`
+	Spends   []*IndexedOutput         `json:"spends"`
 	Indexers []Indexer                `json:"-"`
 	Ctx      context.Context          `json:"-"`
 	Network  lib.Network              `json:"-"`
-	Store    *QueueStore              `json:"-"`
+	Store    *storage.OutputStore     `json:"-"`
 	tags     []string                 `json:"-"`
+
+	// OutputContexts holds additional per-output context not stored in IndexedOutput
+	OutputContexts []*OutputContext `json:"-"`
+	SpendContexts  []*OutputContext `json:"-"`
 }
 
-func NewIndexContext(ctx context.Context, store *QueueStore, tx *transaction.Transaction, indexers []Indexer, network ...lib.Network) *IndexContext {
+func NewIndexContext(ctx context.Context, store *storage.OutputStore, tx *transaction.Transaction, indexers []Indexer, network ...lib.Network) *IndexContext {
 	if tx == nil {
 		return nil
 	}
@@ -73,7 +85,7 @@ func (idxCtx *IndexContext) ParseTxn() (err error) {
 	if err = idxCtx.ParseSpends(); err != nil {
 		return
 	}
-	return idxCtx.ParseTxos()
+	return idxCtx.ParseOutputs()
 }
 
 func (idxCtx *IndexContext) ParseSpends() error {
@@ -86,33 +98,46 @@ func (idxCtx *IndexContext) ParseSpends() error {
 		}
 		// TODO: optimize to parse only the specific output being spent rather than full parent tx
 		spendCtx := NewIndexContext(idxCtx.Ctx, nil, txin.SourceTransaction, idxCtx.Indexers, idxCtx.Network)
-		spendCtx.ParseTxos()
-		idxCtx.Spends = append(idxCtx.Spends, spendCtx.Txos[txin.SourceTxOutIndex])
+		spendCtx.ParseOutputs()
+		idxCtx.Spends = append(idxCtx.Spends, spendCtx.Outputs[txin.SourceTxOutIndex])
+		idxCtx.SpendContexts = append(idxCtx.SpendContexts, spendCtx.OutputContexts[txin.SourceTxOutIndex])
 	}
 	return nil
 }
 
-func (idxCtx *IndexContext) ParseTxos() (err error) {
+func (idxCtx *IndexContext) ParseOutputs() (err error) {
 	accSats := uint64(0)
 	for vout, txout := range idxCtx.Tx.Outputs {
-		outpoint := lib.NewOutpointFromHash(idxCtx.Txid, uint32(vout))
-		txo := &Txo{
-			Outpoint: outpoint,
-			Height:   idxCtx.Height,
-			Idx:      idxCtx.Idx,
-			Satoshis: &txout.Satoshis,
-			OutAcc:   accSats,
-			Data:     make(map[string]*IndexData),
+		output := &IndexedOutput{
+			Output: engine.Output{
+				Outpoint: transaction.Outpoint{
+					Txid:  *idxCtx.Txid,
+					Index: uint32(vout),
+				},
+				BlockHeight: idxCtx.Height,
+				BlockIdx:    idxCtx.Idx,
+			},
+			Satoshis: txout.Satoshis,
+			Data:     make(map[string]interface{}),
 		}
+		outCtx := &OutputContext{
+			OutAcc: accSats,
+		}
+
 		if len(*txout.LockingScript) >= 25 && script.NewFromBytes((*txout.LockingScript)[:25]).IsP2PKH() {
-			pkhash := lib.PKHash((*txout.LockingScript)[3:23])
-			txo.AddOwner(pkhash.Address(idxCtx.Network))
+			pkhash := (*txout.LockingScript)[3:23]
+			if err := output.AddOwnerFromBytes(pkhash); err == nil {
+				// Owner added successfully
+			}
 		}
-		idxCtx.Txos = append(idxCtx.Txos, txo)
+
+		idxCtx.Outputs = append(idxCtx.Outputs, output)
+		idxCtx.OutputContexts = append(idxCtx.OutputContexts, outCtx)
 		accSats += txout.Satoshis
+
 		for _, indexer := range idxCtx.Indexers {
 			if data := indexer.Parse(idxCtx, uint32(vout)); data != nil {
-				txo.Data[indexer.Tag()] = data
+				output.SetData(indexer.Tag(), data)
 			}
 		}
 	}
@@ -123,13 +148,38 @@ func (idxCtx *IndexContext) ParseTxos() (err error) {
 }
 
 func (idxCtx *IndexContext) Save() error {
-	if err := idxCtx.Store.SaveTxos(idxCtx); err != nil {
-		log.Panic(err)
-		return err
-	} else if err := idxCtx.Store.SaveSpends(idxCtx); err != nil {
+	if err := idxCtx.Store.SaveOutputs(idxCtx.Ctx, idxCtx.Outputs, idxCtx.TxidHex, idxCtx.Score); err != nil {
 		log.Panic(err)
 		return err
 	}
 
+	// Save spends
+	for i, spend := range idxCtx.Spends {
+		if spend != nil {
+			input := idxCtx.Tx.Inputs[i]
+			outpoint := fmt.Sprintf("%s.%d", input.SourceTXID.String(), input.SourceTxOutIndex)
+			if err := idxCtx.Store.SaveSpend(idxCtx.Ctx, outpoint, idxCtx.TxidHex, idxCtx.Score); err != nil {
+				log.Panic(err)
+				return err
+			}
+		}
+	}
+
 	return nil
+}
+
+// GetOutAcc returns the accumulated satoshis before the output at the given index
+func (idxCtx *IndexContext) GetOutAcc(vout uint32) uint64 {
+	if int(vout) < len(idxCtx.OutputContexts) {
+		return idxCtx.OutputContexts[vout].OutAcc
+	}
+	return 0
+}
+
+// GetSpendOutAcc returns the accumulated satoshis for a spend at the given index
+func (idxCtx *IndexContext) GetSpendOutAcc(idx int) uint64 {
+	if idx < len(idxCtx.SpendContexts) {
+		return idxCtx.SpendContexts[idx].OutAcc
+	}
+	return 0
 }

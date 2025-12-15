@@ -1,104 +1,74 @@
 package lib
 
 import (
-	"database/sql/driver"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/bsv-blockchain/go-sdk/chainhash"
-	"github.com/bsv-blockchain/go-sdk/util"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 )
 
-type Outpoint []byte
-
-func NewOutpoint(txid []byte, vout uint32) *Outpoint {
-	o := Outpoint(binary.LittleEndian.AppendUint32(util.ReverseBytes(txid), vout))
-	return &o
+// Outpoint wraps transaction.Outpoint with underscore-format JSON marshalling
+type Outpoint struct {
+	transaction.Outpoint
 }
 
+// NewOutpoint creates a new Outpoint from a transaction.Outpoint
+func NewOutpoint(op transaction.Outpoint) *Outpoint {
+	return &Outpoint{Outpoint: op}
+}
+
+// NewOutpointFromHash creates an Outpoint from a chainhash and vout
 func NewOutpointFromHash(txid *chainhash.Hash, vout uint32) *Outpoint {
-	o := Outpoint(binary.LittleEndian.AppendUint32(txid.CloneBytes(), vout))
-	return &o
+	return &Outpoint{Outpoint: transaction.Outpoint{
+		Txid:  *txid,
+		Index: vout,
+	}}
 }
 
+// NewOutpointFromBytes creates an Outpoint from 36 bytes (32 txid + 4 vout big-endian)
 func NewOutpointFromBytes(b []byte) *Outpoint {
-	buf := make([]byte, 36)
-	copy(buf, b)
-	o := Outpoint(buf)
-	return &o
+	if len(b) != 36 {
+		return nil
+	}
+	op := transaction.NewOutpointFromBytes([36]byte(b))
+	return &Outpoint{Outpoint: *op}
 }
 
-func NewOutpointFromString(s string) (o *Outpoint, err error) {
-	if len(s) < 66 {
-		return nil, fmt.Errorf("invalid-string")
-	}
-	txid, err := hex.DecodeString(s[:64])
+// NewOutpointFromString parses an outpoint string (supports both . and _ separators)
+func NewOutpointFromString(s string) (*Outpoint, error) {
+	op, err := transaction.OutpointFromString(s)
 	if err != nil {
-		return
+		return nil, err
 	}
-	vout, err := strconv.ParseUint(s[65:], 10, 32)
-	if err != nil {
-		return
-	}
-	origin := Outpoint(binary.LittleEndian.AppendUint32(util.ReverseBytes(txid), uint32(vout)))
-	o = &origin
-	return
+	return &Outpoint{Outpoint: *op}, nil
 }
 
+// String returns the outpoint in underscore format (txid_vout)
 func (o *Outpoint) String() string {
-	return fmt.Sprintf("%x_%d", util.ReverseBytes((*o)[:32]), binary.LittleEndian.Uint32((*o)[32:]))
+	return fmt.Sprintf("%s_%d", o.Txid.String(), o.Index)
 }
 
-func (o *Outpoint) Txid() []byte {
-	return util.ReverseBytes((*o)[:32])
+// Bytes returns the outpoint as 36 bytes (big-endian format)
+func (o *Outpoint) Bytes() []byte {
+	return o.Outpoint.Bytes()
 }
 
-func (o *Outpoint) TxidHash() *chainhash.Hash {
-	hash, _ := chainhash.NewHash((*o)[:32])
-	return hash
-}
-
-func (o *Outpoint) TxidHex() string {
-	return hex.EncodeToString(o.Txid())
-}
-
-func (o *Outpoint) Vout() uint32 {
-	return binary.LittleEndian.Uint32((*o)[32:])
-}
-
-func (o Outpoint) MarshalJSON() (bytes []byte, err error) {
-	if len(o) != 36 {
-		return []byte("null"), nil
-	}
+// MarshalJSON serializes to underscore format
+func (o Outpoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal(o.String())
 }
 
-// UnmarshalJSON deserializes Origin to string
+// UnmarshalJSON deserializes from string (supports both . and _ separators)
 func (o *Outpoint) UnmarshalJSON(data []byte) error {
-	var x string
-	err := json.Unmarshal(data, &x)
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	op, err := NewOutpointFromString(s)
 	if err != nil {
 		return err
-	} else if op, err := NewOutpointFromString(x); err != nil {
-		return err
-	} else {
-		*o = *op
-		return nil
 	}
-}
-
-func (o Outpoint) Value() (driver.Value, error) {
-	return o.String(), nil
-}
-
-func (o *Outpoint) Scan(value interface{}) error {
-	if outpoint, err := NewOutpointFromString(value.(string)); err != nil {
-		return err
-	} else {
-		*o = *outpoint
-		return nil
-	}
+	*o = *op
+	return nil
 }

@@ -23,14 +23,14 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/arc/events/{callbackToken}": {
+        "/arc/events": {
             "get": {
-                "description": "Server-Sent Events stream of transaction status updates for transactions associated with the callback token",
+                "description": "Server-Sent Events stream of transaction status updates. If callbackToken is provided, only events for that token are streamed.",
                 "produces": [
                     "text/event-stream"
                 ],
                 "tags": [
-                    "transactions"
+                    "arcade"
                 ],
                 "summary": "Stream transaction events",
                 "parameters": [
@@ -38,8 +38,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Callback token from transaction submission",
                         "name": "callbackToken",
-                        "in": "path",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -52,26 +51,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/arc/health": {
-            "get": {
-                "description": "Returns the health status of the service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "info"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/fiber.HealthResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/arc/policy": {
             "get": {
                 "description": "Returns the transaction policy configuration including fee rates and limits",
@@ -79,14 +58,14 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "info"
+                    "arcade"
                 ],
                 "summary": "Get policy",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/fiber.PolicyResponse"
+                            "$ref": "#/definitions/models.Policy"
                         }
                     }
                 }
@@ -104,7 +83,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "transactions"
+                    "arcade"
                 ],
                 "summary": "Submit transaction",
                 "parameters": [
@@ -183,7 +162,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "transactions"
+                    "arcade"
                 ],
                 "summary": "Get transaction status",
                 "parameters": [
@@ -233,7 +212,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "transactions"
+                    "arcade"
                 ],
                 "summary": "Submit multiple transactions",
                 "parameters": [
@@ -248,6 +227,24 @@ const docTemplate = `{
                                 "$ref": "#/definitions/fiber.TransactionRequest"
                             }
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "URL for status callbacks",
+                        "name": "X-CallbackUrl",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token for SSE event filtering",
+                        "name": "X-CallbackToken",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Send all status updates (true/false)",
+                        "name": "X-FullStatusUpdates",
+                        "in": "header"
                     },
                     {
                         "type": "string",
@@ -500,6 +497,600 @@ const docTemplate = `{
                 }
             }
         },
+        "/bsv21/{tokenId}": {
+            "get": {
+                "description": "Retrieve metadata and details for a BSV21 token by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get BSV21 token details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/routes.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid token ID format",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Token not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/block/{height}": {
+            "get": {
+                "description": "Retrieve transactions for a BSV21 token at a specific block height",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get block data for a token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Block height",
+                        "name": "height",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/routes.BlockResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid height parameter",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/tx/{txid}": {
+            "get": {
+                "description": "Retrieve details for a specific transaction within a BSV21 token's topic",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get transaction details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction ID (hex)",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include BEEF data in response",
+                        "name": "beef",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid transaction ID format",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/balance": {
+            "post": {
+                "description": "Get the combined BSV21 token balance for multiple addresses",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get multi-address token balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Array of addresses (max 100)",
+                        "name": "addresses",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/routes.BalanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or too many addresses",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/history": {
+            "post": {
+                "description": "Get all BSV21 token transactions (including spent) for multiple addresses",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get multi-address transaction history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Array of addresses (max 100)",
+                        "name": "addresses",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.IndexedOutput"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or too many addresses",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/unspent": {
+            "post": {
+                "description": "Get unspent BSV21 token outputs for multiple addresses",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get multi-address unspent outputs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Array of addresses (max 100)",
+                        "name": "addresses",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.IndexedOutput"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or too many addresses",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/{address}/balance": {
+            "get": {
+                "description": "Get the BSV21 token balance for a specific address",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get address token balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Address or identifier",
+                        "name": "address",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/routes.BalanceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/{address}/history": {
+            "get": {
+                "description": "Get all BSV21 token transactions (including spent) for a specific address",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get address transaction history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Address or identifier",
+                        "name": "address",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reverse order",
+                        "name": "rev",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.IndexedOutput"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bsv21/{tokenId}/{lockType}/{address}/unspent": {
+            "get": {
+                "description": "Get unspent BSV21 token outputs for a specific address",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bsv21"
+                ],
+                "summary": "Get address unspent outputs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token ID (outpoint format: txid_vout)",
+                        "name": "tokenId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lock type (p2pkh, cos, list, etc.)",
+                        "name": "lockType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Address or identifier",
+                        "name": "address",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.IndexedOutput"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Topic not available",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/callback": {
             "post": {
                 "description": "Receive ARC broadcast status callbacks",
@@ -532,6 +1123,62 @@ const docTemplate = `{
                         "description": "Invalid callback payload",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/{path}": {
+            "get": {
+                "description": "Serve the content of an inscription by outpoint, txid, or origin with optional file path resolution",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get inscription content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Outpoint, txid, or origin with optional file path (e.g., txid_vout/path/to/file)",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -607,6 +1254,32 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the service",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "arcade"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "type": "string"
                         }
@@ -819,6 +1492,139 @@ const docTemplate = `{
                 }
             }
         },
+        "/ordfs/metadata/{path}": {
+            "get": {
+                "description": "Get metadata for an inscription by outpoint, txid, or origin",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ordfs"
+                ],
+                "summary": "Get inscription metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Outpoint, txid, or origin (e.g., txid_vout, txid, or origin)",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include MAP data",
+                        "name": "map",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include output script (base64 encoded)",
+                        "name": "out",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include parent outpoint",
+                        "name": "parent",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v2.MetadataResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ordfs/stream/{outpoint}": {
+            "get": {
+                "description": "Stream the content of an inscription with support for HTTP Range requests",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "ordfs"
+                ],
+                "summary": "Stream inscription content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Outpoint (txid_vout or txid.vout)",
+                        "name": "outpoint",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "HTTP Range header for partial content (e.g., bytes=0-1023)",
+                        "name": "Range",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Full content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "206": {
+                        "description": "Partial content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/owner/{owner}/balance": {
             "get": {
                 "description": "Get the satoshi balance for a specific owner",
@@ -890,11 +1696,46 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncResponse"
+                            "$ref": "#/definitions/server_routes_own.SyncResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/owner/{owner}/sync/stream": {
+            "get": {
+                "description": "Stream paginated outputs for wallet synchronization via Server-Sent Events. Streams all outputs until exhausted, then sends a retry directive.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "owners"
+                ],
+                "summary": "Stream owner sync via SSE",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner identifier (address, pubkey, or script hash)",
+                        "name": "owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Starting score for pagination",
+                        "name": "from",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream of SyncOutput events",
                         "schema": {
                             "type": "string"
                         }
@@ -1149,19 +1990,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid txid format",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Transaction not found",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     }
                 }
@@ -1196,19 +2037,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid txid format",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Transaction not found",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     }
                 }
@@ -1243,19 +2084,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid txid format",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Proof not found",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     }
                 }
@@ -1297,19 +2138,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid txid format or output index",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Transaction or output not found",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/routes.ErrorResponse"
+                            "$ref": "#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse"
                         }
                     }
                 }
@@ -1530,6 +2371,188 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/bsv/block/hash/{hash}": {
+            "get": {
+                "description": "Get a block header by its hash",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get block by hash",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Block hash (64 hex characters)",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Block header with height and hash",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid hash format",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Block not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/bsv/block/height/{height}": {
+            "get": {
+                "description": "Get a block header by its height",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get block by height",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Block height",
+                        "name": "height",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Block header with height and hash",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid height",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/bsv/block/latest": {
+            "get": {
+                "description": "Get the current chain tip block header",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocks"
+                ],
+                "summary": "Get latest block",
+                "responses": {
+                    "200": {
+                        "description": "Block header with height and hash",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Chain tip not available",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/bsv/tx/{txid}": {
+            "get": {
+                "description": "Get the raw transaction bytes by txid",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get raw transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID (64 hex characters)",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Raw transaction bytes",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid txid format",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1578,37 +2601,28 @@ const docTemplate = `{
                 }
             }
         },
+        "engine.MerkleState": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                0,
+                1,
+                2,
+                3
+            ],
+            "x-enum-varnames": [
+                "MerkleStateUnmined",
+                "MerkleStateValidated",
+                "MerkleStateInvalidated",
+                "MerkleStateImmutable"
+            ]
+        },
         "fiber.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
                     "example": "Header not found"
-                }
-            }
-        },
-        "fiber.FeeAmount": {
-            "type": "object",
-            "properties": {
-                "bytes": {
-                    "type": "integer"
-                },
-                "satoshis": {
-                    "type": "integer"
-                }
-            }
-        },
-        "fiber.HealthResponse": {
-            "type": "object",
-            "properties": {
-                "healthy": {
-                    "type": "boolean"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
                 }
             }
         },
@@ -1630,29 +2644,31 @@ const docTemplate = `{
                 }
             }
         },
-        "fiber.PolicyResponse": {
-            "type": "object",
-            "properties": {
-                "maxscriptsizepolicy": {
-                    "type": "integer"
-                },
-                "maxtxsigopscountspolicy": {
-                    "type": "integer"
-                },
-                "maxtxsizepolicy": {
-                    "type": "integer"
-                },
-                "miningFee": {
-                    "$ref": "#/definitions/fiber.FeeAmount"
-                }
-            }
-        },
         "fiber.TransactionRequest": {
             "type": "object",
             "properties": {
                 "rawTx": {
                     "type": "string",
                     "example": "0100000001..."
+                }
+            }
+        },
+        "github_com_b-open-io_bsv21-overlay_routes.ErrorResponse": {
+            "description": "Error response with message",
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Error description"
+                }
+            }
+        },
+        "github_com_b-open-io_overlay_routes.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "An error occurred"
                 }
             }
         },
@@ -1687,17 +2703,6 @@ const docTemplate = `{
                 }
             }
         },
-        "idx.Event": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
         "idx.IndexContext": {
             "type": "object",
             "properties": {
@@ -1707,31 +2712,30 @@ const docTemplate = `{
                 "idx": {
                     "type": "integer"
                 },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/idx.IndexedOutput"
+                    }
+                },
                 "score": {
                     "type": "number"
                 },
                 "spends": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/idx.Txo"
+                        "$ref": "#/definitions/idx.IndexedOutput"
                     }
                 },
                 "txid": {
                     "type": "string"
-                },
-                "txos": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/idx.Txo"
-                    }
                 }
             }
         },
-        "idx.IndexData": {
+        "idx.IndexedOutput": {
             "type": "object",
             "properties": {
-                "data": {},
-                "deps": {
+                "ancillaryTxids": {
                     "type": "array",
                     "items": {
                         "type": "array",
@@ -1740,11 +2744,91 @@ const docTemplate = `{
                         }
                     }
                 },
+                "beef": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                },
+                "blockHeight": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "blockIdx": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "consumedBy": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transaction.Outpoint"
+                    }
+                },
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
                 "events": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/idx.Event"
+                        "type": "string"
                     }
+                },
+                "merkleRoot": {
+                    "description": "Merkle root extracted from the merkle path",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "merkleState": {
+                    "description": "Validation state of the merkle proof",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.MerkleState"
+                        }
+                    ]
+                },
+                "outpoint": {
+                    "$ref": "#/definitions/transaction.Outpoint"
+                },
+                "outputsConsumed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transaction.Outpoint"
+                    }
+                },
+                "owners": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
+                    }
+                },
+                "satoshis": {
+                    "description": "Extended fields for indexing",
+                    "type": "integer"
+                },
+                "score": {
+                    "description": "sort score for outputs. Usage is up to Storage implementation.",
+                    "type": "number",
+                    "format": "float64"
+                },
+                "spend": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "spent": {
+                    "type": "boolean"
+                },
+                "topic": {
+                    "type": "string"
                 }
             }
         },
@@ -1753,9 +2837,7 @@ const docTemplate = `{
             "properties": {
                 "data": {
                     "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/idx.IndexData"
-                    }
+                    "additionalProperties": {}
                 },
                 "events": {
                     "type": "array",
@@ -1770,31 +2852,60 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "outpoint": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
+                    "$ref": "#/definitions/lib.Outpoint"
                 },
                 "owners": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
                     }
                 },
                 "satoshis": {
                     "type": "integer"
                 },
-                "score": {
-                    "type": "number"
-                },
-                "script": {
+                "spend": {
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "lib.Outpoint": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer"
                 },
-                "spend": {
-                    "type": "string"
+                "txid": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "models.Policy": {
+            "type": "object",
+            "properties": {
+                "maxscriptsizepolicy": {
+                    "type": "integer"
+                },
+                "maxtxsigopscountspolicy": {
+                    "type": "integer"
+                },
+                "maxtxsizepolicy": {
+                    "type": "integer"
+                },
+                "miningFeeBytes": {
+                    "type": "integer"
+                },
+                "miningFeeSatoshis": {
+                    "type": "integer"
                 }
             }
         },
@@ -1858,12 +2969,92 @@ const docTemplate = `{
                 }
             }
         },
-        "routes.ErrorResponse": {
+        "routes.BalanceResponse": {
+            "description": "Token balance for an address",
             "type": "object",
             "properties": {
-                "message": {
+                "balance": {
+                    "type": "integer",
+                    "example": 1000000
+                },
+                "utxoCount": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "routes.BlockInfo": {
+            "description": "Block header metadata",
+            "type": "object",
+            "properties": {
+                "hash": {
                     "type": "string",
-                    "example": "An error occurred"
+                    "example": "00000000000000000001..."
+                },
+                "height": {
+                    "type": "integer",
+                    "example": 850000
+                },
+                "previousblockhash": {
+                    "type": "string",
+                    "example": "00000000000000000002..."
+                },
+                "timestamp": {
+                    "type": "integer",
+                    "example": 1699999999
+                }
+            }
+        },
+        "routes.BlockResponse": {
+            "description": "Block data containing token transactions",
+            "type": "object",
+            "properties": {
+                "block": {
+                    "$ref": "#/definitions/routes.BlockInfo"
+                },
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.TransactionData"
+                    }
+                }
+            }
+        },
+        "routes.TokenResponse": {
+            "description": "BSV21 token metadata response",
+            "type": "object",
+            "properties": {
+                "amt": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "dec": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "icon": {
+                    "type": "string",
+                    "example": "b://..."
+                },
+                "id": {
+                    "type": "string",
+                    "example": "abc123def456_0"
+                },
+                "op": {
+                    "type": "string",
+                    "example": "deploy+mint"
+                },
+                "sym": {
+                    "type": "string",
+                    "example": "TEST"
+                },
+                "txid": {
+                    "type": "string",
+                    "example": "abc123def456789..."
+                },
+                "vout": {
+                    "type": "integer",
+                    "example": 0
                 }
             }
         },
@@ -1895,6 +3086,187 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/server_routes_own.SyncOutput"
                     }
+                }
+            }
+        },
+        "storage.IndexedOutput": {
+            "type": "object",
+            "properties": {
+                "ancillaryTxids": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "beef": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                },
+                "blockHeight": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "blockIdx": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "consumedBy": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transaction.Outpoint"
+                    }
+                },
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "merkleRoot": {
+                    "description": "Merkle root extracted from the merkle path",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "merkleState": {
+                    "description": "Validation state of the merkle proof",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/engine.MerkleState"
+                        }
+                    ]
+                },
+                "outpoint": {
+                    "$ref": "#/definitions/transaction.Outpoint"
+                },
+                "outputsConsumed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transaction.Outpoint"
+                    }
+                },
+                "owners": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
+                    }
+                },
+                "satoshis": {
+                    "description": "Extended fields for indexing",
+                    "type": "integer"
+                },
+                "score": {
+                    "description": "sort score for outputs. Usage is up to Storage implementation.",
+                    "type": "number",
+                    "format": "float64"
+                },
+                "spend": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "spent": {
+                    "type": "boolean"
+                },
+                "topic": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.TransactionData": {
+            "type": "object",
+            "properties": {
+                "beef": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "block_height": {
+                    "type": "integer"
+                },
+                "block_index": {
+                    "type": "integer"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.IndexedOutput"
+                    }
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.IndexedOutput"
+                    }
+                },
+                "txid": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "transaction.Outpoint": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer"
+                },
+                "txid": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "v2.MetadataResponse": {
+            "type": "object",
+            "properties": {
+                "contentLength": {
+                    "type": "integer"
+                },
+                "contentType": {
+                    "type": "string"
+                },
+                "map": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "outpoint": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "string"
+                },
+                "parent": {
+                    "type": "string"
+                },
+                "sequence": {
+                    "type": "integer"
                 }
             }
         }

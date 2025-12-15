@@ -11,6 +11,7 @@ import (
 	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/go-junglebus/models"
 	"github.com/b-open-io/overlay/queue"
+	"github.com/b-open-io/overlay/storage"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
@@ -27,7 +28,7 @@ type Sub struct {
 	ReorgRewind  bool
 
 	// Dependencies (injected)
-	Store     *idx.QueueStore
+	Store     *storage.OutputStore
 	JungleBus *junglebus.Client
 }
 
@@ -94,7 +95,7 @@ func (cfg *Sub) Exec(ctx context.Context) (err error) {
 				log.Printf("[TX]: %d - %d: %d %s\n", txn.BlockHeight, txn.BlockIndex, len(txn.Transaction), txn.Id)
 			}
 			logs = append(logs, queue.ScoredMember{
-				Member: txn.Id,
+				Member: []byte(txn.Id),
 				Score:  idx.HeightScore(txn.BlockHeight, txn.BlockIndex),
 			})
 			// if err := config.Store.Log(ctx, queueKey, txn.Id, idx.HeightScore(txn.BlockHeight, txn.BlockIndex)); err != nil {

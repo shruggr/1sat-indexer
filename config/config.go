@@ -15,12 +15,10 @@ import (
 
 // Config holds all configuration for the indexer
 type Config struct {
-	// Storage
+	// Storage - queue storage backend for TXO data
 	Store struct {
-		Type     string `mapstructure:"type"`     // sqlite, redis, postgres
-		SQLite   string `mapstructure:"sqlite"`   // path for sqlite
-		Redis    string `mapstructure:"redis"`    // redis URL
-		Postgres string `mapstructure:"postgres"` // postgres URL
+		Type string `mapstructure:"type"` // badger (default), future: redis, postgres
+		Path string `mapstructure:"path"` // storage path for badger (e.g., ~/.1sat/indexer)
 	} `mapstructure:"store"`
 
 	// PubSub for event publishing
@@ -38,14 +36,6 @@ type Config struct {
 		Type      string `mapstructure:"type"`      // main, test
 		JungleBus string `mapstructure:"junglebus"` // JungleBus URL
 	} `mapstructure:"network"`
-
-	// ARC broadcaster
-	Arc struct {
-		URL      string `mapstructure:"url"`
-		APIKey   string `mapstructure:"api_key"`
-		Callback string `mapstructure:"callback"`
-		Token    string `mapstructure:"token"`
-	} `mapstructure:"arc"`
 
 	// Server settings
 	Server struct {
@@ -83,8 +73,8 @@ func (c *Config) SetDefaults(v *viper.Viper, prefix string) {
 	}
 
 	// Store defaults
-	v.SetDefault(p+"store.type", "sqlite")
-	v.SetDefault(p+"store.sqlite", "~/.1sat/indexer.db")
+	v.SetDefault(p+"store.type", "badger")
+	v.SetDefault(p+"store.path", "~/.1sat/indexer")
 
 	// PubSub defaults
 	v.SetDefault(p+"pubsub.url", "channels://")
@@ -102,11 +92,13 @@ func (c *Config) SetDefaults(v *viper.Viper, prefix string) {
 	// Indexer defaults
 	v.SetDefault(p+"indexers", []string{"p2pkh", "lock", "inscription", "ordlock"})
 
-	// Cascade to P2P defaults
+	// Cascade to P2P defaults, with storage path override
 	c.P2P.SetDefaults(v, p+"p2p")
+	v.SetDefault(p+"p2p.storage_path", "~/.1sat")
 
-	// Cascade to Chaintracks defaults
+	// Cascade to Chaintracks defaults, with storage path override
 	c.Chaintracks.SetDefaults(v, p+"chaintracks")
+	v.SetDefault(p+"chaintracks.storage_path", "~/.1sat/chaintracks")
 
 	// Cascade to arcade defaults
 	c.Arcade.SetDefaults(v, p+"arcade")
@@ -160,7 +152,7 @@ func Load() (*Config, error) {
 	}
 
 	// Expand ~ in paths
-	cfg.Store.SQLite = expandPath(cfg.Store.SQLite)
+	cfg.Store.Path = expandPath(cfg.Store.Path)
 	cfg.Beef.URL = expandBeefPath(cfg.Beef.URL)
 	cfg.BSV21.EventsURL = expandPath(cfg.BSV21.EventsURL)
 

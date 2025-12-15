@@ -2,7 +2,6 @@ package cosign
 
 import (
 	"encoding/hex"
-	"encoding/json"
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/shruggr/1sat-indexer/v5/idx"
@@ -23,37 +22,15 @@ func (i *CosignIndexer) Tag() string {
 	return COSIGN_TAG
 }
 
-func (i *CosignIndexer) FromBytes(data []byte) (any, error) {
-	return CosignFromBytes(data)
-}
-
-func CosignFromBytes(data []byte) (*Cosign, error) {
-	obj := &Cosign{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *CosignIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
+func (i *CosignIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
 
 	cosign := parseScript(idxCtx.Tx.Outputs[vout].LockingScript)
 	if cosign != nil {
-		txo.AddOwner(cosign.Address)
-		return &idx.IndexData{
-			Data: cosign,
-			Events: []*idx.Event{
-				{
-					Id:    "own",
-					Value: cosign.Address,
-				},
-				{
-					Id:    "cosigner",
-					Value: cosign.Cosigner,
-				},
-			},
-		}
+		output.AddOwnerFromAddress(cosign.Address)
+		output.AddEvent(COSIGN_TAG + ":own:" + cosign.Address)
+		output.AddEvent(COSIGN_TAG + ":cosigner:" + cosign.Cosigner)
+		return cosign
 	}
 	return nil
 }

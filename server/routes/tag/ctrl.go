@@ -3,6 +3,7 @@ package tag
 import (
 	"strings"
 
+	"github.com/b-open-io/overlay/queue"
 	"github.com/gofiber/fiber/v2"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
@@ -33,24 +34,24 @@ func TxosByTag(c *fiber.Ctx) error {
 	}
 
 	from := c.QueryFloat("from", 0)
-	logs, err := ingest.Store.Search(c.Context(), &idx.SearchCfg{
-		Keys:    []string{c.Params("tag")},
+	logs, err := ingest.Store.Search(c.Context(), &queue.SearchCfg{
+		Keys:    [][]byte{[]byte(c.Params("tag"))},
 		From:    &from,
 		Reverse: c.QueryBool("rev", false),
 		Limit:   uint32(c.QueryInt("limit", 100)),
-	})
+	}, true)
 	if err != nil {
 		return err
 	}
 
 	outpoints := make([]string, 0, len(logs))
 	for _, log := range logs {
-		outpoints = append(outpoints, log.Member)
+		outpoints = append(outpoints, string(log.Member))
 	}
 
-	if txos, err := ingest.Store.LoadTxos(c.Context(), outpoints, tags, true); err != nil {
+	if outputs, err := ingest.Store.LoadOutputs(c.Context(), outpoints, tags, true); err != nil {
 		return err
 	} else {
-		return c.JSON(txos)
+		return c.JSON(idx.TxosFromIndexedOutputs(outputs))
 	}
 }

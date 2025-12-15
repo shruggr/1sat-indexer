@@ -54,94 +54,91 @@ func (i *Bsv20Indexer) Tag() string {
 	return BSV20_TAG
 }
 
-func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
+func (i *Bsv20Indexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
 
-	if idxData, ok := txo.Data[INSC_TAG]; !ok {
+	inscData, ok := output.Data[INSC_TAG]
+	if !ok {
 		return nil
-	} else if insc, ok := idxData.Data.(*Inscription); !ok {
+	}
+	insc, ok := inscData.(*Inscription)
+	if !ok {
 		return nil
-	} else if insc.JsonMap == nil || insc.File == nil || !(strings.HasPrefix(insc.File.Type, "application/bsv-20") || (strings.HasPrefix(insc.File.Type, "text/plain") && idxCtx.Height < 793000)) {
+	}
+	if insc.JsonMap == nil || insc.File == nil || !(strings.HasPrefix(insc.File.Type, "application/bsv-20") || (strings.HasPrefix(insc.File.Type, "text/plain") && idxCtx.Height < 793000)) {
 		return nil
-	} else if protocol, ok := insc.JsonMap["p"]; !ok || protocol != "bsv-20" {
+	}
+	protocol, ok := insc.JsonMap["p"]
+	if !ok || protocol != "bsv-20" {
 		return nil
-	} else if tick, ok := insc.JsonMap["tick"]; !ok {
+	}
+	tick, ok := insc.JsonMap["tick"]
+	if !ok {
+		return nil
+	}
+
+	if chars := []rune(tick); len(chars) > 4 {
+		return nil
+	}
+	bsv20 := &Bsv20{
+		Ticker: strings.ToUpper(tick),
+	}
+
+	if op, ok := insc.JsonMap["op"]; !ok {
 		return nil
 	} else {
-		if chars := []rune(tick); len(chars) > 4 {
-			return nil
-		}
-		bsv20 := &Bsv20{
-			Ticker: strings.ToUpper(tick),
-		}
-		// if i.WhitelistFn != nil && !(*i.WhitelistFn)(bsv20.Ticker) {
-		// 	return nil
-		// } else if i.BlacklistFn != nil || (*i.BlacklistFn)(bsv20.Ticker) {
-		// 	return nil
-		// } else
-		if op, ok := insc.JsonMap["op"]; !ok {
+		bsv20.Op = strings.ToLower(op)
+	}
+
+	if amt, ok := insc.JsonMap["amt"]; ok {
+		if amt, err := strconv.ParseUint(amt, 10, 64); err != nil {
 			return nil
 		} else {
-			bsv20.Op = strings.ToLower(op)
-		}
-
-		if amt, ok := insc.JsonMap["amt"]; ok {
-			if amt, err := strconv.ParseUint(amt, 10, 64); err != nil {
-				return nil
-			} else {
-				bsv20.Amt = &amt
-			}
-		}
-
-		if dec, ok := insc.JsonMap["dec"]; ok {
-			if val, err := strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
-				return nil
-			} else {
-				bsv20.Decimals = uint8(val)
-			}
-		}
-
-		var err error
-		switch bsv20.Op {
-		case "deploy":
-			if max, ok := insc.JsonMap["max"]; ok {
-				if bsv20.Max, err = strconv.ParseUint(max, 10, 64); err != nil {
-					return nil
-				}
-			}
-			if limit, ok := insc.JsonMap["lim"]; ok {
-				if bsv20.Limit, err = strconv.ParseUint(limit, 10, 64); err != nil {
-					return nil
-				}
-			}
-			hash := sha256.Sum256([]byte(bsv20.Ticker))
-			path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
-			ek, err := idxHdKey.DeriveChildFromPath(path)
-			if err != nil {
-				log.Panic(err)
-			}
-			pubKey, err := ek.ECPubKey()
-			if err != nil {
-				log.Panic(err)
-			}
-			bsv20.FundPath = path
-			bsv20.FundPKHash = pubKey.Hash()
-		case "mint", "transfer", "burn":
-			if bsv20.Amt == nil {
-				return nil
-			}
-		default:
-			return nil
-		}
-
-		return &idx.IndexData{
-			Data: bsv20,
-			Events: []*idx.Event{
-				{
-					Id:    "tick",
-					Value: bsv20.Ticker,
-				},
-			},
+			bsv20.Amt = &amt
 		}
 	}
+
+	if dec, ok := insc.JsonMap["dec"]; ok {
+		if val, err := strconv.ParseUint(dec, 10, 8); err != nil || val > 18 {
+			return nil
+		} else {
+			bsv20.Decimals = uint8(val)
+		}
+	}
+
+	var err error
+	switch bsv20.Op {
+	case "deploy":
+		if max, ok := insc.JsonMap["max"]; ok {
+			if bsv20.Max, err = strconv.ParseUint(max, 10, 64); err != nil {
+				return nil
+			}
+		}
+		if limit, ok := insc.JsonMap["lim"]; ok {
+			if bsv20.Limit, err = strconv.ParseUint(limit, 10, 64); err != nil {
+				return nil
+			}
+		}
+		hash := sha256.Sum256([]byte(bsv20.Ticker))
+		path := fmt.Sprintf("21/%d/%d", binary.BigEndian.Uint32(hash[:8])>>1, binary.BigEndian.Uint32(hash[24:])>>1)
+		ek, err := idxHdKey.DeriveChildFromPath(path)
+		if err != nil {
+			log.Panic(err)
+		}
+		pubKey, err := ek.ECPubKey()
+		if err != nil {
+			log.Panic(err)
+		}
+		bsv20.FundPath = path
+		bsv20.FundPKHash = pubKey.Hash()
+	case "mint", "transfer", "burn":
+		if bsv20.Amt == nil {
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	output.AddEvent(BSV20_TAG + ":tick:" + bsv20.Ticker)
+	return bsv20
 }

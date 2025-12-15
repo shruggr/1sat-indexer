@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"log"
 	"strconv"
 
 	bsm "github.com/bsv-blockchain/go-sdk/compat/bsm"
@@ -48,20 +47,11 @@ func (i *SigmaIndexer) Tag() string {
 	return "sigma"
 }
 
-func (i *SigmaIndexer) FromBytes(data []byte) (any, error) {
-	var obj Sigmas
-	if err := json.Unmarshal(data, &obj); err != nil {
-		log.Println("Error unmarshalling map", err)
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
-	txo := idxCtx.Txos[vout]
+func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
 	var sigmas Sigmas
-	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
-		for _, b := range bitcomData.Data.([]*Bitcom) {
+	if bitcomData, ok := output.Data[BITCOM_TAG]; ok {
+		for _, b := range bitcomData.([]*Bitcom) {
 			if b.Protocol == SIGMA_PROTO {
 				sigma := ParseSigma(idxCtx.Tx, vout, b.Pos)
 				if sigma != nil {
@@ -71,11 +61,9 @@ func (i *SigmaIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *id
 		}
 	}
 	if len(sigmas) > 0 {
-		idxData = &idx.IndexData{
-			Data: sigmas,
-		}
+		return sigmas
 	}
-	return
+	return nil
 }
 
 func ParseSigma(tx *transaction.Transaction, vout uint32, idx int) (sigma *Sigma) {

@@ -19,46 +19,24 @@ func (i *ShrugIndexer) Tag() string {
 	return SHRUG_TAG
 }
 
-func (i *ShrugIndexer) FromBytes(data []byte) (any, error) {
-	return ShrugFromBytes(data)
-}
-
-func (i *ShrugIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
+func (i *ShrugIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
 	s := idxCtx.Tx.Outputs[vout].LockingScript
 
 	shrug := parseScript(s)
 	if shrug != nil {
-		idxData := &idx.IndexData{
-			Data: shrug,
-		}
-
 		if shrug.Id == nil {
 			shrug.Status = Valid
 			id := lib.NewOutpointFromHash(idxCtx.Txid, vout)
-			idxData.Events = []*idx.Event{
-				{
-					Id: "deploy",
-				}, {
-					Id:    shrug.Status.String(),
-					Value: id.String(),
-				},
-			}
+			output.AddEvent(SHRUG_TAG + ":deploy")
+			output.AddEvent(SHRUG_TAG + ":" + shrug.Status.String() + ":" + id.String())
 			if shrug.Amount.Cmp(interpreter.Zero) == 0 {
-				idxData.Events = append(idxData.Events, &idx.Event{
-					Id:    "mint",
-					Value: id.String(),
-				})
+				output.AddEvent(SHRUG_TAG + ":mint:" + id.String())
 			}
 		} else {
-			idxData.Events = []*idx.Event{
-				{
-					Id:    shrug.Status.String(),
-					Value: shrug.Id.String(),
-				},
-			}
-
+			output.AddEvent(SHRUG_TAG + ":" + shrug.Status.String() + ":" + shrug.Id.String())
 		}
-		return idxData
+		return shrug
 	}
 
 	return nil
@@ -99,29 +77,30 @@ type shrugToken struct {
 	hasMint bool
 	balance *big.Int
 	status  ShrugStatus
-	outputs []*idx.IndexData
-	deps    []*lib.Outpoint
+	outputs []*idx.IndexedOutput
+	shrugs  []*Shrug
 }
 
 func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 	tokens := make(map[string]*shrugToken)
 
-	for _, txo := range idxCtx.Txos {
-		if idxData, ok := txo.Data[SHRUG_TAG]; ok {
-			if shrug, ok := idxData.Data.(*Shrug); ok {
+	for _, output := range idxCtx.Outputs {
+		if data, ok := output.Data[SHRUG_TAG]; ok {
+			if shrug, ok := data.(*Shrug); ok {
 				if shrug.Id == nil {
 					continue
 				}
 				id := shrug.Id.String()
 				if token, ok := tokens[id]; !ok {
 					token = &shrugToken{
-						outputs: []*idx.IndexData{
-							idxData,
-						},
+						outputs: []*idx.IndexedOutput{output},
+						shrugs:  []*Shrug{shrug},
+						balance: big.NewInt(0),
 					}
 					tokens[id] = token
 				} else {
-					token.outputs = append(token.outputs, idxData)
+					token.outputs = append(token.outputs, output)
+					token.shrugs = append(token.shrugs, shrug)
 				}
 			}
 		}
@@ -131,12 +110,12 @@ func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 	}
 
 	for _, spend := range idxCtx.Spends {
-		if spend.Satoshis == nil {
+		if spend.Satoshis == 0 {
 			// inputs unknown. Leave pending
 			return
 		}
-		if idxData, ok := spend.Data[SHRUG_TAG]; ok {
-			if shrug, ok := idxData.Data.(*Shrug); ok {
+		if data, ok := spend.Data[SHRUG_TAG]; ok {
+			if shrug, ok := data.(*Shrug); ok {
 				if shrug.Status == Pending {
 					return
 				} else if shrug.Status == Valid {
@@ -147,7 +126,6 @@ func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 						} else {
 							token.balance.Add(token.balance, shrug.Amount)
 						}
-						token.deps = append(token.deps, spend.Outpoint)
 					}
 				}
 			}
@@ -155,14 +133,12 @@ func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 	}
 
 	for _, token := range tokens {
-		for _, idxData := range token.outputs {
-			if shrug, ok := idxData.Data.(*Shrug); ok {
-				if !token.hasMint {
-					if shrug.Amount.Cmp(interpreter.Zero) == 0 {
-						shrug.Status = Invalid
-					} else {
-						token.balance.Sub(token.balance, shrug.Amount)
-					}
+		for _, shrug := range token.shrugs {
+			if !token.hasMint {
+				if shrug.Amount.Cmp(interpreter.Zero) == 0 {
+					shrug.Status = Invalid
+				} else {
+					token.balance.Sub(token.balance, shrug.Amount)
 				}
 			}
 		}
@@ -176,22 +152,14 @@ func (i *ShrugIndexer) PreSave(idxCtx *idx.IndexContext) {
 				token.status = Valid
 			}
 		}
-		for _, idxData := range token.outputs {
-			if shrug, ok := idxData.Data.(*Shrug); ok {
-				shrug.Status = token.status
-				idxData.Events = []*idx.Event{
-					{
-						Id:    shrug.Status.String(),
-						Value: tokenId,
-					},
-				}
-				if shrug.Amount.Cmp(interpreter.Zero) == 0 && token.status == Valid {
-					idxData.Events = append(idxData.Events, &idx.Event{
-						Id:    "mint",
-						Value: shrug.Id.String(),
-					})
-				}
-				idxData.Deps = token.deps
+		for j, output := range token.outputs {
+			shrug := token.shrugs[j]
+			shrug.Status = token.status
+			// Clear old events and add new ones
+			output.Events = nil
+			output.AddEvent(SHRUG_TAG + ":" + shrug.Status.String() + ":" + tokenId)
+			if shrug.Amount.Cmp(interpreter.Zero) == 0 && token.status == Valid {
+				output.AddEvent(SHRUG_TAG + ":mint:" + shrug.Id.String())
 			}
 		}
 	}

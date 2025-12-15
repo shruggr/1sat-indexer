@@ -1,8 +1,6 @@
 package onesat
 
 import (
-	"encoding/json"
-
 	"github.com/shruggr/1sat-indexer/v5/idx"
 	"github.com/shruggr/1sat-indexer/v5/lib"
 	"github.com/shruggr/1sat-indexer/v5/mod/bitcom"
@@ -28,82 +26,63 @@ func (i *OriginIndexer) Tag() string {
 	return ORIGIN_TAG
 }
 
-func (i *OriginIndexer) FromBytes(data []byte) (any, error) {
-	return NewOriginFromBytes(data)
-}
+func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	outAcc := idxCtx.GetOutAcc(vout)
 
-func NewOriginFromBytes(data []byte) (*Origin, error) {
-	obj := &Origin{}
-	if err := json.Unmarshal(data, obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *OriginIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
-
-	if *txo.Satoshis != 1 || (idxCtx.Height < TRIGGER && idxCtx.Height != 0) {
+	if output.Satoshis != 1 || (idxCtx.Height < TRIGGER && idxCtx.Height != 0) {
 		return nil
 	}
 
 	origin := &Origin{}
-	inscData := txo.Data[INSC_TAG]
-	if inscData != nil {
-		insc := inscData.Data.(*Inscription)
-		if insc.File != nil {
+	if inscData, ok := output.Data[INSC_TAG]; ok {
+		if insc, ok := inscData.(*Inscription); ok && insc.File != nil {
 			origin.Type = insc.File.Type
 		}
 	}
-	mapData := txo.Data[bitcom.MAP_TAG]
-	if mapData != nil {
-		origin.Map = mapData.Data.(bitcom.Map)
+	if mapData, ok := output.Data[bitcom.MAP_TAG]; ok {
+		if mp, ok := mapData.(bitcom.Map); ok {
+			origin.Map = mp
+		}
 	}
-	events := make([]*idx.Event, 0)
-	deps := make([]*lib.Outpoint, 0)
+
 	satsIn := uint64(0)
-	for _, spend := range idxCtx.Spends {
-		if spend.Satoshis == nil {
+	for spendIdx, spend := range idxCtx.Spends {
+		if spend.Satoshis == 0 {
 			break
 		}
-		deps = append(deps, spend.Outpoint)
-		if satsIn == txo.OutAcc && *spend.Satoshis == 1 && spend.Height >= TRIGGER {
-			origin.Parent = spend.Outpoint
-			events = append(events, &idx.Event{
-				Id:    "parent",
-				Value: spend.Outpoint.String(),
-			})
+		spendOutpoint := idx.OutpointToLib(&spend.Outpoint)
+		spendOutAcc := idxCtx.GetSpendOutAcc(spendIdx)
+		_ = spendOutAcc // unused for now
+
+		if satsIn == outAcc && spend.Satoshis == 1 && spend.BlockHeight >= TRIGGER {
+			origin.Parent = spendOutpoint
+			output.AddEvent(ORIGIN_TAG + ":parent:" + spendOutpoint.String())
 			if o, ok := spend.Data[ORIGIN_TAG]; ok {
-				parent := o.Data.(*Origin)
-				origin.Nonce = parent.Nonce + 1
-				origin.Outpoint = parent.Outpoint
-				// origin.Inscription = parent.Inscription
-				if origin.Map == nil {
-					origin.Map = parent.Map
-				} else if parent.Map != nil {
-					origin.Map = parent.Map.Merge(origin.Map)
+				if parent, ok := o.(*Origin); ok {
+					origin.Nonce = parent.Nonce + 1
+					origin.Outpoint = parent.Outpoint
+					if origin.Map == nil {
+						origin.Map = parent.Map
+					} else if parent.Map != nil {
+						origin.Map = parent.Map.Merge(origin.Map)
+					}
 				}
 			}
 			break
 		}
-		satsIn += *spend.Satoshis
-		if satsIn > txo.OutAcc {
-			origin.Outpoint = txo.Outpoint
+		satsIn += spend.Satoshis
+		if satsIn > outAcc {
+			origin.Outpoint = lib.NewOutpointFromHash(idxCtx.Txid, vout)
 			break
 		}
 	}
 
-	var outpoint string
+	var outpointStr string
 	if origin.Outpoint != nil {
-		outpoint = origin.Outpoint.String()
+		outpointStr = origin.Outpoint.String()
 	}
-	events = append(events, &idx.Event{
-		Id:    "outpoint",
-		Value: outpoint,
-	})
-	return &idx.IndexData{
-		Data:   origin,
-		Deps:   deps,
-		Events: events,
-	}
+	output.AddEvent(ORIGIN_TAG + ":outpoint:" + outpointStr)
+
+	return origin
 }

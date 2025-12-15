@@ -37,9 +37,9 @@ func (i *OrdLockIndexer) Tag() string {
 	return ORDLOCK_TAG
 }
 
-func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
-	txo := idxCtx.Txos[vout]
-	if *txo.Satoshis != 1 {
+func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	if output.Satoshis != 1 {
 		return nil
 	}
 
@@ -56,7 +56,7 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 		if _, err = payOutput.ReadFrom(bytes.NewReader(ordLockOps[1].Data)); err != nil {
 			return nil
 		}
-		txo.AddOwner(pkhash.Address())
+		output.AddOwnerFromAddress(pkhash.Address())
 
 		ordLock := &OrdLock{
 			Price:  payOutput.Satoshis,
@@ -64,23 +64,20 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 			State:  OrdLockPending,
 			Tags:   make([]string, 0, 5),
 		}
-		idxData := &idx.IndexData{
-			Data: ordLock,
-		}
 		ordLock.Tags = append(ordLock.Tags, "")
 		ordLock.Tags = append(ordLock.Tags, pkhash.Address())
-		if bsv21Data, ok := txo.Data[BSV21_TAG]; ok {
-			bsv21 := bsv21Data.Data.(*Bsv21)
+		if bsv21Data, ok := output.Data[BSV21_TAG]; ok {
+			bsv21 := bsv21Data.(*Bsv21)
 			ordLock.Tags = append(ordLock.Tags, bsv21.Id)
 			ordLock.Tags = append(ordLock.Tags, BSV21_TAG)
 			ordLock.PricePer = float64(ordLock.Price) / (float64(bsv21.Amt) / math.Pow(10, float64(bsv21.Decimals)))
-		} else if bsv20Data, ok := txo.Data[BSV20_TAG]; ok {
-			bsv20 := bsv20Data.Data.(*Bsv20)
+		} else if bsv20Data, ok := output.Data[BSV20_TAG]; ok {
+			bsv20 := bsv20Data.(*Bsv20)
 			ordLock.Tags = append(ordLock.Tags, bsv20.Ticker)
 			ordLock.Tags = append(ordLock.Tags, BSV20_TAG)
 			ordLock.PricePer = float64(ordLock.Price) / (float64(*bsv20.Amt) / math.Pow(10, float64(bsv20.Decimals)))
-		} else if idxData, ok := txo.Data[ORIGIN_TAG]; ok {
-			origin := idxData.Data.(*Origin)
+		} else if originData, ok := output.Data[ORIGIN_TAG]; ok {
+			origin := originData.(*Origin)
 			if origin.Outpoint != nil {
 				ordLock.Tags = append(ordLock.Tags, origin.Outpoint.String())
 				ordLock.PricePer = float64(ordLock.Price)
@@ -88,45 +85,33 @@ func (i *OrdLockIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.Index
 		}
 
 		for _, tag := range ordLock.Tags {
-			idxData.Events = append(idxData.Events, &idx.Event{
-				Id:    "list",
-				Value: tag,
-			})
+			output.AddEvent(ORDLOCK_TAG + ":list:" + tag)
 		}
 
-		return idxData
+		return ordLock
 	}
 }
 
 func (i *OrdLockIndexer) PreSave(idxCtx *idx.IndexContext) {
-	if len(idxCtx.Spends) == 0 {
+	if len(idxCtx.Spends) == 0 || len(idxCtx.Outputs) == 0 {
 		return
 	}
 	spend := idxCtx.Spends[0]
 	if spendData, ok := spend.Data[ORDLOCK_TAG]; ok {
-		if ordLock, ok := spendData.Data.(*OrdLock); ok {
-			txo := idxCtx.Txos[0]
-			idxData := &idx.IndexData{
-				Data: ordLock,
-			}
+		if ordLock, ok := spendData.(*OrdLock); ok {
+			output := idxCtx.Outputs[0]
 			if bytes.Contains(*idxCtx.Tx.Inputs[0].UnlockingScript, OrdLockSuffix) {
 				ordLock.State = OrdLockSale
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &idx.Event{
-						Id:    "sale",
-						Value: tag,
-					})
+					output.AddEvent(ORDLOCK_TAG + ":sale:" + tag)
 				}
 			} else {
 				ordLock.State = OrdLockCancel
 				for _, tag := range ordLock.Tags {
-					idxData.Events = append(idxData.Events, &idx.Event{
-						Id:    "cancel",
-						Value: tag,
-					})
+					output.AddEvent(ORDLOCK_TAG + ":cancel:" + tag)
 				}
 			}
-			txo.Data[ORDLOCK_TAG] = idxData
+			output.Data[ORDLOCK_TAG] = ordLock
 		}
 	}
 }

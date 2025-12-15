@@ -32,26 +32,23 @@ definitions:
         description: 4 bytes - Block version
         type: integer
     type: object
+  engine.MerkleState:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - MerkleStateUnmined
+    - MerkleStateValidated
+    - MerkleStateInvalidated
+    - MerkleStateImmutable
   fiber.ErrorResponse:
     properties:
       error:
         example: Header not found
-        type: string
-    type: object
-  fiber.FeeAmount:
-    properties:
-      bytes:
-        type: integer
-      satoshis:
-        type: integer
-    type: object
-  fiber.HealthResponse:
-    properties:
-      healthy:
-        type: boolean
-      reason:
-        type: string
-      version:
         type: string
     type: object
   fiber.HeightResponse:
@@ -66,21 +63,23 @@ definitions:
         example: mainnet
         type: string
     type: object
-  fiber.PolicyResponse:
-    properties:
-      maxscriptsizepolicy:
-        type: integer
-      maxtxsigopscountspolicy:
-        type: integer
-      maxtxsizepolicy:
-        type: integer
-      miningFee:
-        $ref: '#/definitions/fiber.FeeAmount'
-    type: object
   fiber.TransactionRequest:
     properties:
       rawTx:
         example: 0100000001...
+        type: string
+    type: object
+  github_com_b-open-io_bsv21-overlay_routes.ErrorResponse:
+    description: Error response with message
+    properties:
+      message:
+        example: Error description
+        type: string
+    type: object
+  github_com_b-open-io_overlay_routes.ErrorResponse:
+    properties:
+      message:
+        example: An error occurred
         type: string
     type: object
   github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncOutput:
@@ -103,51 +102,97 @@ definitions:
           $ref: '#/definitions/github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncOutput'
         type: array
     type: object
-  idx.Event:
-    properties:
-      id:
-        type: string
-      value:
-        type: string
-    type: object
   idx.IndexContext:
     properties:
       height:
         type: integer
       idx:
         type: integer
+      outputs:
+        items:
+          $ref: '#/definitions/idx.IndexedOutput'
+        type: array
       score:
         type: number
       spends:
         items:
-          $ref: '#/definitions/idx.Txo'
+          $ref: '#/definitions/idx.IndexedOutput'
         type: array
       txid:
         type: string
-      txos:
-        items:
-          $ref: '#/definitions/idx.Txo'
-        type: array
     type: object
-  idx.IndexData:
+  idx.IndexedOutput:
     properties:
-      data: {}
-      deps:
+      ancillaryTxids:
         items:
           items:
             type: integer
           type: array
         type: array
+      beef:
+        items:
+          format: int32
+          type: integer
+        type: array
+      blockHeight:
+        format: int32
+        type: integer
+      blockIdx:
+        format: int64
+        type: integer
+      consumedBy:
+        items:
+          $ref: '#/definitions/transaction.Outpoint'
+        type: array
+      data:
+        additionalProperties: {}
+        type: object
       events:
         items:
-          $ref: '#/definitions/idx.Event'
+          type: string
         type: array
+      merkleRoot:
+        description: Merkle root extracted from the merkle path
+        items:
+          type: integer
+        type: array
+      merkleState:
+        allOf:
+        - $ref: '#/definitions/engine.MerkleState'
+        description: Validation state of the merkle proof
+      outpoint:
+        $ref: '#/definitions/transaction.Outpoint'
+      outputsConsumed:
+        items:
+          $ref: '#/definitions/transaction.Outpoint'
+        type: array
+      owners:
+        items:
+          items:
+            format: int32
+            type: integer
+          type: array
+        type: array
+      satoshis:
+        description: Extended fields for indexing
+        type: integer
+      score:
+        description: sort score for outputs. Usage is up to Storage implementation.
+        format: float64
+        type: number
+      spend:
+        items:
+          type: integer
+        type: array
+      spent:
+        type: boolean
+      topic:
+        type: string
     type: object
   idx.Txo:
     properties:
       data:
-        additionalProperties:
-          $ref: '#/definitions/idx.IndexData'
+        additionalProperties: {}
         type: object
       events:
         items:
@@ -158,23 +203,42 @@ definitions:
       idx:
         type: integer
       outpoint:
-        items:
-          type: integer
-        type: array
+        $ref: '#/definitions/lib.Outpoint'
       owners:
         items:
-          type: string
+          items:
+            format: int32
+            type: integer
+          type: array
         type: array
       satoshis:
         type: integer
-      score:
-        type: number
-      script:
+      spend:
         items:
           type: integer
         type: array
-      spend:
-        type: string
+    type: object
+  lib.Outpoint:
+    properties:
+      index:
+        type: integer
+      txid:
+        items:
+          type: integer
+        type: array
+    type: object
+  models.Policy:
+    properties:
+      maxscriptsizepolicy:
+        type: integer
+      maxtxsigopscountspolicy:
+        type: integer
+      maxtxsizepolicy:
+        type: integer
+      miningFeeBytes:
+        type: integer
+      miningFeeSatoshis:
+        type: integer
     type: object
   models.Status:
     enum:
@@ -221,11 +285,69 @@ definitions:
       txid:
         type: string
     type: object
-  routes.ErrorResponse:
+  routes.BalanceResponse:
+    description: Token balance for an address
     properties:
-      message:
-        example: An error occurred
+      balance:
+        example: 1000000
+        type: integer
+      utxoCount:
+        example: 5
+        type: integer
+    type: object
+  routes.BlockInfo:
+    description: Block header metadata
+    properties:
+      hash:
+        example: 00000000000000000001...
         type: string
+      height:
+        example: 850000
+        type: integer
+      previousblockhash:
+        example: 00000000000000000002...
+        type: string
+      timestamp:
+        example: 1699999999
+        type: integer
+    type: object
+  routes.BlockResponse:
+    description: Block data containing token transactions
+    properties:
+      block:
+        $ref: '#/definitions/routes.BlockInfo'
+      transactions:
+        items:
+          $ref: '#/definitions/storage.TransactionData'
+        type: array
+    type: object
+  routes.TokenResponse:
+    description: BSV21 token metadata response
+    properties:
+      amt:
+        example: "1000000"
+        type: string
+      dec:
+        example: 8
+        type: integer
+      icon:
+        example: b://...
+        type: string
+      id:
+        example: abc123def456_0
+        type: string
+      op:
+        example: deploy+mint
+        type: string
+      sym:
+        example: TEST
+        type: string
+      txid:
+        example: abc123def456789...
+        type: string
+      vout:
+        example: 0
+        type: integer
     type: object
   server_routes_own.SyncOutput:
     properties:
@@ -247,6 +369,127 @@ definitions:
           $ref: '#/definitions/server_routes_own.SyncOutput'
         type: array
     type: object
+  storage.IndexedOutput:
+    properties:
+      ancillaryTxids:
+        items:
+          items:
+            type: integer
+          type: array
+        type: array
+      beef:
+        items:
+          format: int32
+          type: integer
+        type: array
+      blockHeight:
+        format: int32
+        type: integer
+      blockIdx:
+        format: int64
+        type: integer
+      consumedBy:
+        items:
+          $ref: '#/definitions/transaction.Outpoint'
+        type: array
+      data:
+        additionalProperties: {}
+        type: object
+      events:
+        items:
+          type: string
+        type: array
+      merkleRoot:
+        description: Merkle root extracted from the merkle path
+        items:
+          type: integer
+        type: array
+      merkleState:
+        allOf:
+        - $ref: '#/definitions/engine.MerkleState'
+        description: Validation state of the merkle proof
+      outpoint:
+        $ref: '#/definitions/transaction.Outpoint'
+      outputsConsumed:
+        items:
+          $ref: '#/definitions/transaction.Outpoint'
+        type: array
+      owners:
+        items:
+          items:
+            format: int32
+            type: integer
+          type: array
+        type: array
+      satoshis:
+        description: Extended fields for indexing
+        type: integer
+      score:
+        description: sort score for outputs. Usage is up to Storage implementation.
+        format: float64
+        type: number
+      spend:
+        items:
+          type: integer
+        type: array
+      spent:
+        type: boolean
+      topic:
+        type: string
+    type: object
+  storage.TransactionData:
+    properties:
+      beef:
+        items:
+          type: integer
+        type: array
+      block_height:
+        type: integer
+      block_index:
+        type: integer
+      inputs:
+        items:
+          $ref: '#/definitions/storage.IndexedOutput'
+        type: array
+      outputs:
+        items:
+          $ref: '#/definitions/storage.IndexedOutput'
+        type: array
+      txid:
+        items:
+          type: integer
+        type: array
+    type: object
+  transaction.Outpoint:
+    properties:
+      index:
+        type: integer
+      txid:
+        items:
+          type: integer
+        type: array
+    type: object
+  v2.MetadataResponse:
+    properties:
+      contentLength:
+        type: integer
+      contentType:
+        type: string
+      map:
+        items:
+          type: integer
+        type: array
+      origin:
+        type: string
+      outpoint:
+        type: string
+      output:
+        type: string
+      parent:
+        type: string
+      sequence:
+        type: integer
+    type: object
 info:
   contact:
     name: API Support
@@ -260,15 +503,14 @@ info:
   title: 1Sat Indexer API
   version: "5.0"
 paths:
-  /arc/events/{callbackToken}:
+  /arc/events:
     get:
-      description: Server-Sent Events stream of transaction status updates for transactions
-        associated with the callback token
+      description: Server-Sent Events stream of transaction status updates. If callbackToken
+        is provided, only events for that token are streamed.
       parameters:
       - description: Callback token from transaction submission
-        in: path
+        in: query
         name: callbackToken
-        required: true
         type: string
       produces:
       - text/event-stream
@@ -279,20 +521,7 @@ paths:
             type: string
       summary: Stream transaction events
       tags:
-      - transactions
-  /arc/health:
-    get:
-      description: Returns the health status of the service
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/fiber.HealthResponse'
-      summary: Health check
-      tags:
-      - info
+      - arcade
   /arc/policy:
     get:
       description: Returns the transaction policy configuration including fee rates
@@ -303,10 +532,10 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/fiber.PolicyResponse'
+            $ref: '#/definitions/models.Policy'
       summary: Get policy
       tags:
-      - info
+      - arcade
   /arc/tx:
     post:
       consumes:
@@ -363,7 +592,7 @@ paths:
             type: object
       summary: Submit transaction
       tags:
-      - transactions
+      - arcade
   /arc/tx/{txid}:
     get:
       description: Get the current status of a submitted transaction
@@ -394,7 +623,7 @@ paths:
             type: object
       summary: Get transaction status
       tags:
-      - transactions
+      - arcade
   /arc/txs:
     post:
       consumes:
@@ -409,6 +638,18 @@ paths:
           items:
             $ref: '#/definitions/fiber.TransactionRequest'
           type: array
+      - description: URL for status callbacks
+        in: header
+        name: X-CallbackUrl
+        type: string
+      - description: Token for SSE event filtering
+        in: header
+        name: X-CallbackToken
+        type: string
+      - description: Send all status updates (true/false)
+        in: header
+        name: X-FullStatusUpdates
+        type: string
       - description: Skip fee validation (true/false)
         in: header
         name: X-SkipFeeValidation
@@ -434,7 +675,7 @@ paths:
             type: object
       summary: Submit multiple transactions
       tags:
-      - transactions
+      - arcade
   /block/header/hash/{hash}:
     get:
       description: Returns a block header with the specified hash
@@ -579,6 +820,406 @@ paths:
       summary: Stream chain tip updates
       tags:
       - chaintracks
+  /bsv21/{tokenId}:
+    get:
+      description: Retrieve metadata and details for a BSV21 token by its ID
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routes.TokenResponse'
+        "400":
+          description: Invalid token ID format
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "404":
+          description: Token not found
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get BSV21 token details
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/{address}/balance:
+    get:
+      description: Get the BSV21 token balance for a specific address
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Address or identifier
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routes.BalanceResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get address token balance
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/{address}/history:
+    get:
+      description: Get all BSV21 token transactions (including spent) for a specific
+        address
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Address or identifier
+        in: path
+        name: address
+        required: true
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - description: Reverse order
+        in: query
+        name: rev
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.IndexedOutput'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get address transaction history
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/{address}/unspent:
+    get:
+      description: Get unspent BSV21 token outputs for a specific address
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Address or identifier
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.IndexedOutput'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get address unspent outputs
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/balance:
+    post:
+      consumes:
+      - application/json
+      description: Get the combined BSV21 token balance for multiple addresses
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Array of addresses (max 100)
+        in: body
+        name: addresses
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routes.BalanceResponse'
+        "400":
+          description: Invalid request body or too many addresses
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get multi-address token balance
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/history:
+    post:
+      consumes:
+      - application/json
+      description: Get all BSV21 token transactions (including spent) for multiple
+        addresses
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Array of addresses (max 100)
+        in: body
+        name: addresses
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      - description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - description: Reverse order
+        in: query
+        name: rev
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.IndexedOutput'
+            type: array
+        "400":
+          description: Invalid request body or too many addresses
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get multi-address transaction history
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/{lockType}/unspent:
+    post:
+      consumes:
+      - application/json
+      description: Get unspent BSV21 token outputs for multiple addresses
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Lock type (p2pkh, cos, list, etc.)
+        in: path
+        name: lockType
+        required: true
+        type: string
+      - description: Array of addresses (max 100)
+        in: body
+        name: addresses
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.IndexedOutput'
+            type: array
+        "400":
+          description: Invalid request body or too many addresses
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get multi-address unspent outputs
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/block/{height}:
+    get:
+      description: Retrieve transactions for a BSV21 token at a specific block height
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Block height
+        in: path
+        name: height
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routes.BlockResponse'
+        "400":
+          description: Invalid height parameter
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get block data for a token
+      tags:
+      - bsv21
+  /bsv21/{tokenId}/tx/{txid}:
+    get:
+      description: Retrieve details for a specific transaction within a BSV21 token's
+        topic
+      parameters:
+      - description: 'Token ID (outpoint format: txid_vout)'
+        in: path
+        name: tokenId
+        required: true
+        type: string
+      - description: Transaction ID (hex)
+        in: path
+        name: txid
+        required: true
+        type: string
+      - description: Include BEEF data in response
+        in: query
+        name: beef
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid transaction ID format
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+        "503":
+          description: Topic not available
+          schema:
+            $ref: '#/definitions/github_com_b-open-io_bsv21-overlay_routes.ErrorResponse'
+      summary: Get transaction details
+      tags:
+      - bsv21
   /callback:
     post:
       consumes:
@@ -603,6 +1244,44 @@ paths:
       summary: ARC transaction callback
       tags:
       - transactions
+  /content/{path}:
+    get:
+      description: Serve the content of an inscription by outpoint, txid, or origin
+        with optional file path resolution
+      parameters:
+      - description: Outpoint, txid, or origin with optional file path (e.g., txid_vout/path/to/file)
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Content
+          schema:
+            type: file
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get inscription content
+      tags:
+      - content
   /evt/{tag}/{id}/{value}:
     get:
       description: Search for transaction outputs by event tag, id, and value
@@ -656,6 +1335,23 @@ paths:
       summary: Get TXOs by event
       tags:
       - events
+  /health:
+    get:
+      description: Returns the health status of the service
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "503":
+          description: Service Unavailable
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - arcade
   /idx/{txid}/ingest:
     post:
       description: Force ingest a transaction by txid
@@ -791,6 +1487,95 @@ paths:
       summary: Parse transaction
       tags:
       - transactions
+  /ordfs/metadata/{path}:
+    get:
+      description: Get metadata for an inscription by outpoint, txid, or origin
+      parameters:
+      - description: Outpoint, txid, or origin (e.g., txid_vout, txid, or origin)
+        in: path
+        name: path
+        required: true
+        type: string
+      - description: Include MAP data
+        in: query
+        name: map
+        type: boolean
+      - description: Include output script (base64 encoded)
+        in: query
+        name: out
+        type: boolean
+      - description: Include parent outpoint
+        in: query
+        name: parent
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v2.MetadataResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get inscription metadata
+      tags:
+      - ordfs
+  /ordfs/stream/{outpoint}:
+    get:
+      description: Stream the content of an inscription with support for HTTP Range
+        requests
+      parameters:
+      - description: Outpoint (txid_vout or txid.vout)
+        in: path
+        name: outpoint
+        required: true
+        type: string
+      - description: HTTP Range header for partial content (e.g., bytes=0-1023)
+        in: header
+        name: Range
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Full content
+          schema:
+            type: file
+        "206":
+          description: Partial content
+          schema:
+            type: file
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Stream inscription content
+      tags:
+      - ordfs
   /owner/{owner}/balance:
     get:
       description: Get the satoshi balance for a specific owner
@@ -841,12 +1626,36 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_shruggr_1sat-indexer_v5_server_routes_own.SyncResponse'
+            $ref: '#/definitions/server_routes_own.SyncResponse'
         "500":
           description: Internal server error
           schema:
             type: string
       summary: Sync owner outpoints
+      tags:
+      - owners
+  /owner/{owner}/sync/stream:
+    get:
+      description: Stream paginated outputs for wallet synchronization via Server-Sent
+        Events. Streams all outputs until exhausted, then sends a retry directive.
+      parameters:
+      - description: Owner identifier (address, pubkey, or script hash)
+        in: path
+        name: owner
+        required: true
+        type: string
+      - description: Starting score for pagination
+        in: query
+        name: from
+        type: number
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of SyncOutput events
+          schema:
+            type: string
+      summary: Stream owner sync via SSE
       tags:
       - owners
   /owner/{owner}/txos:
@@ -1018,15 +1827,15 @@ paths:
         "400":
           description: Invalid txid format
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "404":
           description: Transaction not found
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
       summary: Get raw transaction
       tags:
       - transactions
@@ -1054,15 +1863,15 @@ paths:
         "400":
           description: Invalid txid format or output index
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "404":
           description: Transaction or output not found
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
       summary: Get transaction output
       tags:
       - transactions
@@ -1086,15 +1895,15 @@ paths:
         "400":
           description: Invalid txid format
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "404":
           description: Transaction not found
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
       summary: Get BEEF transaction
       tags:
       - transactions
@@ -1117,15 +1926,15 @@ paths:
         "400":
           description: Invalid txid format
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "404":
           description: Proof not found
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/routes.ErrorResponse'
+            $ref: '#/definitions/github_com_b-open-io_overlay_routes.ErrorResponse'
       summary: Get merkle proof
       tags:
       - transactions
@@ -1273,4 +2082,125 @@ paths:
       summary: Get multiple spend records
       tags:
       - txos
+  /v1/bsv/block/hash/{hash}:
+    get:
+      description: Get a block header by its hash
+      parameters:
+      - description: Block hash (64 hex characters)
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Block header with height and hash
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid hash format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Block not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get block by hash
+      tags:
+      - blocks
+  /v1/bsv/block/height/{height}:
+    get:
+      description: Get a block header by its height
+      parameters:
+      - description: Block height
+        in: path
+        name: height
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Block header with height and hash
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid height
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get block by height
+      tags:
+      - blocks
+  /v1/bsv/block/latest:
+    get:
+      description: Get the current chain tip block header
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Block header with height and hash
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Chain tip not available
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get latest block
+      tags:
+      - blocks
+  /v1/bsv/tx/{txid}:
+    get:
+      description: Get the raw transaction bytes by txid
+      parameters:
+      - description: Transaction ID (64 hex characters)
+        in: path
+        name: txid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Raw transaction bytes
+          schema:
+            type: file
+        "400":
+          description: Invalid txid format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Transaction not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get raw transaction
+      tags:
+      - transactions
 swagger: "2.0"

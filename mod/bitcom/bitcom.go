@@ -23,7 +23,7 @@ func (i *BitcomIndexer) Tag() string {
 
 var B = "19HxigV4QyBv3tHpQVcUEQyq1pzZVdoAut"
 
-func (i *BitcomIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexData {
+func (i *BitcomIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
 	scr := idxCtx.Tx.Outputs[vout].LockingScript
 
 	var bitcom []*Bitcom
@@ -67,15 +67,13 @@ func (i *BitcomIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) *idx.IndexD
 			}
 		}
 	}
-	return &idx.IndexData{
-		Data: bitcom,
-	}
+	return bitcom
 }
 
 func (i *BitcomIndexer) PreSave(idxCtx *idx.IndexContext) {
-	for _, txo := range idxCtx.Txos {
-		if txo.Data[BITCOM_TAG] != nil {
-			delete(txo.Data, BITCOM_TAG)
+	for _, output := range idxCtx.Outputs {
+		if _, ok := output.Data[BITCOM_TAG]; ok {
+			delete(output.Data, BITCOM_TAG)
 		}
 	}
 }

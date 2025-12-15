@@ -10,20 +10,31 @@ import (
 
 	"github.com/b-open-io/overlay/beef"
 	"github.com/b-open-io/overlay/pubsub"
+	"github.com/b-open-io/overlay/queue"
+	"github.com/bsv-blockchain/arcade/models"
+	"github.com/bsv-blockchain/arcade/service"
 	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	"github.com/shruggr/1sat-indexer/v5/idx"
 )
 
 // OldMempoolTimeout is the duration after which mempool transactions without proof should be rolled back
 const OldMempoolTimeout = 3 * time.Hour
 
+const (
+	// ImmutabilityBlocks is the number of confirmations before a transaction is considered immutable
+	ImmutabilityBlocks = 10
+	// AuditConcurrency is the number of concurrent goroutines for audit operations
+	AuditConcurrency = 20
+	// AuditSearchLimit is the maximum number of results to fetch in audit queries
+	AuditSearchLimit = 100000
+)
+
 // Ingester handles transaction ingestion, queue processing, and auditing
 type Ingester struct {
 	ingestCtx      *idx.IngestCtx
-	arc            *broadcaster.Arc
+	arcade         service.ArcadeService
 	chaintracks    chaintracks.Chaintracks
 	beefStorage    *beef.Storage
 	pubsub         pubsub.PubSub
@@ -33,14 +44,14 @@ type Ingester struct {
 // NewIngester creates a new Ingester with the given dependencies
 func NewIngester(
 	ingestCtx *idx.IngestCtx,
-	arc *broadcaster.Arc,
+	arcade service.ArcadeService,
 	ct chaintracks.Chaintracks,
 	beefStorage *beef.Storage,
 	ps pubsub.PubSub,
 ) *Ingester {
 	return &Ingester{
 		ingestCtx:   ingestCtx,
-		arc:         arc,
+		arcade:      arcade,
 		chaintracks: ct,
 		beefStorage: beefStorage,
 		pubsub:      ps,
@@ -59,7 +70,7 @@ func (ing *Ingester) Start(ctx context.Context, rollback bool) {
 	tipChan := ing.chaintracks.Subscribe(ctx)
 	for chaintip := range tipChan {
 		log.Println("Chaintip", chaintip.Height, chaintip.Hash)
-		ing.immutableScore = idx.HeightScore(chaintip.Height-10, 0)
+		ing.immutableScore = idx.HeightScore(chaintip.Height-ImmutabilityBlocks, 0)
 		ing.AuditTransactions(ctx, rollback)
 	}
 }
@@ -80,21 +91,21 @@ func (ing *Ingester) startArcCallbackListener(ctx context.Context) {
 				return
 			}
 
-			var arcResp broadcaster.ArcResponse
+			var arcResp models.TransactionStatus
 			if err := json.Unmarshal([]byte(event.Member), &arcResp); err != nil {
 				log.Printf("Error parsing Arc callback in ingestion: %v", err)
 				continue
 			}
 
-			if arcResp.Txid == "" || arcResp.TxStatus == nil {
+			if arcResp.TxID == "" || arcResp.Status == "" {
 				continue
 			}
 
-			log.Printf("Arc callback received in ingestion: txid=%s, status=%s", arcResp.Txid, *arcResp.TxStatus)
+			log.Printf("Arc callback received in ingestion: txid=%s, status=%s", arcResp.TxID, arcResp.Status)
 
 			// Scenario 1: Arc Success - Transaction mined with MerklePath
-			if arcResp.MerklePath != "" {
-				go func(txidStr, merklePath string) {
+			if len(arcResp.MerklePath) > 0 {
+				go func(txidStr string, merklePath []byte) {
 					txidHash, _ := chainhash.NewHashFromHex(txidStr)
 					tx, err := ing.beefStorage.LoadTx(ctx, txidHash)
 					if err != nil {
@@ -102,7 +113,7 @@ func (ing *Ingester) startArcCallbackListener(ctx context.Context) {
 						return
 					}
 
-					if tx.MerklePath, err = transaction.NewMerklePathFromHex(merklePath); err != nil {
+					if tx.MerklePath, err = transaction.NewMerklePathFromBinary(merklePath); err != nil {
 						log.Printf("Error parsing MerklePath for %s: %v", txidStr, err)
 						return
 					}
@@ -110,15 +121,13 @@ func (ing *Ingester) startArcCallbackListener(ctx context.Context) {
 					if err := ing.reprocessTransaction(ctx, tx.TxID(), tx); err != nil {
 						log.Printf("Error reprocessing tx %s: %v", txidStr, err)
 					}
-				}(arcResp.Txid, arcResp.MerklePath)
+				}(arcResp.TxID, arcResp.MerklePath)
 				continue
 			}
 
 			// Scenario 2: Arc Error - Transaction rejected
-			status := broadcaster.ArcStatus(*arcResp.TxStatus)
-			if status == broadcaster.REJECTED ||
-				status == broadcaster.DOUBLE_SPEND_ATTEMPTED ||
-				status == broadcaster.SEEN_IN_ORPHAN_MEMPOOL {
+			if arcResp.Status == models.StatusRejected ||
+				arcResp.Status == models.StatusDoubleSpendAttempted {
 				go func(txidStr string) {
 					if err := ing.ingestCtx.Store.Rollback(ctx, txidStr); err != nil {
 						log.Printf("Error rolling back tx %s: %v", txidStr, err)
@@ -127,7 +136,7 @@ func (ing *Ingester) startArcCallbackListener(ctx context.Context) {
 					if err := ing.ingestCtx.Store.Log(ctx, idx.RollbackTxLog, txidStr, 0); err != nil {
 						log.Printf("Error logging rollback for %s: %v", txidStr, err)
 					}
-				}(arcResp.Txid)
+				}(arcResp.TxID)
 			}
 
 		case <-ctx.Done():
@@ -185,7 +194,7 @@ func (ing *Ingester) AuditTransactions(ctx context.Context, rollback bool) {
 	start := time.Now()
 	log.Println("[AUDIT] Starting transaction audit")
 
-	limiter := make(chan struct{}, 20)
+	limiter := make(chan struct{}, AuditConcurrency)
 	var wg sync.WaitGroup
 
 	// Scenario 1: Negative scores - Broadcast attempts that never got Arc confirmation (older than 2 minutes)
@@ -205,14 +214,14 @@ func (ing *Ingester) AuditTransactions(ctx context.Context, rollback bool) {
 func (ing *Ingester) auditNegativeScores(ctx context.Context, wg *sync.WaitGroup, limiter chan struct{}) {
 	from := float64(-1 * time.Now().Add(-2*time.Minute).UnixNano())
 	to := 0.0
-	cfg := &idx.SearchCfg{
-		Keys:  []string{idx.PendingTxLog},
+	cfg := &queue.SearchCfg{
+		Keys:  [][]byte{[]byte(idx.PendingTxLog)},
 		From:  &from,
 		To:    &to,
-		Limit: 100000,
+		Limit: AuditSearchLimit,
 	}
 
-	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg, false)
 	if err != nil {
 		log.Println("[AUDIT] Search negative scores error:", err)
 		return
@@ -252,20 +261,15 @@ func (ing *Ingester) auditNegativeScores(ctx context.Context, wg *sync.WaitGroup
 			}
 
 			// Check if Arc has the transaction
-			status, err := ing.arc.Status(txid)
+			status, err := ing.arcade.GetStatus(ctx, txid)
 			if err != nil {
-				log.Printf("Arc status check error for %s: %v", txid, err)
-				return
-			}
-
-			if status.Status == 404 {
 				// Arc doesn't have it - remove from PendingTxLog
 				// Could consider rebroadcasting in the future
 				log.Println("Removing unconfirmed tx:", txid)
 				if err := ing.ingestCtx.Store.Delog(ctx, idx.PendingTxLog, txid); err != nil {
 					log.Printf("Error removing %s from PendingTxLog: %v", txid, err)
 				}
-			} else if status.Status == 200 {
+			} else {
 				// Arc has it - publish to Redis, Arc callback listener will handle ingestion
 				if jsonData, err := json.Marshal(status); err != nil {
 					log.Printf("Error marshaling Arc status for %s: %v", txid, err)
@@ -273,20 +277,20 @@ func (ing *Ingester) auditNegativeScores(ctx context.Context, wg *sync.WaitGroup
 					log.Printf("Error publishing Arc status for %s: %v", txid, err)
 				}
 			}
-		}(item.Member)
+		}(string(item.Member))
 	}
 }
 
 func (ing *Ingester) auditMinedTransactions(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
 	from := 0.0
-	cfg := &idx.SearchCfg{
-		Keys:  []string{idx.PendingTxLog},
+	cfg := &queue.SearchCfg{
+		Keys:  [][]byte{[]byte(idx.PendingTxLog)},
 		From:  &from,
 		To:    &ing.immutableScore,
-		Limit: 100000,
+		Limit: AuditSearchLimit,
 	}
 
-	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg, false)
 	if err != nil {
 		log.Println("[AUDIT] Search mined txs error:", err)
 		return
@@ -354,13 +358,13 @@ func (ing *Ingester) auditMinedTransactions(ctx context.Context, rollback bool, 
 
 			// If not present or not valid, try Arc
 			if !valid {
-				status, err := ing.arc.Status(txid)
+				status, err := ing.arcade.GetStatus(ctx, txid)
 				if err != nil {
 					log.Printf("Arc status error for %s: %v", txid, err)
 					return
 				}
-				if status.MerklePath != "" {
-					tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath)
+				if len(status.MerklePath) > 0 {
+					tx.MerklePath, err = transaction.NewMerklePathFromBinary(status.MerklePath)
 					if err != nil {
 						log.Printf("Error parsing Arc MerklePath for %s: %v", txid, err)
 						return
@@ -416,21 +420,22 @@ func (ing *Ingester) auditMinedTransactions(ctx context.Context, rollback bool, 
 					log.Printf("Delog from PendingTxLog error for %s: %v", txid, err)
 				}
 			}
-		}(item.Member, item.Score)
+		}(string(item.Member), item.Score)
 	}
 }
 
 func (ing *Ingester) auditMempool(ctx context.Context, rollback bool, wg *sync.WaitGroup, limiter chan struct{}) {
 	// Get mempool transactions older than 2 minutes
 	to := float64(time.Now().Add(-2 * time.Minute).UnixNano())
-	cfg := &idx.SearchCfg{
-		Keys:  []string{idx.PendingTxLog},
-		From:  &idx.MempoolScore,
+	mempoolScore := idx.HeightScore(0, 0) // Mempool transactions have height 0
+	cfg := &queue.SearchCfg{
+		Keys:  [][]byte{[]byte(idx.PendingTxLog)},
+		From:  &mempoolScore,
 		To:    &to,
-		Limit: 100000,
+		Limit: AuditSearchLimit,
 	}
 
-	items, err := ing.ingestCtx.Store.Search(ctx, cfg)
+	items, err := ing.ingestCtx.Store.Search(ctx, cfg, false)
 	if err != nil {
 		log.Println("[AUDIT] Search mempool txs error:", err)
 		return
@@ -511,13 +516,13 @@ func (ing *Ingester) auditMempool(ctx context.Context, rollback bool, wg *sync.W
 
 			// If not present or not valid, try Arc
 			if !valid {
-				status, err := ing.arc.Status(txid)
+				status, err := ing.arcade.GetStatus(ctx, txid)
 				if err != nil {
 					log.Printf("Arc status error for %s: %v", txid, err)
 					return
 				}
-				if status.MerklePath != "" {
-					tx.MerklePath, err = transaction.NewMerklePathFromHex(status.MerklePath)
+				if len(status.MerklePath) > 0 {
+					tx.MerklePath, err = transaction.NewMerklePathFromBinary(status.MerklePath)
 					if err != nil {
 						log.Printf("Error parsing Arc MerklePath for %s: %v", txid, err)
 						return
@@ -533,7 +538,6 @@ func (ing *Ingester) auditMempool(ctx context.Context, rollback bool, wg *sync.W
 						return
 					}
 				}
-
 			}
 			// If still not present or not valid after checking both providers
 			// This transaction has been in mempool for >OldMempoolTimeout without being mined
@@ -573,7 +577,7 @@ func (ing *Ingester) auditMempool(ctx context.Context, rollback bool, wg *sync.W
 					log.Printf("Delog from PendingTxLog error for %s: %v", txid, err)
 				}
 			}
-		}(item.Member, item.Score)
+		}(string(item.Member), item.Score)
 	}
 }
 
@@ -615,11 +619,11 @@ func (ing *Ingester) processQueue(ctx context.Context) {
 
 		default:
 			to := float64(time.Now().UnixNano())
-			if logs, err := cfg.Store.Search(ctx, &idx.SearchCfg{
-				Keys:  []string{cfg.Key},
+			if logs, err := cfg.Store.Search(ctx, &queue.SearchCfg{
+				Keys:  [][]byte{[]byte(cfg.Key)},
 				Limit: cfg.PageSize,
 				To:    &to,
-			}); err != nil {
+			}, false); err != nil {
 				log.Println("Queue search error:", err)
 				time.Sleep(time.Second)
 			} else {
@@ -630,7 +634,7 @@ func (ing *Ingester) processQueue(ctx context.Context) {
 					time.Sleep(time.Second)
 				}
 				for _, l := range logs {
-					txid := l.Member
+					txid := string(l.Member)
 					lastScore = l.Score
 					if _, ok := inflight[txid]; !ok {
 						txcount++

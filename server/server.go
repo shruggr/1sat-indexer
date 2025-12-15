@@ -76,13 +76,11 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 	// Register arcade routes under /arc/
 	if services != nil && services.ArcadeServices != nil {
 		arcadeRoutes := arcaderoutes.NewRoutes(arcaderoutes.Config{
-			StatusStore:     services.ArcadeServices.StatusStore,
-			SubmissionStore: services.ArcadeServices.SubmissionStore,
-			TxTracker:       services.ArcadeServices.TxTracker,
-			EventPublisher:  services.ArcadeServices.EventPublisher,
-			TeranodeClient:  services.ArcadeServices.TeranodeClient,
-			TxValidator:     services.ArcadeServices.Validator,
-			Logger:          services.Logger,
+			Service:        services.ArcadeServices.ArcadeService,
+			Store:          services.ArcadeServices.Store,
+			EventPublisher: services.ArcadeServices.EventPublisher,
+			Arcade:         services.ArcadeServices.Arcade,
+			Logger:         services.Logger,
 		})
 		arcadeRoutes.Register(app.Group("/arc"))
 		log.Println("Registered /arc/* routes")
@@ -97,9 +95,7 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 	// Register tx controller routes for indexer-specific tx operations
 	txCtrl := tx.NewTxController(
 		ingestCtx,
-		services.Broadcaster,
 		services.BeefStorage,
-		services.Chaintracks,
 		services.PubSub,
 		services.JungleBus,
 	)
@@ -112,7 +108,11 @@ func Initialize(ingestCtx *idx.IngestCtx, services *config.Services) *fiber.App 
 	routes.RegisterSSERoutes(app.Group("/sse"), &routes.SSERoutesConfig{
 		SSEManager: services.SSEManager,
 		Catchup: func(ctx context.Context, keys []string, fromScore float64) ([]queue.ScoredMember, error) {
-			return ingestCtx.Store.Search(ctx, &idx.SearchCfg{Keys: keys, From: &fromScore})
+			byteKeys := make([][]byte, len(keys))
+			for i, k := range keys {
+				byteKeys[i] = []byte(k)
+			}
+			return ingestCtx.Store.Search(ctx, &queue.SearchCfg{Keys: byteKeys, From: &fromScore}, true)
 		},
 		Context: context.Background(),
 	})

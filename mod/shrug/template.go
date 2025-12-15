@@ -11,7 +11,7 @@ func Lock(shrug Shrug, lockingScript *script.Script) (*script.Script, error) {
 	if shrug.Id == nil {
 		s.AppendOpcodes(script.OpFALSE)
 	} else {
-		s.AppendPushData(*shrug.Id)
+		s.AppendPushData(shrug.Id.Bytes())
 	}
 	s.AppendOpcodes(script.Op2DROP)
 	if shrug.Amount.Cmp(interpreter.Zero) == 0 {

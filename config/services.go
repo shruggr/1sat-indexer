@@ -4,19 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path"
 
 	"github.com/b-open-io/bsv21-overlay/lookups"
 	"github.com/b-open-io/go-junglebus"
 	"github.com/b-open-io/overlay/beef"
-	overlayconfig "github.com/b-open-io/overlay/config"
 	"github.com/b-open-io/overlay/pubsub"
 	"github.com/b-open-io/overlay/queue"
 	"github.com/b-open-io/overlay/storage"
 	"github.com/b-open-io/overlay/topics"
 	arcadeconfig "github.com/bsv-blockchain/arcade/config"
 	"github.com/bsv-blockchain/go-chaintracks/chaintracks"
-	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	p2p "github.com/bsv-blockchain/go-teranode-p2p-client"
 	ordfsconfig "github.com/shruggr/go-ordfs-server/config"
 
@@ -27,7 +24,7 @@ import (
 // Services holds all initialized services for the indexer.
 type Services struct {
 	// Store is the TXO storage backend
-	Store *idx.QueueStore
+	Store *storage.OutputStore
 
 	// QueueStorage is the underlying queue storage backend
 	QueueStorage queue.QueueStorage
@@ -37,9 +34,6 @@ type Services struct {
 
 	// SSEManager manages SSE client subscriptions
 	SSEManager *pubsub.SSEManager
-
-	// Broadcaster is the transaction broadcaster
-	Broadcaster *broadcaster.Arc
 
 	// Network is the BSV network (mainnet/testnet)
 	Network lib.Network
@@ -102,24 +96,27 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 	services.SSEManager = pubsub.NewSSEManager(ctx, services.PubSub)
 	logger.Info("Initialized SSE manager")
 
-	// Initialize QueueStorage backend
+	// Initialize QueueStorage backend based on store.type
+	var storeURL string
 	switch c.Store.Type {
-	case "sqlite":
-		services.QueueStorage, err = queue.NewSQLiteQueueStorage(c.Store.SQLite)
-	case "redis":
-		services.QueueStorage, err = queue.NewRedisQueueStorage(c.Store.Redis)
-	case "postgres":
-		services.QueueStorage, err = queue.NewPostgresQueueStorage(c.Store.Postgres)
+	case "badger", "":
+		// Badger is the default
+		storePath := c.Store.Path
+		if storePath == "" {
+			storePath = "~/.1sat/indexer"
+		}
+		storeURL = "badger://" + storePath
+		services.QueueStorage, err = queue.NewBadgerQueueStorage(storeURL, logger)
 	default:
-		return nil, fmt.Errorf("unknown store type: %s", c.Store.Type)
+		err = fmt.Errorf("unsupported store type: %s (only 'badger' is currently supported)", c.Store.Type)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize queue storage: %w", err)
 	}
 
-	// Create QueueStore with PubSub
-	services.Store = idx.NewQueueStore(services.QueueStorage, services.PubSub)
-	logger.Info("Initialized queue storage", slog.String("type", c.Store.Type))
+	// Create OutputStore with PubSub
+	services.Store = storage.NewOutputStore(services.QueueStorage, services.PubSub, "")
+	logger.Info("Initialized queue storage", slog.String("url", storeURL))
 
 	// Initialize JungleBus
 	if c.Network.JungleBus != "" {
@@ -133,9 +130,6 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 	// Initialize P2P client
 	logger.Info("Initializing P2P client")
 	c.P2P.Network = c.Network.Type
-	if c.P2P.StoragePath == "" {
-		c.P2P.StoragePath = "~/.1sat"
-	}
 	services.P2PClient, err = c.P2P.Initialize(ctx, "1sat-indexer")
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize p2p client: %w", err)
@@ -144,9 +138,6 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 
 	// Initialize Chaintracks (as its own service, sharing P2P client)
 	logger.Info("Initializing Chaintracks")
-	if c.Chaintracks.StoragePath == "" {
-		c.Chaintracks.StoragePath = path.Join("~/.1sat", "chaintracks")
-	}
 	services.Chaintracks, err = c.Chaintracks.Initialize(ctx, "1sat-indexer", services.P2PClient)
 	if err != nil {
 		_ = services.P2PClient.Close()
@@ -154,9 +145,9 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 	}
 	logger.Info("Initialized Chaintracks")
 
-	// Initialize Arcade (receives the existing Chaintracks instance)
+	// Initialize Arcade (receives the existing Chaintracks and P2P client)
 	logger.Info("Initializing Arcade services")
-	services.ArcadeServices, err = c.Arcade.Initialize(ctx, logger, services.Chaintracks)
+	services.ArcadeServices, err = c.Arcade.Initialize(ctx, logger, services.Chaintracks, services.P2PClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize arcade: %w", err)
 	}
@@ -183,18 +174,13 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 	if c.BSV21.Enabled {
 		logger.Info("Initializing BSV21 services")
 
-		// Create BSV21 EventDataStorage - shares QueueStorage and PubSub with main indexer
-		services.BSV21Storage, err = overlayconfig.CreateEventStorage(
-			c.BSV21.EventsURL,
+		// Create BSV21 EventDataStorage - shares QueueStorage, PubSub, and BeefStorage with main indexer
+		services.BSV21Storage = storage.CreateEventDataStorage(
+			services.QueueStorage,
+			services.PubSub,
 			services.BeefStorage,
-			c.Store.SQLite, // Reuse same queue storage URL
-			c.PubSub.URL,
-			services.Chaintracks,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize BSV21 storage: %w", err)
-		}
-		logger.Info("Initialized BSV21 event storage", slog.String("url", c.BSV21.EventsURL))
+		logger.Info("Initialized BSV21 event storage (shared dependencies)")
 
 		// Create BSV21 lookup service
 		services.BSV21Lookup, err = lookups.NewBsv21EventsLookup(services.BSV21Storage)
@@ -206,27 +192,6 @@ func (c *Config) Initialize(ctx context.Context, logger *slog.Logger) (*Services
 		// Create ActiveTopics cache (refresh starts when routes are registered)
 		services.BSV21ActiveTopics = topics.NewActiveTopics()
 		logger.Info("Initialized BSV21 ActiveTopics cache")
-	}
-
-	// Initialize ARC broadcaster
-	if c.Arc.URL != "" {
-		maxTimeout := 10
-		var callbackURL, callbackToken *string
-		if c.Arc.Callback != "" {
-			callbackURL = &c.Arc.Callback
-		}
-		if c.Arc.Token != "" {
-			callbackToken = &c.Arc.Token
-		}
-		services.Broadcaster = &broadcaster.Arc{
-			ApiUrl:        c.Arc.URL,
-			ApiKey:        c.Arc.APIKey,
-			WaitFor:       broadcaster.ACCEPTED_BY_NETWORK,
-			MaxTimeout:    &maxTimeout,
-			CallbackUrl:   callbackURL,
-			CallbackToken: callbackToken,
-		}
-		logger.Info("Initialized ARC broadcaster", slog.String("url", c.Arc.URL))
 	}
 
 	// Set network

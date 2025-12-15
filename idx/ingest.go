@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/b-open-io/overlay/beef"
+	"github.com/b-open-io/overlay/storage"
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/shruggr/1sat-indexer/v5/lib"
@@ -28,7 +29,7 @@ type IngestCtx struct {
 	Network     lib.Network
 	OnIngest    *func(ctx context.Context, idxCtx *IndexContext) error
 	Once        bool
-	Store       *QueueStore
+	Store       *storage.OutputStore
 	BeefStorage *beef.Storage
 }
 

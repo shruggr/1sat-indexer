@@ -1,47 +1,29 @@
 package idx
 
-import (
-	"encoding/json"
-	"log"
-)
-
+// Indexer defines the interface for transaction output parsers.
+// Implementations parse transaction outputs and return tag-specific data.
 type Indexer interface {
+	// Tag returns the unique identifier for this indexer
 	Tag() string
-	Parse(idxCtx *IndexContext, vout uint32) *IndexData
+
+	// Parse parses a transaction output and returns tag-specific data.
+	// Returns nil if the output is not relevant to this indexer.
+	// Events should be added directly to idxCtx.Outputs[vout].Events.
+	Parse(idxCtx *IndexContext, vout uint32) any
+
+	// PreSave is called before saving outputs, allowing batch processing
 	PreSave(idxCtx *IndexContext)
-	FromBytes(data []byte) (obj any, err error)
-	// Bytes(obj any) ([]byte, error)
-	// PostProcess(ctx context.Context, outpoint *Outpoint) error
 }
 
+// BaseIndexer provides default implementations for the Indexer interface
 type BaseIndexer struct{}
 
 func (b BaseIndexer) Tag() string {
 	return ""
 }
 
-func (b BaseIndexer) Parse(idxCtx *IndexContext, vout uint32) (idxData *IndexData) {
-	return
+func (b BaseIndexer) Parse(idxCtx *IndexContext, vout uint32) any {
+	return nil
 }
 
 func (b BaseIndexer) PreSave(idxCtx *IndexContext) {}
-
-func (b BaseIndexer) FromBytes(data []byte) (any, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	obj := make(map[string]any)
-	if err := json.Unmarshal(data, &obj); err != nil {
-		log.Panicf("Error unmarshalling: %s %v", b.Tag(), err)
-		return nil, err
-	}
-	return obj, nil
-}
-
-// func (b BaseIndexer) Bytes(obj any) ([]byte, error) {
-// 	return json.Marshal(obj)
-// }
-
-// func (b BaseIndexer) PostProcess(ctx context.Context, outpoint *Outpoint) error {
-// 	return nil
-// }

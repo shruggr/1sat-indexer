@@ -3,7 +3,6 @@ package bitcom
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"strings"
 	"unicode/utf8"
 
@@ -36,31 +35,20 @@ func (i *MapIndexer) Tag() string {
 	return MAP_TAG
 }
 
-func (i *MapIndexer) FromBytes(data []byte) (any, error) {
-	obj := Map{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		log.Println("Error unmarshalling map", err)
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (i *MapIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) (idxData *idx.IndexData) {
-	txo := idxCtx.Txos[vout]
-	if bitcomData, ok := txo.Data[BITCOM_TAG]; ok {
+func (i *MapIndexer) Parse(idxCtx *idx.IndexContext, vout uint32) any {
+	output := idxCtx.Outputs[vout]
+	if bitcomData, ok := output.Data[BITCOM_TAG]; ok {
 		mp := Map{}
-		for _, b := range bitcomData.Data.([]*Bitcom) {
+		for _, b := range bitcomData.([]*Bitcom) {
 			if b.Protocol == MAP_PROTO {
 				ParseMAP(mp, script.NewFromBytes(b.Script), 0)
 			}
 		}
 		if len(mp) > 0 {
-			idxData = &idx.IndexData{
-				Data: mp,
-			}
+			return mp
 		}
 	}
-	return
+	return nil
 }
 
 func ParseMAP(mp Map, scr *script.Script, idx int) {
