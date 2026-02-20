@@ -175,19 +175,17 @@ func (s *SQLiteStore) SearchTxos(ctx context.Context, cfg *idx.SearchCfg) (txos 
 }
 
 func (s *SQLiteStore) SearchBalance(ctx context.Context, cfg *idx.SearchCfg) (balance uint64, err error) {
-	cfg.FilterSpent = true
-	outpoints, err := s.SearchOutpoints(ctx, cfg)
-	if err != nil {
+	args := make([]interface{}, 0, len(cfg.Keys))
+	args = append(args, toInterfaceSlice(cfg.Keys)...)
+
+	query := `SELECT COALESCE(SUM(txos.satoshis), 0)
+		FROM logs
+		JOIN txos ON logs.member = txos.outpoint AND txos.spend=''
+		WHERE logs.search_key IN (` + placeholders(len(cfg.Keys)) + `)`
+
+	row := s.READDB.QueryRowContext(ctx, query, args...)
+	if err = row.Scan(&balance); err != nil {
 		return 0, err
-	}
-	txos, err := s.LoadTxos(ctx, outpoints, nil, false, false)
-	if err != nil {
-		return 0, err
-	}
-	for _, txo := range txos {
-		if txo.Satoshis != nil {
-			balance += *txo.Satoshis
-		}
 	}
 	return balance, nil
 }

@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/GorillaPool/go-junglebus"
 	"github.com/b-open-io/overlay/beef"
@@ -17,11 +16,9 @@ import (
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 )
 
 var JUNGLEBUS string
-var Cache *redis.Client
 var JB *junglebus.Client
 var Chaintracks arcade.Chaintracks
 var BeefStorage *beef.Storage
@@ -152,21 +149,3 @@ func BuildTxBEEF(ctx context.Context, txid string) (tx *transaction.Transaction,
 	return BeefStorage.LoadTxFromBeef(ctx, beefBytes, hash)
 }
 
-// Legacy helper functions for cache key compatibility
-func TxKey(txid string) string {
-	return "tx:" + txid
-}
-
-func ProofKey(txid string) string {
-	return "prf:" + txid
-}
-
-// CacheTx caches a transaction directly to Redis (for broadcast scenarios)
-func CacheTx(ctx context.Context, txid string, rawTx []byte) error {
-	return Cache.Set(ctx, TxKey(txid), rawTx, 0).Err()
-}
-
-// CacheProof caches a proof directly to Redis with TTL
-func CacheProof(ctx context.Context, txid string, proofBytes []byte, ttl time.Duration) error {
-	return Cache.Set(ctx, ProofKey(txid), proofBytes, ttl).Err()
-}

@@ -210,6 +210,7 @@ func GetRawTx(c *fiber.Ctx) error {
 func GetProof(c *fiber.Ctx) error {
 	txid := c.Params("txid")
 	if proof, err := jb.LoadProof(c.Context(), txid); err != nil {
+		log.Println("LoadProof Error", txid, err)
 		return err
 	} else if proof == nil {
 		return c.SendStatus(404)

@@ -102,11 +102,7 @@ func Broadcast(ctx context.Context, store idx.TxoStore, tx *transaction.Transact
 	}
 	score := idx.HeightScore(0, 0)
 
-	if err := jb.Cache.Set(ctx, jb.TxKey(response.Txid), tx.Bytes(), 0).Err(); err != nil { //
-		response.Error = err.Error()
-		return
-		// Log Transaction Status as pending
-	} else if err = store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
+	if err := store.Log(ctx, idx.PendingTxLog, response.Txid, -score); err != nil {
 		response.Error = err.Error()
 		return
 	}

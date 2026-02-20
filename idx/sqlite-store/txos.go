@@ -128,50 +128,60 @@ func (s *SQLiteStore) LoadTxos(ctx context.Context, outpoints []string, tags []s
 		return nil, nil
 	}
 
-	query := `SELECT outpoint, height, idx, satoshis, owners, spend
-		FROM txos
-		WHERE outpoint IN (` + placeholders(len(outpoints)) + `)`
-
-	rows, err := s.READDB.QueryContext(ctx, query, toInterfaceSlice(outpoints)...)
-	if err != nil {
-		log.Panic(err)
-		return nil, err
-	}
-	defer rows.Close()
-
+	const batchSize = 500
 	txos := make([]*idx.Txo, 0, len(outpoints))
-	for rows.Next() {
-		txo := &idx.Txo{
-			Data: make(idx.IndexDataMap),
+
+	for i := 0; i < len(outpoints); i += batchSize {
+		end := i + batchSize
+		if end > len(outpoints) {
+			end = len(outpoints)
 		}
-		var spendTxid string
-		var owners string
-		if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &owners, &spendTxid); err != nil {
-			log.Panic(err)
-			return nil, err
-		} else if err = json.Unmarshal([]byte(owners), &txo.Owners); err != nil {
-			log.Panic(err)
+		batch := outpoints[i:end]
+
+		query := `SELECT outpoint, height, idx, satoshis, owners, spend
+			FROM txos
+			WHERE outpoint IN (` + placeholders(len(batch)) + `)`
+
+		rows, err := s.READDB.QueryContext(ctx, query, toInterfaceSlice(batch)...)
+		if err != nil {
 			return nil, err
 		}
 
-		if spend {
-			txo.Spend = spendTxid
-		}
-		txo.Score = idx.HeightScore(txo.Height, txo.Idx)
-
-		if len(tags) > 0 {
-			if txo.Data, err = s.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
-				log.Panic(err)
+		for rows.Next() {
+			txo := &idx.Txo{
+				Data: make(idx.IndexDataMap),
+			}
+			var spendTxid string
+			var owners string
+			if err = rows.Scan(&txo.Outpoint, &txo.Height, &txo.Idx, &txo.Satoshis, &owners, &spendTxid); err != nil {
+				rows.Close()
+				return nil, err
+			} else if err = json.Unmarshal([]byte(owners), &txo.Owners); err != nil {
+				rows.Close()
 				return nil, err
 			}
-		}
 
-		if script {
-			if err = txo.LoadScript(ctx); err != nil {
-				return nil, err
+			if spend {
+				txo.Spend = spendTxid
 			}
+			txo.Score = idx.HeightScore(txo.Height, txo.Idx)
+
+			if len(tags) > 0 {
+				if txo.Data, err = s.LoadData(ctx, txo.Outpoint.String(), tags); err != nil {
+					rows.Close()
+					return nil, err
+				}
+			}
+
+			if script {
+				if err = txo.LoadScript(ctx); err != nil {
+					rows.Close()
+					return nil, err
+				}
+			}
+			txos = append(txos, txo)
 		}
-		txos = append(txos, txo)
+		rows.Close()
 	}
 	return txos, nil
 }
